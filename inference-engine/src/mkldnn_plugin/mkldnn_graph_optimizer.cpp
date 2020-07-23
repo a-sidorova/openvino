@@ -17,6 +17,7 @@
 #include "nodes/mkldnn_quantize_node.h"
 #include "nodes/mkldnn_mvn_node.h"
 #include "nodes/mkldnn_resample_node.h"
+#include "nodes/mkldnn_power_node.h"
 
 #include <blob_factory.hpp>
 #include <ie_layers_internal.hpp>
@@ -49,6 +50,9 @@ void MKLDNNGraphOptimizer::ApplyCommonGraphOptimizations(MKLDNNGraph &graph) {
     graph.RemoveDroppedNodes();
 
     MergeSigmoidAndMultiplyToSwish(graph);
+    graph.RemoveDroppedNodes();
+
+    ApplyPatternHSwish(graph);
     graph.RemoveDroppedNodes();
 
     MergeConversions(graph);
@@ -658,6 +662,129 @@ void MKLDNNGraphOptimizer::MergeSigmoidAndMultiplyToSwish(MKLDNNGraph& graph) {
     }
 }
 
+void MKLDNNGraphOptimizer::ApplyPatternHSwish(MKLDNNGraph &graph) {
+    auto& graphNodes = graph.GetNodes();
+    std::vector<MKLDNNNodePtr> newNodes;
+
+    MKLDNNNodePtr parentNode;
+    MKLDNNNodePtr activationNode, powerAddNode, powerMulNode, eltwiseNode;
+    MKLDNNEdgePtr remEdge;
+
+    auto areSutableChildNodes = [&]() {
+        auto childNode1 = parentNode->getChildEdgeAt(0)->getChild();
+        auto childNode2 = parentNode->getChildEdgeAt(1)->getChild();
+
+        if (childNode1->getType() == Power && childNode2->getType() == Eltwise) {
+            activationNode = childNode1->getChildEdgeAt(0)->getChild();
+            powerAddNode = childNode1;
+            eltwiseNode = childNode2;
+            remEdge = parentNode->getChildEdgeAt(1);
+        } else if (childNode1->getType() == Eltwise && childNode2->getType() == Power) {
+            activationNode = childNode2->getChildEdgeAt(0)->getChild();
+            powerAddNode = childNode2;
+            eltwiseNode = childNode1;
+            remEdge = parentNode->getChildEdgeAt(0);
+        } else {
+            return false;
+        }
+
+        powerMulNode = activationNode->getChildEdgeAt(0)->getChild();
+
+        if (powerAddNode->getParentEdges().size() != 1 || eltwiseNode->getParentEdges().size() != 2)
+            return false;
+
+        if (activationNode->getType() != Activation || activationNode->getChildEdges().size() != 1 ||
+            activationNode->getParentEdges().size() != 1)
+            return false;
+
+        if (powerMulNode->getType() != Power || powerMulNode->getChildEdges().size() != 1 ||
+            powerMulNode->getParentEdges().size() != 1 || powerMulNode->getChildEdgeAt(0)->getChild() != eltwiseNode)
+            return false;
+
+        auto *powerAddNodePtr = dynamic_cast<MKLDNNPowerNode *>(powerAddNode.get());
+        if (powerAddNodePtr == nullptr)
+            THROW_IE_EXCEPTION << "Cannot cast " << powerAddNode->getName() << " to Power node";
+        auto *powerAddLayer = dynamic_cast<PowerLayer*>(powerAddNode->getCnnLayer().get());
+        if (powerAddLayer == nullptr)
+            THROW_IE_EXCEPTION << "Cannot get power layer " << powerAddNode->getName();
+
+        auto *activationNodePtr = dynamic_cast<MKLDNNActivationNode *>(activationNode.get());
+        if (activationNodePtr == nullptr)
+            THROW_IE_EXCEPTION << "Cannot cast " << activationNode->getName() << " to Activation node";
+        if (activationNodePtr->getAlgorithm() != eltwise_clamp)
+            return false;
+
+        auto *powerMulNodePtr = dynamic_cast<MKLDNNPowerNode *>(powerMulNode.get());
+        if (powerMulNodePtr == nullptr)
+            THROW_IE_EXCEPTION << "Cannot cast " << powerMulNode->getName() << " to Power node";
+        auto *powerMulLayer = dynamic_cast<PowerLayer*>(powerMulNode->getCnnLayer().get());
+        if (powerMulLayer == nullptr)
+            THROW_IE_EXCEPTION << "Cannot get power layer " << powerMulNode->getName();
+
+        auto *eltwiseNodePtr = dynamic_cast<MKLDNNEltwiseNode *>(eltwiseNode.get());
+        if (eltwiseNodePtr == nullptr)
+            THROW_IE_EXCEPTION << "Cannot cast " << eltwiseNode->getName() << " to Eltwise node";
+        auto *eltwiseLayer = dynamic_cast<EltwiseLayer*>(eltwiseNode->getCnnLayer().get());
+        if (eltwiseLayer == nullptr)
+            THROW_IE_EXCEPTION << "Cannot get eltwise layer " << eltwiseNode->getName();
+        if (eltwiseLayer->_operation != EltwiseLayer::Prod)
+            return false;
+
+        return true;
+    };
+
+    auto MergeToHSwish = [&]() {
+        //  1. Remove edge Parent-Eltwise
+        remEdge->drop();
+        graph.GetEdges().erase(std::remove(graph.GetEdges().begin(), graph.GetEdges().end(), remEdge), graph.GetEdges().end());
+
+        //  2. Remove Add node and edges Parent-Add
+        graph.DropNode(powerAddNode);
+
+        //  3. Remove Clamp node and edges Parent-Clamp
+        graph.DropNode(activationNode);
+
+        //  4. Remove Mul node and edges Parent-Mul and Mul-Eltwise
+        graph.DropNode(powerMulNode);
+        remEdge = parentNode->getChildEdgeAt(0);
+        auto oIndex = remEdge->getOutputNum();
+        auto iIndex = remEdge->getInputNum();
+        remEdge->drop();
+        graph.GetEdges().erase(std::remove(graph.GetEdges().begin(), graph.GetEdges().end(), remEdge), graph.GetEdges().end());
+
+        //  5. Create H-Swish node
+        CNNLayerPtr hSwishLayer(new CNNLayer(*activationNode->getCnnLayer().get()));
+        hSwishLayer->name = activationNode->getName() + "_HSwish";
+        hSwishLayer->type = "HSwish";
+        MKLDNNNodePtr hSwishNode(new MKLDNNActivationNode(hSwishLayer, graph.getEngine(), graph.weightsCache));
+
+        //  6. Create edges Parent-HSwish and HSwish-Eltwise, connect to HSwish node, add edges to graph
+        MKLDNNEdgePtr beforeHSwishEdge(new MKLDNNEdge(parentNode, hSwishNode, iIndex, 0));
+        MKLDNNEdgePtr afterHSwishEdge(new MKLDNNEdge(hSwishNode, eltwiseNode, 0, oIndex));
+        hSwishNode->addEdge(beforeHSwishEdge);
+        hSwishNode->addEdge(afterHSwishEdge);
+        graph.GetEdges().push_back(beforeHSwishEdge);
+        graph.GetEdges().push_back(afterHSwishEdge);
+        newNodes.push_back(hSwishNode);
+
+        //  7. Remove Eltwise node
+        graph.DropNode(eltwiseNode);
+    };
+
+    for (int i = 0; i < graphNodes.size(); i++) {
+        parentNode = graphNodes[i];
+        if (parentNode->getChildEdges().size() != 2)
+            continue;
+
+        if (!areSutableChildNodes()) continue;
+
+        MergeToHSwish();
+    }
+    for (int i = 0; i < newNodes.size(); i++) {
+        graph.GetNodes().push_back(newNodes[i]);
+    }
+}
+
 void MKLDNNGraphOptimizer::FuseBatchNormWithScale(MKLDNNGraph &graph) {
     auto &graphNodes = graph.GetNodes();
 
@@ -704,7 +831,8 @@ void MKLDNNGraphOptimizer::FuseConvolutionAndActivation(MKLDNNGraph &graph) {
         return activationNode &&
             (activationNode->getAlgorithm() == eltwise_relu ||
             (conv->getCnnLayer()->precision == Precision::FP32 &&
-             isOneOf(activationNode->getAlgorithm(), {eltwise_elu, eltwise_logistic, eltwise_bounded_relu, eltwise_clamp, eltwise_swish})));
+             isOneOf(activationNode->getAlgorithm(), {eltwise_elu, eltwise_logistic, eltwise_bounded_relu, eltwise_clamp,
+                                                      eltwise_swish, eltwise_hswish})));
     };
 
     for (int i = 0; i < graphNodes.size(); i++) {
@@ -1187,7 +1315,7 @@ void MKLDNNGraphOptimizer::FuseConvolutionAndSimpleOperation(MKLDNNGraph &graph)
                 THROW_IE_EXCEPTION << "Cannot get activation layer " << node->getName();
 
             return isOneOf(activationNode->getAlgorithm(), {eltwise_relu, eltwise_elu, eltwise_logistic, eltwise_bounded_relu,
-                                                            eltwise_clamp, eltwise_swish});
+                                                            eltwise_clamp, eltwise_swish, eltwise_hswish});
         }
 
         return false;
@@ -1431,7 +1559,8 @@ void MKLDNNGraphOptimizer::FuseConvolutionSumAndConvolutionSumActivation(MKLDNNG
         return activationNode &&
             (activationNode->getAlgorithm() == eltwise_relu ||
             (conv->getCnnLayer()->precision == Precision::FP32 &&
-             isOneOf(activationNode->getAlgorithm(), {eltwise_elu, eltwise_logistic, eltwise_bounded_relu, eltwise_clamp, eltwise_swish})));
+             isOneOf(activationNode->getAlgorithm(), {eltwise_elu, eltwise_logistic, eltwise_bounded_relu, eltwise_clamp,
+                                                      eltwise_swish, eltwise_hswish})));
 #else
         return false;
 #endif
@@ -1781,7 +1910,7 @@ void MKLDNNGraphOptimizer::FuseNormalizeAndSimpleOperation(MKLDNNGraph &graph) {
             if (activationNode == nullptr)
                 THROW_IE_EXCEPTION << "Cannot get activation layer " << node->getName();
             return isOneOf(activationNode->getAlgorithm(), {eltwise_relu, eltwise_gelu, eltwise_elu, eltwise_logistic,
-                eltwise_bounded_relu, eltwise_clamp, eltwise_tanh, eltwise_swish, eltwise_linear, eltwise_abs,
+                eltwise_bounded_relu, eltwise_clamp, eltwise_tanh, eltwise_swish, eltwise_hswish, eltwise_linear, eltwise_abs,
                 eltwise_square, eltwise_sqrt});
         }
         return false;
@@ -1893,7 +2022,7 @@ void MKLDNNGraphOptimizer::FuseEltwiseAndSimple(MKLDNNGraph &graph) {
             if (activationNode == nullptr)
                 THROW_IE_EXCEPTION << "Cannot get activation layer " << node->getName();
             return isOneOf(activationNode->getAlgorithm(), {eltwise_relu, eltwise_elu, eltwise_logistic, eltwise_bounded_relu,
-                                                            eltwise_clamp, eltwise_swish});
+                                                            eltwise_clamp, eltwise_swish, eltwise_hswish});
         }
 
         return false;

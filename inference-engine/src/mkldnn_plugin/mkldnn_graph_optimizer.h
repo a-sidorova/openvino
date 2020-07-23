@@ -23,6 +23,7 @@ private:
     void MergeGroupConvolution(MKLDNNGraph& graph);
     void MergeTwoEqualScaleShifts(MKLDNNGraph& graph);
     void MergeSigmoidAndMultiplyToSwish(MKLDNNGraph& graph);
+    void ApplyPatternHSwish(MKLDNNGraph& graph);
 #if defined(COMPILED_CPU_MKLDNN_ACTIVATION_NODE)
     void FuseConvolutionAndActivation(MKLDNNGraph &graph);
     void FuseFullyConnectedAndSimpleOperation(MKLDNNGraph &graph);
