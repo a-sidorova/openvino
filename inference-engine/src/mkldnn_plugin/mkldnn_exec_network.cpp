@@ -63,7 +63,8 @@ MKLDNNExecNetwork::MKLDNNExecNetwork(const InferenceEngine::ICNNNetwork &network
             add<ConvolutionTransformation>(LayerTransformation::Params(params).setPrecisionsOnActivations({ Precision::U8 }), "Convolution").
             addCleanup<ScaleShiftToConvolutionTransformation>(
                 LayerTransformation::Params(params).setPrecisionsOnActivations({ Precision::U8 }),
-                "ScaleShift"));
+                "ScaleShift").
+            remove("Power"));
         transformer.transform(*_clonedNetwork);
 
         // Check if network is INT8 or Binary.
