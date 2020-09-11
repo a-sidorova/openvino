@@ -3,6 +3,7 @@
 //
 
 #include "mkldnn_split_node.h"
+#include "common/cpu_memcpy.h"
 #include <legacy/ie_layers.h>
 #include <string>
 #include <vector>
@@ -49,13 +50,14 @@ void MKLDNNSplitNode::initSupportedPrimitiveDescriptors() {
     auto outputDataType = MKLDNNExtensionUtils::IEPrecisionToDataType(precision);
 
     auto srcDims = getParentEdgeAt(0)->getDims();
+    auto memoryFormat = MKLDNNMemory::GetPlainFormat(srcDims);
 
     InferenceEngine::LayerConfig config;
     config.dynBatchSupport = true;
     config.inConfs.resize(1);
     config.inConfs[0].inPlace = -1;
     config.inConfs[0].constant = false;
-    config.inConfs[0].desc = MKLDNNMemoryDesc(srcDims, inputDataType, memory::format::any);
+    config.inConfs[0].desc = MKLDNNMemoryDesc(srcDims, inputDataType, memoryFormat);
     config.outConfs.resize(outDims.size());
 
     std::vector<memory::format> outFormats;
@@ -70,8 +72,8 @@ void MKLDNNSplitNode::initSupportedPrimitiveDescriptors() {
 
         config.outConfs[i].inPlace = -1;
         config.outConfs[i].constant = false;
-        config.outConfs[i].desc = MKLDNNMemoryDesc(o_Dims, outputDataType, memory::format::any);
-        outFormats.push_back(memory::format::any);
+        config.outConfs[i].desc = MKLDNNMemoryDesc(o_Dims, outputDataType, memoryFormat);
+        outFormats.push_back(memoryFormat);
 
         axis_size += o_Dims[axis];
         for (size_t j = 0; j < dstFirstDims.ndims(); j++) {
@@ -187,6 +189,9 @@ void MKLDNNSplitNode::createPrimitive() {
             getChildEdgeAt(i)->getBlob()->getTensorDesc().getLayout() != NCDHW)
             canUseOptimizedImpl = false;
     }
+
+    if (!isOptimized() && !canUseOptimizedImpl)
+        prepareOptimizedParams();
 }
 
 void MKLDNNSplitNode::optimizedImpl(size_t MB) {
@@ -224,11 +229,26 @@ void MKLDNNSplitNode::optimizedImpl(size_t MB) {
     }
 }
 
+void MKLDNNSplitNode::optimizedExecuteForSameFormats(size_t MB) {
+    uint8_t* srcData = getDataPtr(this->getParentEdgeAt(0)->getMemory());
+    size_t batch = this->getParentEdgeAt(0)->getDims()[0];
+
+    if (batch != MB)
+        optimizedParams.countStrides = optimizedParams.countStrides / batch * MB;
+
+    parallel_for2d(this->getChildEdges().size(), optimizedParams.countStrides, [&](size_t i, size_t j) {
+        uint8_t* dstData = getDataPtr(this->getChildEdgeAt(i)->getMemory());
+        auto dstPtr = dstData + j * optimizedParams.sizeData[i];
+        auto srcPtr = srcData + optimizedParams.srcShifts[i] + j * optimizedParams.srcStride;
+
+        cpu_memcpy(dstPtr, srcPtr, optimizedParams.sizeData[i]);
+    });
+}
+
 void MKLDNNSplitNode::execute(mkldnn::stream strm) {
     if (isOptimized())
         return;
 
-    // FIXME: add more optimal implementation
     MKLDNNDims par_dims = getParentEdgeAt(0)->getDims();
     int MB = batchToProcess();
     auto srcBlob = getParentEdgeAt(0)->getBlob();
@@ -247,11 +267,18 @@ void MKLDNNSplitNode::execute(mkldnn::stream strm) {
         return;
     }
 
+    if (getSelectedPrimitiveDescriptor()->getConfig().inConfs[0].desc.getLayout() != BLOCKED &&
+        (getSelectedPrimitiveDescriptor()->getConfig().inConfs[0].desc.getLayout() ==
+            getSelectedPrimitiveDescriptor()->getConfig().outConfs[0].desc.getLayout())) {
+        optimizedExecuteForSameFormats(MB);
+        return;
+    }
+
     size_t srcSize = getParentEdgeAt(0)->getMemory().GetSize();
     size_t src_batch_off = srcBlob->getTensorDesc().offset(srcBlob->size() / outerSize)
                            - srcBlob->getTensorDesc().offset(0);
 
-    for (size_t i = 0, sIdx = 0; i < getChildEdges().size(); i++) {
+    for (size_t i = 0, srcStride = 0; i < getChildEdges().size(); i++) {
         auto dstBlob = getChildEdgeAt(i)->getBlob();
         auto *dstData = dstBlob->buffer().as<float *>();
 
@@ -262,14 +289,15 @@ void MKLDNNSplitNode::execute(mkldnn::stream strm) {
 
         size_t dst_batch_off = dstBlob->getTensorDesc().offset(innerSize) - dstBlob->getTensorDesc().offset(0);
 
-        for (size_t dIdx = 0; dIdx < innerSize; dIdx++, sIdx++) {
-            for (unsigned b = 0; b < outerSize; b++) {
-                if (sIdx + b*src_batch_off >= srcSize)
-                    THROW_IE_EXCEPTION << "Incorrect configuration of split layer " << getName() << "!";
-                dstData[b * dst_batch_off + dstBlob->getTensorDesc().offset(dIdx)] =
-                        srcData[b * src_batch_off + srcBlob->getTensorDesc().offset(sIdx)];
-            }
-        }
+        parallel_for2d(innerSize, outerSize, [&](size_t idx, unsigned b) {
+            if (srcStride + b * src_batch_off >= srcSize)
+                THROW_IE_EXCEPTION << "Incorrect configuration of split layer " << getName() << "!";
+
+            auto dstOffset = dstBlob->getTensorDesc().offset(idx);
+            auto srcOffset = srcBlob->getTensorDesc().offset(srcStride + idx);
+
+            dstData[b * dst_batch_off + dstOffset] = srcData[b * src_batch_off + srcOffset];
+        });
     }
 }
 
@@ -527,6 +555,38 @@ void MKLDNNSplitNode::setDynamicBatchLim(int lim) {
     dynBatchLim = lim;
     if (prim) {
         prim.setBatchLimit(batchToProcess(), getParentEdges().size(), getChildEdges().size());
+    }
+}
+
+inline uint8_t* MKLDNNSplitNode::getDataPtr(const MKLDNNMemory& memoryPtr) {
+    return reinterpret_cast<uint8_t*>(memoryPtr.GetData()) + memoryPtr.GetDescriptor().data.layout_desc.blocking.offset_padding *
+            MKLDNNExtensionUtils::sizeOfDataType(mkldnn::memory::data_type(memoryPtr.GetDescriptor().data.data_type));
+}
+
+void MKLDNNSplitNode::prepareOptimizedParams() {
+    auto srcDims = this->getParentEdgeAt(0)->getDims();
+    int nDims = srcDims.ndims();
+    uint8_t srcSizeData = this->getSelectedPrimitiveDescriptor()->getConfig().inConfs[0].desc.getPrecision().size();
+
+    optimizedParams.countStrides = 1;
+    for (int i = 0; i < axis; i++)
+            optimizedParams.countStrides *= srcDims[i];
+
+    optimizedParams.srcStride = 0;
+    optimizedParams.sizeData.resize(this->getChildEdges().size());
+    for (int i = 0; i < this->getChildEdges().size(); i++) {
+        optimizedParams.sizeData[i] = srcSizeData;
+
+        for (int j = axis; j < nDims; j++)
+            optimizedParams.sizeData[i] *= this->getChildEdgeAt(i)->getDims()[j];
+
+        optimizedParams.srcStride += optimizedParams.sizeData[i];
+    }
+
+    optimizedParams.srcShifts.resize(this->getChildEdges().size());
+    optimizedParams.srcShifts[0] = 0;
+    for (int i = 1; i < this->getChildEdges().size(); i++) {
+        optimizedParams.srcShifts[i] = optimizedParams.srcShifts[i - 1] + optimizedParams.sizeData[i - 1];
     }
 }
 REG_MKLDNN_PRIM_FOR(MKLDNNSplitNode, Split);

@@ -28,10 +28,21 @@ public:
     void setDynamicBatchLim(int lim) override;
 
 private:
+    inline uint8_t* getDataPtr(const MKLDNNMemory& memoryPtr);
+    void prepareOptimizedParams();
+
     void optimizedImpl(size_t MB);
+    void optimizedExecuteForSameFormats(size_t MB);
 
     bool canUseOptimizedImpl = true;
     size_t axis = 1;
+
+    struct {
+        std::vector<size_t> sizeData;
+        std::vector<size_t> srcShifts;
+        size_t srcStride;
+        size_t countStrides;
+    } optimizedParams;
 };
 
 }  // namespace MKLDNNPlugin
