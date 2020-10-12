@@ -147,8 +147,7 @@ static void Transformation(ICNNNetwork::Ptr& clonedNetwork, const Config& conf) 
     pass_config->disable<ngraph::pass::SoftPlusDecomposition>();
     pass_config->disable<ngraph::pass::HSigmoidDecomposition>();
     pass_config->disable<ngraph::pass::ConvertMod>();
-
-    pass_config->enable<ngraph::pass::ConvertPadToGroupConvolution>();
+    pass_config->disable<ngraph::pass::ConvertPadToGroupConvolution>();
 
     manager.run_passes(nGraphFunc);
 
