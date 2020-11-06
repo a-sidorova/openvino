@@ -31,10 +31,7 @@ private:
     inline uint8_t* getDataPtr(const MKLDNNMemory& memoryPtr);
     void prepareOptimizedParams();
 
-    void optimizedImpl(size_t MB);
-    void optimizedExecuteForSameFormats(size_t MB);
-
-    bool canUseOptimizedImpl = true;
+    bool canUseOptimizedExecute = true;
     size_t axis = 1;
 
     struct {
