@@ -39,8 +39,12 @@ private:
     void padSymmetric(const float *srcData, float* dstData,
                       InferenceEngine::SizeVector srcDims, InferenceEngine::SizeVector dstDims);
 
-    void padConstantOptimalImpl(const float *srcData, float* dstData, InferenceEngine::SizeVector srcDims);
-    void padConstantOptimalImplForBlocked(const float *srcData, float* dstData, InferenceEngine::SizeVector srcDims);
+    void padConstantOptimalImpl(const float *srcData, float* dstData,
+                                InferenceEngine::SizeVector srcDims);
+    void padConstantOptimalImplForBlocked(const float *srcData, float* dstData,
+                                          InferenceEngine::SizeVector srcDims);
+
+    inline uint8_t* getDataPtr(const MKLDNNMemory& memoryPtr);
 
     PadMode padMode = CONSTANT;
     float padValue = 0.f;
@@ -49,7 +53,7 @@ private:
     bool canUseOptimalImpl = false;
 
     struct {
-        InferenceEngine::SizeVector srcODms;
+        InferenceEngine::SizeVector srcODims;
         InferenceEngine::SizeVector srcStrides;
         InferenceEngine::SizeVector dstStrides;
         size_t padPointsNum = 0;
