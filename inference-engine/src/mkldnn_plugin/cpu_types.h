@@ -64,7 +64,8 @@ enum Type {
     Reference,
     ShuffleChannels,
     DFT,
-    Math
+    Math,
+    Subgraph
 };
 
 enum Algorithm {

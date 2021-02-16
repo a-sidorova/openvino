@@ -150,6 +150,8 @@ static std::string NameFromType(Type type) {
             return "DFT";
         case Math:
             return "Math";
+        case Subgraph:
+            return "Subgraph";
         default:
             return "Unknown";
     }
