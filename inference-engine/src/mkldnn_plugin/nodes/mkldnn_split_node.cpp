@@ -344,13 +344,17 @@ void MKLDNNSplitNode::initOptimalPrimitiveDescriptor() {
         THROW_ERROR << "has invalid config";
     size_t offset = 0;
     for (size_t i = 0; i < cnnLayer->outData.size(); i++) {
+        SizeVector strides(config.outConfs[i].desc.getBlockingDesc().getBlockDims().size(), 1);
+        for (int j = config.outConfs[i].desc.getBlockingDesc().getBlockDims().size() - 2; j >= 0; j--)
+            strides[j] = strides[j + 1] * config.outConfs[i].desc.getBlockingDesc().getBlockDims()[j + 1];
+
         config.outConfs[i].desc = InferenceEngine::TensorDesc(config.outConfs[i].desc.getPrecision(),
                                                               config.outConfs[i].desc.getDims(), {
                                                                       config.outConfs[i].desc.getBlockingDesc().getBlockDims(),
                                                                       config.outConfs[i].desc.getBlockingDesc().getOrder(),
                                                                       config.inConfs[0].desc.getBlockingDesc().getOffsetPadding() + offset,
                                                                       config.inConfs[0].desc.getBlockingDesc().getOffsetPaddingToData(),
-                                                                      config.inConfs[0].desc.getBlockingDesc().getStrides()
+                                                                      strides
                                                               });
         size_t axisSize = 1;
         for (size_t j = axis; j < config.outConfs[i].desc.getBlockingDesc().getBlockDims().size(); j++) {
