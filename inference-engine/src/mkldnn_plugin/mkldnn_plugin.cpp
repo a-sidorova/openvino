@@ -29,6 +29,7 @@
 #include <transformations/op_conversions/convert_shuffle_channels3.hpp>
 #include <transformations/op_conversions/convert_space_to_depth.hpp>
 #include <transformations/op_conversions/convert_gelu.hpp>
+#include <transformations/op_conversions/convert_gather_v7_to_gather_v1.hpp>
 #include <transformations/op_conversions/gelu7_downgrade.hpp>
 #include <transformations/op_conversions/hswish_decomposition.hpp>
 #include <transformations/op_conversions/hsigmoid_decomposition.hpp>
@@ -276,6 +277,7 @@ static void Transformation(CNNNetwork& clonedNetwork, const Config& conf) {
     pass_config->disable<ngraph::pass::LogSoftmaxDecomposition>();
     pass_config->disable<ngraph::pass::WeightsDequantizeToFakeQuantize>();
     pass_config->disable<ngraph::pass::SimplifyCTCGreedyDecoderSeqLen>();
+    pass_config->disable<ngraph::pass::ConvertGather7ToGather1>();
 
     pass_config->enable<ngraph::pass::ConvertInterpolate1ToInterpolate4>();
 
