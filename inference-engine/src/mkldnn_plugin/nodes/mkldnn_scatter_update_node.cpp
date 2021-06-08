@@ -301,9 +301,10 @@ void MKLDNNScatterUpdateNode::execute(mkldnn::stream strm) {
             splitter(indicesBlockND[0], nthr, ithr, start, end);
             for (int i = start; i < end; i++) {
                 int64_t idxValue =  getIndicesValue(indicesPtr, i);
-                if (idxValue >= static_cast<int64_t>(srcDimAxis) || idxValue < 0) {
-                    IE_THROW() << errorPrefix
-                    << " have indices value that points to non-existing output tensor element";
+                if (idxValue < 0)
+                    IE_THROW() << errorPrefix << " has negative indexes: " << idxValue;
+                if (idxValue >= static_cast<int64_t>(srcDimAxis)) {
+                    IE_THROW() << errorPrefix << " have indices value that points to non-existing output tensor element";
                 }
             }
         });

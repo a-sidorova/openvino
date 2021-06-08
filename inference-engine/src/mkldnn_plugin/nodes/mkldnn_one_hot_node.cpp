@@ -115,9 +115,12 @@ void MKLDNNOneHotNode::one_hot(size_t prefix_size, size_t suffix_size) {
         const in_type* src_dataPtr = &src_data[prefix_idx * suffix_size];
         out_type* dst_dataPtr = &dst_data[prefix_idx * depth * suffix_size];
         for (std::size_t suffix_idx = 0; suffix_idx < suffix_size; ++suffix_idx, ++src_dataPtr, ++dst_dataPtr) {
-            auto v = static_cast<std::size_t>(*src_dataPtr);
-            if (v < depth) {
-                dst_dataPtr[v * suffix_size] = on_val;
+            const int idx = *src_dataPtr;
+            if (idx < 0)
+                IE_THROW() << errorPrefix << "has negative indexes: " << idx;
+
+            if (idx < depth) {
+                dst_dataPtr[idx * suffix_size] = on_val;
             }
         }
     });

@@ -125,8 +125,13 @@ void MKLDNNGatherNDNode::gatherElementwise() {
         for (size_t b = bStart; b < _batchNum; b++) {
             for (size_t j = cStart; j < cycles; j++) {
                 size_t dataIdx = 0lu;
-                for (size_t i = 0lu; i < _sliceRank; i++)
-                    dataIdx += srcMultipliers[i] * shiftedIndices[i];
+                for (size_t i = 0lu; i < _sliceRank; i++) {
+                    const int idx = shiftedIndices[i];
+                    if (idx < 0)
+                        IE_THROW() << _errorPrefix << " has negative indexes: " << idx;
+
+                    dataIdx += srcMultipliers[i] * idx;
+                }
                 shiftedDstData[0] = shiftedSrcData[dataIdx];
                 shiftedDstData++;
                 shiftedIndices += _sliceRank;
@@ -174,8 +179,13 @@ void MKLDNNGatherNDNode::gatherBlocks() {
         for (size_t b = bStart; b < _batchNum; b++) {
             for (size_t j = cStart; j < cycles; j++) {
                 size_t dataIdx = 0lu;
-                for (size_t i = 0; i < _sliceRank ; i++)
-                    dataIdx += srcMultipliers[i] * shiftedIndices[i];
+                for (size_t i = 0; i < _sliceRank ; i++) {
+                    const int idx = shiftedIndices[i];
+                    if (idx < 0)
+                        IE_THROW() << _errorPrefix << " has negative indexes: " << idx;
+
+                    dataIdx += srcMultipliers[i] * idx;
+                }
                 cpu_memcpy(shiftedDstData, &(shiftedSrcData[dataIdx]), dataStep);
                 shiftedDstData += dataStep;
                 shiftedIndices += _sliceRank;

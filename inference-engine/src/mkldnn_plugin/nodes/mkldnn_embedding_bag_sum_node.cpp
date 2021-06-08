@@ -74,6 +74,9 @@ void MKLDNNEmbeddingBagSumNode::processData(const T* srcData, const T* weightsDa
                 if (indices[inIdx] >= inDataDims[0]) {
                     IE_THROW() << msgPrefix + "' has invalid embedding bag index: " + std::to_string(indices[inIdx]);
                 }
+                if (indices[inIdx] < 0) {
+                    IE_THROW() << msgPrefix + "' has negative indexes: " + std::to_string(indices[inIdx]);
+                }
                 size_t srcIndex = indices[inIdx] * _embDepth;
 
                 if (withWeights) {
@@ -90,6 +93,9 @@ void MKLDNNEmbeddingBagSumNode::processData(const T* srcData, const T* weightsDa
                 for (inIdx = 1lu; inIdx < indicesSize; inIdx++) {
                     if (indices[inIdx] >= inDataDims[0]) {
                         IE_THROW() << msgPrefix + "' has invalid embedding bag index: " + std::to_string(indices[inIdx]);
+                    }
+                    if (indices[inIdx] < 0) {
+                        IE_THROW() << msgPrefix + "' has negative indexes: " + std::to_string(indices[inIdx]);
                     }
                     size_t srcIndex = indices[inIdx] * _embDepth;
 

@@ -118,7 +118,11 @@ void MKLDNNGatherElementsNode::directExecution() {
                     dstShift0 += strideAx1Diff_;
                 }
             }
-            dstData[o] = srcData[o + dstShift0 + (indices[o] - dstAxIdx) * strideAxDst_];
+            const int idx = indices[o];
+            if (idx < 0)
+                IE_THROW() << errorPrefix_ << " has negative indexes: " << idx;
+
+            dstData[o] = srcData[o + dstShift0 + (idx - dstAxIdx) * strideAxDst_];
         }
     };
 

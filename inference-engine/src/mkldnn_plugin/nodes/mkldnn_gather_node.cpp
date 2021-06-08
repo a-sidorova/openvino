@@ -116,10 +116,22 @@ void MKLDNNGatherNode::execute(mkldnn::stream strm) {
     uint8_t* dstData = reinterpret_cast<uint8_t*>(getChildEdgeAt(0)->getMemoryPtr()->GetPtr());
 
     parallel_for2d(batchSize, idxBatchStride, [&](const size_t i, const size_t j) {
-        const unsigned int idx = static_cast<uint32_t>(srcIndexes[i * idxBatchStride + j]);
+        const int idx = srcIndexes[i * idxBatchStride + j];
+
+        if (idx < 0)
+            IE_THROW() << errorPrefix_ << " has negative indexes: " << idx;
+        if (idx >= indexRange)
+            IE_THROW() << errorPrefix_ << " has incorrect indexes: " << idx;
+
+        for (size_t k = 0; k < outerSize; ++k) {
+            const size_t srcStride = (i * srcBatchStride + k * dataLength * indexRange) * dataSize;
+            const size_t dstStride = (i * dstBatchStride + k * dataLength * idxBatchStride) * dataSize;
+
+            cpu_memcpy(&dstData[dstStride + j * len], &srcData[srcStride + idx * len], len);
+        }
 
         // while negative indices are not supported, should set zero
-        if (idx < indexRange) {
+      /*  if (idx < indexRange) {
             for (size_t k = 0; k < outerSize; ++k) {
                 const size_t srcStride = (i * srcBatchStride + k * dataLength * indexRange) * dataSize;
                 const size_t dstStride = (i * dstBatchStride + k * dataLength * idxBatchStride) * dataSize;
@@ -130,7 +142,7 @@ void MKLDNNGatherNode::execute(mkldnn::stream strm) {
             for (size_t k = 0; k < outerSize; ++k) {
                 memset(&dstData[(i * dstBatchStride + k * dataLength * idxBatchStride) * dataSize + j * len], 0, len);
             }
-        }
+        }*/
     });
 }
 
