@@ -5,6 +5,7 @@
 #include "mkldnn_reduce_node.h"
 
 #include "mkldnn_fake_quantize_node.h"
+#include "mkldnn_eltwise_node.h"
 #include <mkldnn.hpp>
 #include <string>
 #include <vector>
@@ -44,6 +45,7 @@ using namespace Xbyak;
                                                                 OW = width;
 
 #define GET_OFF(field) offsetof(jit_reduce_call_args, field)
+#define GET_OFF_POST(field) offsetof(jit_reduce_post_call_args, field)
 
 #define GET_PTR_N_PLN              const uint8_t    *in_ptr_n      = in_ptr       + src_data_size * ib * IC * ID * IH * IW;               \
                                          uint8_t    *out_ptr_n     = out_ptr      + dst_data_size * ob * OC * OD * OH * OW;
@@ -86,17 +88,21 @@ struct jit_uni_reduce_kernel_f32 : public jit_uni_reduce_kernel, public jit_gene
     }
 
     void generate() override {
-        exp_injector.reset(new jit_uni_eltwise_injector_f32<isa>(this, alg_kind::eltwise_exp, 0.f, 0.f, 1));
+        if (jcp_.reduce_mode == ReduceLogSumExp) {
+            exp_injector = MKLDNNPlugin::make_unique<jit_uni_eltwise_injector_f32<isa>>(this, alg_kind::eltwise_exp, 0.f, 0.f, 1);
+        }
 
         if (!mayiuse(avx512_core_bf16) && mayiuse(avx512_core))
-            emu_vcvtneps2bf16.reset(new jit_emu_vcvtneps2bf16(this, isa, nullptr));
+            emu_vcvtneps2bf16 = MKLDNNPlugin::make_unique<jit_emu_vcvtneps2bf16>(this, isa, nullptr);
 
         this->preamble();
+
+        planar_layout = jcp_.layout == ReduceLayoutType::reduce_ncsp || jcp_.layout == ReduceLayoutType::reduce_nspc;
 
         mov(reg_src, ptr[reg_params + GET_OFF(src)]);
         mov(reg_dst, ptr[reg_params + GET_OFF(dst)]);
         mov(reg_work_amount, ptr[reg_params + GET_OFF(work_amount)]);
-        if (jcp_.planar_layout)
+        if (planar_layout)
             mov(reg_reduce_w, ptr[reg_params + GET_OFF(reduce_w)]);
 
         if (jcp_.reduce_mode == ReduceAnd || jcp_.reduce_mode == ReduceL1 || jcp_.reduce_mode == ReduceMax ||
@@ -131,6 +137,7 @@ private:
     using Vmm = typename conditional3<isa == cpu::x64::sse41, Xbyak::Xmm, isa == cpu::x64::avx2,
             Xbyak::Ymm, Xbyak::Zmm>::type;
     size_t vlen = cpu_isa_traits<isa>::vlen;
+    bool planar_layout;
 
     Xbyak::Address table_val(int index) { return ptr[reg_table + index * vlen]; }
 
@@ -138,12 +145,17 @@ private:
     Xbyak::Reg64 reg_dst = r9;
     Xbyak::Reg64 reg_work_amount = r10;
     Xbyak::Reg64 reg_reduce_w = r11;
-    Xbyak::Reg64 reg_table = r12;
+    Xbyak::Reg64 reg_reduce_w_stride = r12;
+    Xbyak::Reg64 reg_work_batch = r13;
+    Xbyak::Reg64 reg_table = r14;
     Xbyak::Reg64 reg_params = abi_param1;
 
-    Xbyak::Reg8 reg_tmp_8 = r13b;
-    Xbyak::Reg32 reg_tmp_32 = r13d;
-    Xbyak::Reg64 reg_tmp_64 = r13;
+    Xbyak::Reg8 reg_tmp_8 = r15b;
+    Xbyak::Reg32 reg_tmp_32 = r15d;
+    Xbyak::Reg64 reg_tmp_64 = r15;
+
+    Xbyak::Reg64 reg_src_aux = rax;
+    Xbyak::Reg64 reg_work_batch_aux = rbx;
 
     Vmm vmm_aux = Vmm(0);
     Xmm xmm_aux = Xmm(0);
@@ -160,11 +172,10 @@ private:
 
     const Xbyak::Opmask k_mask = Xbyak::Opmask(1);
 
-    std::unique_ptr<jit_emu_vcvtneps2bf16> emu_vcvtneps2bf16;
-
     Xbyak::Label l_table;
 
-    std::shared_ptr<jit_uni_eltwise_injector_f32<isa>> exp_injector;
+    std::unique_ptr<jit_emu_vcvtneps2bf16> emu_vcvtneps2bf16;
+    std::unique_ptr<jit_uni_eltwise_injector_f32<isa>> exp_injector;
 
     inline void reduce_main() {
         // ================================================================
@@ -226,9 +237,11 @@ private:
         Xbyak::Label reduce_to_vector_label;
         Xbyak::Label reduce_to_scalar_label;
         Xbyak::Label reduce_main_end_label;
-        if (jcp_.planar_layout) {
+        if (planar_layout) {
             cmp(reg_reduce_w, 1); // planar layout reducing W
             je(reduce_to_scalar_label, T_NEAR);
+
+            init_reg_planar_reduce_non_w();
         }
 
         // store vmm_dst directly into memory after reducing
@@ -246,26 +259,18 @@ private:
             // load
             load_dst_vector();
 
+            // reduce
             Xbyak::Label reduce_loop_label;
             Xbyak::Label reduce_loop_end_label;
-
-            // reduce
             L(reduce_loop_label);
             {
                 cmp(reg_work_amount, step);
                 jl(reduce_loop_end_label, T_NEAR);
 
-                load_vector(vmm_src, ptr[reg_src], jcp_.src_dt);
-                reduce_kernel(vmm_src, vmm_dst);
-
-                if (isa == cpu::x64::sse41) {
-                    load_vector(vmm_src, ptr[reg_src + 4 * jcp_.src_data_size], jcp_.src_dt);
-                    reduce_kernel(vmm_src, vmm_dst_aux);
-                }
+                reduce_batch();
 
                 add(reg_src, step * jcp_.src_data_size);
                 sub(reg_work_amount, step);
-
                 jmp(reduce_loop_label, T_NEAR);
             }
             L(reduce_loop_end_label);
@@ -326,7 +331,7 @@ private:
             }
             // store
             // store after horizontal calculation and calculation with loaded original ptr[reg_dst]
-            load_embedded_horiz_reduce_store(vmm_dst, jcp_.dst_dt);
+            horiz_reduce_store(vmm_dst, jcp_.dst_dt, true);
         }
 
         L(reduce_main_end_label);
@@ -340,9 +345,11 @@ private:
         Xbyak::Label tail_dst_shifted_label;
         Xbyak::Label tail_dst_fixed_label;
         Xbyak::Label reduce_tail_end_label;
-        if (jcp_.planar_layout) {
+        if (planar_layout) {
             cmp(reg_reduce_w, 1);  // planar layout reducing W
             je(tail_dst_fixed_label, T_NEAR);
+
+            init_reg_planar_reduce_non_w();
         }
 
         // each src scalar reduce to each dst scalar (X1, X2, X3, ...) -> (Y1, Y2, Y3, ...)
@@ -360,18 +367,9 @@ private:
 
                 // load
                 load_scalar(xmm_dst, ptr[reg_dst], jcp_.dst_dt);
-                load_scalar(xmm_src, ptr[reg_src], jcp_.src_dt);
 
                 // reduce
-                reduce_kernel_scalar(xmm_src, xmm_dst);
-                if (jcp_.reduce_mode == ReduceOr) {
-                    if (isa == cpu::x64::sse41) {
-                        cmpneqps(xmm_dst, xmm_zero);
-                    } else {
-                        vcmpneqps(xmm_dst, xmm_dst, xmm_zero);
-                    }
-                    uni_vandps(xmm_dst, xmm_dst, xmm_aux);
-                }
+                reduce_batch_tail();
 
                 // store
                 store_scalar(ptr[reg_dst], xmm_dst, jcp_.dst_dt);
@@ -425,10 +423,92 @@ private:
 
             // store
             store_scalar(ptr[reg_dst], xmm_dst, jcp_.dst_dt);
-            add(reg_dst, step * jcp_.dst_data_size);
         }
 
         L(reduce_tail_end_label);
+    }
+
+    inline void init_reg_planar_reduce_non_w() {
+        mov(reg_work_batch, ptr[reg_params + GET_OFF(work_batch)]);
+        mov(reg_reduce_w_stride, ptr[reg_params + GET_OFF(reduce_w_stride)]);
+        mul_by_const(reg_reduce_w_stride, reg_tmp_64, jcp_.src_data_size);
+    }
+
+    inline void reduce_batch() {
+        if (planar_layout) {
+            mov(reg_src_aux, reg_src);
+            mov(reg_work_batch_aux, reg_work_batch);
+
+            Xbyak::Label reduce_batch_loop_label;
+            Xbyak::Label reduce_batch_loop_end_label;
+            L(reduce_batch_loop_label);
+            {
+                cmp(reg_work_batch_aux, 1);
+                jl(reduce_batch_loop_end_label, T_NEAR);
+
+                load_vector(vmm_src, ptr[reg_src_aux], jcp_.src_dt);
+                reduce_kernel(vmm_src, vmm_dst);
+                if (isa == cpu::x64::sse41) {
+                    load_vector(vmm_src, ptr[reg_src_aux + 4 * jcp_.src_data_size], jcp_.src_dt);
+                    reduce_kernel(vmm_src, vmm_dst_aux);
+                }
+
+                add(reg_src_aux, reg_reduce_w_stride);
+                sub(reg_work_batch_aux, 1);
+                jmp(reduce_batch_loop_label, T_NEAR);
+            }
+            L(reduce_batch_loop_end_label);
+        } else {
+            load_vector(vmm_src, ptr[reg_src], jcp_.src_dt);
+            reduce_kernel(vmm_src, vmm_dst);
+
+            if (isa == cpu::x64::sse41) {
+                load_vector(vmm_src, ptr[reg_src + 4 * jcp_.src_data_size], jcp_.src_dt);
+                reduce_kernel(vmm_src, vmm_dst_aux);
+            }
+        }
+    }
+
+    inline void reduce_batch_tail() {
+        if (planar_layout) {
+            mov(reg_src_aux, reg_src);
+            mov(reg_work_batch_aux, reg_work_batch);
+
+            Xbyak::Label reduce_batch_loop_label;
+            Xbyak::Label reduce_batch_loop_end_label;
+            L(reduce_batch_loop_label);
+            {
+                cmp(reg_work_batch_aux, 1);
+                jl(reduce_batch_loop_end_label, T_NEAR);
+
+                load_scalar(xmm_src, ptr[reg_src_aux], jcp_.src_dt);
+                reduce_kernel_scalar(xmm_src, xmm_dst);
+                if (jcp_.reduce_mode == ReduceOr) {
+                    if (isa == cpu::x64::sse41) {
+                        cmpneqps(xmm_dst, xmm_zero);
+                    } else {
+                        vcmpneqps(xmm_dst, xmm_dst, xmm_zero);
+                    }
+                    uni_vandps(xmm_dst, xmm_dst, xmm_aux);
+                }
+
+                add(reg_src_aux, reg_reduce_w_stride);
+                sub(reg_work_batch_aux, 1);
+                jmp(reduce_batch_loop_label, T_NEAR);
+            }
+            L(reduce_batch_loop_end_label);
+        } else {
+            load_scalar(xmm_src, ptr[reg_src], jcp_.src_dt);
+            reduce_kernel_scalar(xmm_src, xmm_dst);
+            if (jcp_.reduce_mode == ReduceOr) {
+                if (isa == cpu::x64::sse41) {
+                    cmpneqps(xmm_dst, xmm_zero);
+                } else {
+                    vcmpneqps(xmm_dst, xmm_dst, xmm_zero);
+                }
+                uni_vandps(xmm_dst, xmm_dst, xmm_aux);
+            }
+        }
     }
 
     inline void reduce_main_loop() {
@@ -715,15 +795,15 @@ private:
         }
     }
 
-    inline void load_embedded_horiz_reduce_store(Vmm vmm_dst, memory::data_type dst_dt) {
+    inline void horiz_reduce_store(Vmm vmm_dst, memory::data_type dst_dt, bool load_embedded = false) {
         if (isa == cpu::x64::sse41) {
-            load_embedded_horiz_store(vmm_dst, dst_dt);
+            horiz_store(vmm_dst, dst_dt, load_embedded);
         } else if (isa == cpu::x64::avx2) {
             Xbyak::Ymm ymm_dst = Xbyak::Ymm(vmm_dst.getIdx());
             vextractf128(xmm_aux1, ymm_dst, 0);
             vextractf128(xmm_aux2, ymm_dst, 1);
             horiz_ps(xmm_aux1, xmm_aux2);
-            load_embedded_horiz_store(xmm_aux1, dst_dt);
+            horiz_store(xmm_aux1, dst_dt, load_embedded);
         } else {
             Xbyak::Zmm zmm_dst = Xbyak::Zmm(vmm_dst.getIdx());
             vextractf32x4(xmm_aux1, zmm_dst, 0);
@@ -733,45 +813,20 @@ private:
             vextractf32x4(xmm_aux3, zmm_dst, 3);
             horiz_ps(xmm_aux2, xmm_aux3);
             horiz_ps(xmm_aux1, xmm_aux2);
-            load_embedded_horiz_store(xmm_aux1, dst_dt);
+            horiz_store(xmm_aux1, dst_dt, load_embedded);
         }
     }
 
-    inline void load_embedded_horiz_store(Xbyak::Xmm xmm_dst, memory::data_type dst_dt) {
+    inline void horiz_store(Xbyak::Xmm xmm_dst, memory::data_type dst_dt, bool load_embedded) {
         movshdup(xmm_aux3, xmm_dst); // dst:1,2,3,4; aux3:2,2,4,4
         horiz_ps(xmm_dst, xmm_aux3); // dst:f(1,2),f(2,2),f(3,4),f(4,4)
         movhlps(xmm_aux3, xmm_dst);  // aux3:f(3,4),f(4,4),4,4
         horiz_ps(xmm_dst, xmm_aux3); // dst:f(1,2,3,4),...
-        load_scalar(xmm_aux3, ptr[reg_dst], dst_dt);
-
-        switch (dst_dt) {
-            case memory::data_type::f32:
-            case memory::data_type::bf16:
-                horiz_ps(xmm_dst, xmm_aux3);
-                store_scalar(ptr[reg_dst], xmm_dst, dst_dt);
-                break;
-            case memory::data_type::s32:
-                horiz_ps(xmm_dst, xmm_aux3);
-                uni_vcvtps2dq(xmm_dst, xmm_dst);
-                movss(ptr[reg_dst], xmm_dst);
-                break;
-            case memory::data_type::u8:
-                horiz_ps(xmm_dst, xmm_aux3);
-                uni_vcvtps2dq(xmm_dst, xmm_dst);
-                uni_vpackusdw(xmm_dst, xmm_dst, xmm_dst);
-                uni_vpackuswb(xmm_dst, xmm_dst, xmm_dst);
-                pextrb(ptr[reg_dst], xmm_dst, 0);
-                break;
-            case memory::data_type::s8:
-                horiz_ps(xmm_dst, xmm_aux3);
-                uni_vcvtps2dq(xmm_dst, xmm_dst);
-                uni_vpackssdw(xmm_dst, xmm_dst, xmm_dst);
-                uni_vpacksswb(xmm_dst, xmm_dst, xmm_dst);
-                pextrb(ptr[reg_dst], xmm_dst, 0);
-                break;
-            default:
-                assert(!"unknown dst_dt");
+        if (load_embedded) {
+            load_scalar(xmm_aux3, ptr[reg_dst], dst_dt);
+            horiz_ps(xmm_dst, xmm_aux3);
         }
+        store_scalar(ptr[reg_dst], xmm_dst, dst_dt);
     }
 
     inline void horiz_ps(const Xmm& xmm, const Operand& op) {
@@ -837,8 +892,8 @@ template <cpu_isa_t isa>
 struct jit_uni_reduce_post_kernel_f32 : public jit_uni_reduce_post_kernel, public jit_generator {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_reduce_post_kernel_f32)
 
-    explicit jit_uni_reduce_post_kernel_f32(jit_reduce_config_params jcp)
-    : jit_uni_reduce_post_kernel(jcp), jit_generator() {}
+    explicit jit_uni_reduce_post_kernel_f32(jit_reduce_config_params jcp, const mkldnn_primitive_attr &attr)
+    : jit_uni_reduce_post_kernel(jcp, attr), jit_generator() {}
 
     void create_ker() override {
         jit_generator::create_kernel();
@@ -846,25 +901,69 @@ struct jit_uni_reduce_post_kernel_f32 : public jit_uni_reduce_post_kernel, publi
     }
 
     void generate() override {
-        log_injector.reset(new jit_uni_eltwise_injector_f32<isa>(this, alg_kind::eltwise_log, 0.f, 0.f, 1.f));
+        const auto &p = attr_.post_ops_;
+        for (int i = 0; i < p.len(); i++) {
+            auto &post_op = p.entry_[i];
+            if (post_op.is_eltwise()) {
+                eltwise_injectors.push_back(MKLDNNPlugin::make_unique<jit_uni_eltwise_injector_f32<isa>>(
+                        this, post_op.eltwise.alg, post_op.eltwise.alpha, post_op.eltwise.beta, post_op.eltwise.scale));
+            } else if (post_op.is_depthwise()) {
+                depthwise_injectors.push_back(MKLDNNPlugin::make_unique<jit_uni_depthwise_injector_f32<isa>>(
+                        this, post_op.depthwise.alg));
+            } else if (post_op.is_quantization()) {
+                quantization_injectors.push_back(MKLDNNPlugin::make_unique<jit_uni_quantization_injector_f32<isa>>(
+                        this, post_op, vmm_d_weights, vmm_d_bias, reg_d_weights, reg_d_bias));
+            }
+        }
+
+        if (jcp_.reduce_mode == ReduceLogSum || jcp_.reduce_mode == ReduceLogSumExp) {
+            log_injector = MKLDNNPlugin::make_unique<jit_uni_eltwise_injector_f32<isa>>(this, alg_kind::eltwise_log, 0.f, 0.f, 1.f);
+        }
 
         if (!mayiuse(avx512_core_bf16) && mayiuse(avx512_core))
-            emu_vcvtneps2bf16.reset(new jit_emu_vcvtneps2bf16(this, isa, nullptr));
+            emu_vcvtneps2bf16 = MKLDNNPlugin::make_unique<jit_emu_vcvtneps2bf16>(this, isa, nullptr);
 
         this->preamble();
 
-        mov(reg_dst, ptr[reg_params + GET_OFF(dst)]);
-        mov(reg_work_amount, ptr[reg_params + GET_OFF(work_amount)]);
-        mov(reg_divisor, ptr[reg_params + GET_OFF(divisor)]);
-        if (!jcp_.planar_layout)
-            mov(reg_reduce_c, ptr[reg_params + GET_OFF(reduce_c)]);
+        planar_layout = jcp_.layout == ReduceLayoutType::reduce_ncsp || jcp_.layout == ReduceLayoutType::reduce_nspc;
+
+        mov(reg_dst, ptr[reg_params + GET_OFF_POST(dst)]);
+        mov(reg_work_amount, ptr[reg_params + GET_OFF_POST(work_amount)]);
+        mov(reg_channel_size, ptr[reg_params + GET_OFF_POST(channel_size)]);
+        mov(reg_divisor, ptr[reg_params + GET_OFF_POST(divisor)]);
+        if (!planar_layout)
+            mov(reg_reduce_c, ptr[reg_params + GET_OFF_POST(reduce_c)]);
+        if (attr_.post_ops_.len() != 0)
+            mov(reg_oc_off, ptr[reg_params + GET_OFF_POST(oc_off)]);
 
         if (isa == cpu::x64::avx512_common)
             uni_vpxor(vmm_zero, vmm_zero, vmm_zero);
 
-        reduce_post_main();
-        if (jcp_.planar_layout)
+        if (jcp_.layout == ReduceLayoutType::reduce_blocked) {
+            reduce_post_main();
+        } else if (jcp_.layout == ReduceLayoutType::reduce_nspc && attr_.post_ops_.len() != 0) {
+            // the tail of channel dimension should always be concerned during post ops fusing for nspc layout
+            Xbyak::Label reduce_nspc_loop_label;
+            Xbyak::Label reduce_nspc_loop_end_label;
+            mov(reg_total_work_amount, reg_work_amount);
+            L(reduce_nspc_loop_label);
+            {
+                cmp(reg_total_work_amount, 0);
+                jle(reduce_nspc_loop_end_label, T_NEAR);
+
+                mov(reg_oc_off, 0);
+                mov(reg_work_amount, reg_channel_size);
+                reduce_post_main();
+                reduce_post_tail();
+
+                sub(reg_total_work_amount, reg_channel_size);
+                jmp(reduce_nspc_loop_label, T_NEAR);
+            }
+            L(reduce_nspc_loop_end_label);
+        } else {
+            reduce_post_main();
             reduce_post_tail();
+        }
 
         this->postamble();
 
@@ -874,22 +973,32 @@ struct jit_uni_reduce_post_kernel_f32 : public jit_uni_reduce_post_kernel, publi
         if (jcp_.reduce_mode == ReduceLogSum || jcp_.reduce_mode == ReduceLogSumExp) {
             log_injector->prepare_table();
         }
+
+        for (auto& inj : eltwise_injectors)
+            inj->prepare_table();
     }
 
 private:
     using Vmm = typename conditional3<isa == cpu::x64::sse41, Xbyak::Xmm, isa == cpu::x64::avx2,
             Xbyak::Ymm, Xbyak::Zmm>::type;
     size_t vlen = cpu_isa_traits<isa>::vlen;
+    bool planar_layout;
 
     Xbyak::Reg64 reg_dst = r8;
     Xbyak::Reg64 reg_work_amount = r9;
-    Xbyak::Reg64 reg_divisor = r10;
-    Xbyak::Reg64 reg_reduce_c = r11;
+    Xbyak::Reg64 reg_total_work_amount = r10;
+    Xbyak::Reg64 reg_channel_size = r11;
+    Xbyak::Reg64 reg_divisor = r12;
+    Xbyak::Reg64 reg_reduce_c = r13;
     Xbyak::Reg64 reg_params = abi_param1;
 
-    Xbyak::Reg8 reg_tmp_8 = r12b;
-    Xbyak::Reg32 reg_tmp_32 = r12d;
-    Xbyak::Reg64 reg_tmp_64 = r12;
+    Xbyak::Reg8 reg_tmp_8 = r14b;
+    Xbyak::Reg32 reg_tmp_32 = r14d;
+    Xbyak::Reg64 reg_tmp_64 = r14;
+
+    Xbyak::Reg64 reg_oc_off = rax;
+    Xbyak::Reg64 reg_d_weights = rbx;
+    Xbyak::Reg64 reg_d_bias = rdx;
 
     Vmm vmm_aux = Vmm(0);
     Xmm xmm_aux = Xmm(0);
@@ -901,14 +1010,20 @@ private:
     Xbyak::Xmm xmm_aux2 = Xbyak::Xmm(5);
     Xbyak::Xmm xmm_aux3 = Xbyak::Xmm(6);
 
-    std::unique_ptr<jit_emu_vcvtneps2bf16> emu_vcvtneps2bf16;
+    Vmm vmm_d_weights = Vmm(7);
+    Vmm vmm_d_bias = Vmm(8);
 
-    std::shared_ptr<jit_uni_eltwise_injector_f32<isa>> log_injector;
+    std::unique_ptr<jit_emu_vcvtneps2bf16> emu_vcvtneps2bf16;
+    std::unique_ptr<jit_uni_eltwise_injector_f32<isa>> log_injector;
+
+    std::vector<std::unique_ptr<jit_uni_eltwise_injector_f32<isa>>> eltwise_injectors;
+    std::vector<std::unique_ptr<jit_uni_depthwise_injector_f32<isa>>> depthwise_injectors;
+    std::vector<std::unique_ptr<jit_uni_quantization_injector_f32<isa>>> quantization_injectors;
 
     inline void reduce_post_main() {
         Xbyak::Label reduce_channel_label;
         Xbyak::Label reduce_map_label;
-        if (jcp_.planar_layout) {
+        if (planar_layout) {
             jmp(reduce_map_label, T_NEAR);
         } else {
             cmp(reg_reduce_c, 1);
@@ -937,7 +1052,7 @@ private:
                 // reduce and store
                 horiz_reduce_store(vmm_dst, jcp_.dst_dt);
                 if (isa == cpu::x64::sse41)
-                    load_embedded_horiz_reduce_store(vmm_dst_aux, jcp_.dst_dt);
+                    horiz_reduce_store(vmm_dst_aux, jcp_.dst_dt, true);
 
                 add(reg_dst, step * jcp_.dst_data_size);
                 sub(reg_work_amount, step);
@@ -946,8 +1061,8 @@ private:
             }
             L(reduce_loop_end_label);
 
-            mov(reg_dst, ptr[reg_params + GET_OFF(dst)]);
-            mov(reg_work_amount, ptr[reg_params + GET_OFF(work_amount)]);
+            mov(reg_dst, ptr[reg_params + GET_OFF_POST(dst)]);
+            mov(reg_work_amount, ptr[reg_params + GET_OFF_POST(work_amount)]);
         }
 
         // reduce map for value in dst memory
@@ -968,27 +1083,63 @@ private:
                     cmp(reg_work_amount, step);
                     jl(reduce_loop_end_label, T_NEAR);
 
-                    // load
                     load_vector(vmm_dst, ptr[reg_dst], jcp_.dst_dt);
-                    if (isa == cpu::x64::sse41)
-                        load_vector(vmm_dst_aux, ptr[reg_dst + 4 * jcp_.dst_data_size], jcp_.dst_dt);
-
-                    // reduce
                     reduce_map_kernel(vmm_dst);
-                    if (isa == cpu::x64::sse41)
-                        reduce_map_kernel(vmm_dst_aux);
-
-                    // store
+                    if (attr_.post_ops_.len() != 0)
+                        apply_post_ops(jcp_.dst_dt, jcp_.layout == ReduceLayoutType::reduce_ncsp);
                     store_vector(ptr[reg_dst], vmm_dst, jcp_.dst_dt);
-                    if (isa == cpu::x64::sse41)
-                        store_vector(ptr[reg_dst + 4 * jcp_.dst_data_size], vmm_dst_aux, jcp_.dst_dt);
+
+                    if (isa == cpu::x64::sse41) {
+                        load_vector(vmm_dst, ptr[reg_dst + 4 * jcp_.dst_data_size], jcp_.dst_dt);
+                        reduce_map_kernel(vmm_dst);
+                        if (attr_.post_ops_.len() != 0) {
+                            add(reg_oc_off, 4 * sizeof(float));
+                            apply_post_ops(jcp_.dst_dt, jcp_.layout == ReduceLayoutType::reduce_ncsp);
+                            sub(reg_oc_off, 4 * sizeof(float));
+                        }
+                        store_vector(ptr[reg_dst + 4 * jcp_.dst_data_size], vmm_dst, jcp_.dst_dt);
+                    }
 
                     add(reg_dst, step * jcp_.dst_data_size);
+                    if (jcp_.layout == ReduceLayoutType::reduce_nspc && attr_.post_ops_.len() != 0)
+                        add(reg_oc_off, step * sizeof(float));
                     sub(reg_work_amount, step);
 
                     jmp(reduce_loop_label, T_NEAR);
                 }
                 L(reduce_loop_end_label);
+            } else {
+                if (attr_.post_ops_.len() != 0) {
+                    Xbyak::Label reduce_loop_label;
+                    Xbyak::Label reduce_loop_end_label;
+
+                    int step = vlen / sizeof(float) < 8 ? 8 : vlen / sizeof(float);
+                    L(reduce_loop_label);
+                    {
+                        cmp(reg_work_amount, step);
+                        jl(reduce_loop_end_label, T_NEAR);
+
+                        load_vector(vmm_dst, ptr[reg_dst], jcp_.dst_dt);
+                        apply_post_ops(jcp_.dst_dt, jcp_.layout == ReduceLayoutType::reduce_ncsp);
+                        store_vector(ptr[reg_dst], vmm_dst, jcp_.dst_dt);
+
+                        if (isa == cpu::x64::sse41) {
+                            load_vector(vmm_dst, ptr[reg_dst + 4 * jcp_.dst_data_size], jcp_.dst_dt);
+                            add(reg_oc_off, 4 * sizeof(float));
+                            apply_post_ops(jcp_.dst_dt, jcp_.layout == ReduceLayoutType::reduce_ncsp);
+                            sub(reg_oc_off, 4 * sizeof(float));
+                            store_vector(ptr[reg_dst + 4 * jcp_.dst_data_size], vmm_dst, jcp_.dst_dt);
+                        }
+
+                        add(reg_dst, step * jcp_.dst_data_size);
+                        if (jcp_.layout == ReduceLayoutType::reduce_nspc && attr_.post_ops_.len() != 0)
+                            add(reg_oc_off, step * sizeof(float));
+                        sub(reg_work_amount, step);
+
+                        jmp(reduce_loop_label, T_NEAR);
+                    }
+                    L(reduce_loop_end_label);
+                }
             }
         }
     }
@@ -1017,14 +1168,84 @@ private:
                 reduce_map_kernel_scalar(xmm_dst);
 
                 // store
+                if (attr_.post_ops_.len() != 0)
+                    apply_post_ops(jcp_.dst_dt, jcp_.layout == ReduceLayoutType::reduce_ncsp);
                 store_scalar(ptr[reg_dst], xmm_dst, jcp_.dst_dt);
 
                 add(reg_dst, step * jcp_.dst_data_size);
+                if (jcp_.layout == ReduceLayoutType::reduce_nspc && attr_.post_ops_.len() != 0)
+                    add(reg_oc_off, step * sizeof(float));
                 sub(reg_work_amount, step);
 
                 jmp(reduce_loop_label, T_NEAR);
             }
             L(reduce_loop_end_label);
+        } else {
+            if (attr_.post_ops_.len() != 0) {
+                Xbyak::Label reduce_loop_label;
+                Xbyak::Label reduce_loop_end_label;
+
+                int step = 1;
+                L(reduce_loop_label);
+                {
+                    cmp(reg_work_amount, step);
+                    jl(reduce_loop_end_label, T_NEAR);
+
+                    // load
+                    load_scalar(xmm_dst, ptr[reg_dst], jcp_.dst_dt);
+
+                    // store
+                    apply_post_ops(jcp_.dst_dt, jcp_.layout == ReduceLayoutType::reduce_ncsp);
+                    store_scalar(ptr[reg_dst], xmm_dst, jcp_.dst_dt);
+
+                    add(reg_dst, step * jcp_.dst_data_size);
+                    if (jcp_.layout == ReduceLayoutType::reduce_nspc && attr_.post_ops_.len() != 0)
+                        add(reg_oc_off, step * sizeof(float));
+                    sub(reg_work_amount, step);
+
+                    jmp(reduce_loop_label, T_NEAR);
+                }
+                L(reduce_loop_end_label);
+            }
+        }
+    }
+
+    void apply_post_ops(memory::data_type dst_dt, bool is_broadcast) {
+        const auto &p = attr_.post_ops_;
+        int eltwise_inj_idx = 0;
+        int depthwise_inj_idx = 0;
+        int quantization_inj_idx = 0;
+        for (int i = 0; i < p.len(); i++) {
+            auto& post_op = p.entry_[i];
+            if (post_op.is_eltwise()) {
+                eltwise_injectors[eltwise_inj_idx]->compute_vector_range(vmm_dst.getIdx(), vmm_dst.getIdx() + 1);
+                eltwise_inj_idx++;
+            } else if (post_op.is_depthwise()) {
+                mov(reg_d_weights, reinterpret_cast<size_t>(post_op.depthwise.weights_data));
+                mov(reg_d_bias, reinterpret_cast<size_t>(post_op.depthwise.biases_data));
+                add(reg_d_weights, reg_oc_off);
+                add(reg_d_bias, reg_oc_off);
+                depthwise_injectors[depthwise_inj_idx]->compute_vector_range(vmm_dst.getIdx(), vmm_dst.getIdx() + 1, reg_d_weights, reg_d_bias, is_broadcast);
+                depthwise_inj_idx++;
+            } else if (post_op.is_quantization()) {
+                bool do_dequantization = post_op.quantization.alg == alg_kind::quantization_quantize_dequantize;
+                bool do_rounding = do_dequantization || isFloatCompatible(dst_dt) || i != p.len() - 1;
+
+                int s_idx = vmm_dst.getIdx();
+
+                quantization_injectors[quantization_inj_idx]->init_crop_ptrs(reg_oc_off);
+                quantization_injectors[quantization_inj_idx]->compute_crop(s_idx, s_idx + 1, 0, 0, is_broadcast);
+
+                quantization_injectors[quantization_inj_idx]->init_input_scale_shift_ptrs(reg_oc_off);
+                quantization_injectors[quantization_inj_idx]->compute_input_scale_shift(s_idx, s_idx + 1, 0, do_rounding, 0, is_broadcast);
+
+                if (do_dequantization) {
+                    quantization_injectors[quantization_inj_idx]->init_output_scale_shift_ptrs(reg_oc_off);
+                    quantization_injectors[quantization_inj_idx]->compute_output_scale_shift(s_idx, s_idx + 1, 0, 0, is_broadcast);
+                }
+
+                quantization_inj_idx++;
+            }
         }
     }
 
@@ -1182,15 +1403,15 @@ private:
         }
     }
 
-    inline void horiz_reduce_store(Vmm vmm_dst, memory::data_type dst_dt) {
+    inline void horiz_reduce_store(Vmm vmm_dst, memory::data_type dst_dt, bool load_embedded = false) {
         if (isa == cpu::x64::sse41) {
-            horize_store(vmm_dst, dst_dt);
+            horiz_store(vmm_dst, dst_dt, load_embedded);
         } else if (isa == cpu::x64::avx2) {
             Xbyak::Ymm ymm_dst = Xbyak::Ymm(vmm_dst.getIdx());
             vextractf128(xmm_aux1, ymm_dst, 0);
             vextractf128(xmm_aux2, ymm_dst, 1);
             horiz_ps(xmm_aux1, xmm_aux2);
-            horize_store(xmm_aux1, dst_dt);
+            horiz_store(xmm_aux1, dst_dt, load_embedded);
         } else {
             Xbyak::Zmm zmm_dst = Xbyak::Zmm(vmm_dst.getIdx());
             vextractf32x4(xmm_aux1, zmm_dst, 0);
@@ -1200,101 +1421,20 @@ private:
             vextractf32x4(xmm_aux3, zmm_dst, 3);
             horiz_ps(xmm_aux2, xmm_aux3);
             horiz_ps(xmm_aux1, xmm_aux2);
-            horize_store(xmm_aux1, dst_dt);
+            horiz_store(xmm_aux1, dst_dt, load_embedded);
         }
     }
 
-    inline void horize_store(Xbyak::Xmm xmm_dst, memory::data_type dst_dt) {
+    inline void horiz_store(Xbyak::Xmm xmm_dst, memory::data_type dst_dt, bool load_embedded) {
         movshdup(xmm_aux3, xmm_dst); // dst:1,2,3,4; aux3:2,2,4,4
         horiz_ps(xmm_dst, xmm_aux3); // dst:f(1,2),f(2,2),f(3,4),f(4,4)
         movhlps(xmm_aux3, xmm_dst);  // aux3:f(3,4),f(4,4),4,4
         horiz_ps(xmm_dst, xmm_aux3); // dst:f(1,2,3,4),...
-        switch (dst_dt) {
-            case memory::data_type::f32:
-                movss(ptr[reg_dst], xmm_dst);
-                break;
-            case memory::data_type::bf16:
-                uni_vpsrld(xmm_dst, xmm_dst, 16);
-                pextrw(ptr[reg_dst], xmm_dst, 0x0);
-                break;
-            case memory::data_type::s32:
-                uni_vcvtps2dq(xmm_dst, xmm_dst);
-                movss(ptr[reg_dst], xmm_dst);
-                break;
-            case memory::data_type::u8:
-                uni_vcvtps2dq(xmm_dst, xmm_dst);
-                uni_vpackusdw(xmm_dst, xmm_dst, xmm_dst);
-                uni_vpackuswb(xmm_dst, xmm_dst, xmm_dst);
-                pextrb(ptr[reg_dst], xmm_dst, 0);
-                break;
-            case memory::data_type::s8:
-                uni_vcvtps2dq(xmm_dst, xmm_dst);
-                uni_vpackssdw(xmm_dst, xmm_dst, xmm_dst);
-                uni_vpacksswb(xmm_dst, xmm_dst, xmm_dst);
-                pextrb(ptr[reg_dst], xmm_dst, 0);
-                break;
-            default:
-                assert(!"unknown dst_dt");
+        if (load_embedded) {
+            load_scalar(xmm_aux3, ptr[reg_dst], dst_dt);
+            horiz_ps(xmm_dst, xmm_aux3);
         }
-    }
-
-    inline void load_embedded_horiz_reduce_store(Vmm vmm_dst, memory::data_type dst_dt) {
-        if (isa == cpu::x64::sse41) {
-            load_embedded_horiz_store(vmm_dst, dst_dt);
-        } else if (isa == cpu::x64::avx2) {
-            Xbyak::Ymm ymm_dst = Xbyak::Ymm(vmm_dst.getIdx());
-            vextractf128(xmm_aux1, ymm_dst, 0);
-            vextractf128(xmm_aux2, ymm_dst, 1);
-            horiz_ps(xmm_aux1, xmm_aux2);
-            load_embedded_horiz_store(xmm_aux1, dst_dt);
-        } else {
-            Xbyak::Zmm zmm_dst = Xbyak::Zmm(vmm_dst.getIdx());
-            vextractf32x4(xmm_aux1, zmm_dst, 0);
-            vextractf32x4(xmm_aux2, zmm_dst, 1);
-            horiz_ps(xmm_aux1, xmm_aux2);
-            vextractf32x4(xmm_aux2, zmm_dst, 2);
-            vextractf32x4(xmm_aux3, zmm_dst, 3);
-            horiz_ps(xmm_aux2, xmm_aux3);
-            horiz_ps(xmm_aux1, xmm_aux2);
-            load_embedded_horiz_store(xmm_aux1, dst_dt);
-        }
-    }
-
-    inline void load_embedded_horiz_store(Xbyak::Xmm xmm_dst, memory::data_type dst_dt) {
-        movshdup(xmm_aux3, xmm_dst); // dst:1,2,3,4; aux3:2,2,4,4
-        horiz_ps(xmm_dst, xmm_aux3); // dst:f(1,2),f(2,2),f(3,4),f(4,4)
-        movhlps(xmm_aux3, xmm_dst);  // aux3:f(3,4),f(4,4),4,4
-        horiz_ps(xmm_dst, xmm_aux3); // dst:f(1,2,3,4),...
-        load_scalar(xmm_aux3, ptr[reg_dst], dst_dt);
-
-        switch (dst_dt) {
-            case memory::data_type::f32:
-            case memory::data_type::bf16:
-                horiz_ps(xmm_dst, xmm_aux3);
-                store_scalar(ptr[reg_dst], xmm_dst, dst_dt);
-                break;
-            case memory::data_type::s32:
-                horiz_ps(xmm_dst, xmm_aux3);
-                uni_vcvtps2dq(xmm_dst, xmm_dst);
-                movss(ptr[reg_dst], xmm_dst);
-                break;
-            case memory::data_type::u8:
-                horiz_ps(xmm_dst, xmm_aux3);
-                uni_vcvtps2dq(xmm_dst, xmm_dst);
-                uni_vpackusdw(xmm_dst, xmm_dst, xmm_dst);
-                uni_vpackuswb(xmm_dst, xmm_dst, xmm_dst);
-                pextrb(ptr[reg_dst], xmm_dst, 0);
-                break;
-            case memory::data_type::s8:
-                horiz_ps(xmm_dst, xmm_aux3);
-                uni_vcvtps2dq(xmm_dst, xmm_dst);
-                uni_vpackssdw(xmm_dst, xmm_dst, xmm_dst);
-                uni_vpacksswb(xmm_dst, xmm_dst, xmm_dst);
-                pextrb(ptr[reg_dst], xmm_dst, 0);
-                break;
-            default:
-                assert(!"unknown dst_dt");
-        }
+        store_scalar(ptr[reg_dst], xmm_dst, dst_dt);
     }
 
     inline void horiz_ps(const Xmm& xmm, const Operand& op) {
@@ -1366,6 +1506,20 @@ bool MKLDNNReduceNode::isSupportedOperation(const std::shared_ptr<ngraph::Node>&
             errorMessage = "Reduce node with name " + op->get_friendly_name() + " is not derived from ArithmeticReductionKeepDims or LogicalReductionKeepDims";
             return false;
         }
+        if (const auto reduce = std::dynamic_pointer_cast<ngraph::op::util::ArithmeticReductionKeepDims>(op)) {
+            auto reduceConst = std::dynamic_pointer_cast<const ngraph::opset1::Constant>(reduce->get_input_node_shared_ptr(REDUCE_INDEXES));
+            if (!reduceConst) {
+                errorMessage = "Second tensor is not constant";
+                return false;
+            }
+        }
+        if (const auto reduce = std::dynamic_pointer_cast<ngraph::op::util::LogicalReductionKeepDims>(op)) {
+            auto reduceConst = std::dynamic_pointer_cast<const ngraph::opset1::Constant>(reduce->get_input_node_shared_ptr(REDUCE_INDEXES));
+            if (!reduceConst) {
+                errorMessage = "Second tensor is not constant";
+                return false;
+            }
+        }
         if (initializers.find(op->get_type_info()) == initializers.end()) {
             errorMessage = "Doesn't support Reduce algorithm: " +  std::string(op->get_type_info().name);
             return false;
@@ -1388,8 +1542,10 @@ MKLDNNReduceNode::MKLDNNReduceNode(const std::shared_ptr<ngraph::Node>& op, cons
         initializers[op->get_type_info()](op, *this);
         if (const auto reduce = std::dynamic_pointer_cast<ngraph::op::util::ArithmeticReductionKeepDims>(op)) {
             keep_dims = reduce->get_keep_dims();
+            raw_axes = std::dynamic_pointer_cast<const ngraph::opset1::Constant>(reduce->get_input_node_shared_ptr(REDUCE_INDEXES))->cast_vector<int>();
         } else if (const auto reduce = std::dynamic_pointer_cast<ngraph::op::util::LogicalReductionKeepDims>(op)) {
             keep_dims = reduce->get_keep_dims();
+            raw_axes = std::dynamic_pointer_cast<const ngraph::opset1::Constant>(reduce->get_input_node_shared_ptr(REDUCE_INDEXES))->cast_vector<int>();
         }
     } else {
         IE_THROW(NotImplemented) << errorMessage;
@@ -1399,6 +1555,8 @@ MKLDNNReduceNode::MKLDNNReduceNode(const std::shared_ptr<ngraph::Node>& op, cons
 void MKLDNNReduceNode::getSupportedDescriptors() {
     if (!descs.empty())
         return;
+
+    setPostOps(attr, true);
 
     if (getParentEdges().size() != 2)
         IE_THROW() << errorPrefix << " gets incorrect number of input edges!";
@@ -1453,8 +1611,8 @@ void MKLDNNReduceNode::initSupportedPrimitiveDescriptors() {
         }
     }
 
-    auto inputDataType = MKLDNNExtensionUtils::IEPrecisionToDataType(inputPrecision);
-    auto outputDataType = MKLDNNExtensionUtils::IEPrecisionToDataType(outputPrecision);
+    inputDataType = MKLDNNExtensionUtils::IEPrecisionToDataType(inputPrecision);
+    outputDataType = MKLDNNExtensionUtils::IEPrecisionToDataType(outputPrecision);
 
     input_prec = inputPrecision;
     output_prec = outputPrecision;
@@ -1482,6 +1640,8 @@ void MKLDNNReduceNode::initSupportedPrimitiveDescriptors() {
         supportedPrimitiveDescriptors.push_back({config, impl_type});
     };
 
+    auto src_rank = getParentEdgeAt(REDUCE_DATA)->getShape().getRank();
+    auto dst_rank = getChildEdgeAt(0)->getShape().getRank();
     if (jit_mode) {
         impl_desc_type impl_type = impl_desc_type::jit_sse42;
         if (mayiuse(cpu::x64::avx512_common)) {
@@ -1490,63 +1650,104 @@ void MKLDNNReduceNode::initSupportedPrimitiveDescriptors() {
             impl_type = impl_desc_type::jit_avx2;
         }
 
-        pushDesc(MKLDNNMemory::GetPlainFormatByRank(getParentEdgeAt(REDUCE_DATA)->getShape().getRank()),
-                 MKLDNNMemory::GetPlainFormatByRank(getChildEdgeAt(0)->getShape().getRank()), inputDataType, outputDataType, impl_type);
-        if (keep_dims) {
-            if (getParentEdgeAt(REDUCE_DATA)->getShape().getRank() == 4 && getParentEdgeAt(REDUCE_DATA)->getShape().getStaticDims()[1] > 1) {
-                if (mayiuse(cpu::x64::avx512_common)) {
-                    pushDesc(memory::format_tag::nChw16c, memory::format_tag::nChw16c, inputDataType, outputDataType, impl_type);
-                } else if (mayiuse(cpu::x64::avx2) || mayiuse(cpu::x64::sse41)) {
-                    pushDesc(memory::format_tag::nChw8c, memory::format_tag::nChw8c, inputDataType, outputDataType, impl_type);
+        pushDesc(MKLDNNMemory::GetPlainFormatByRank(src_rank), MKLDNNMemory::GetPlainFormatByRank(dst_rank), inputDataType, outputDataType, impl_type);
+        if ((src_rank == 4 || src_rank == 5) && getParentEdgeAt(REDUCE_DATA)->getShape().getStaticDims()[1] > 1) {
+            if (keep_dims) {
+                if (src_rank == 4) {
+                    if (mayiuse(cpu::x64::avx512_common)) {
+                        pushDesc(memory::format_tag::nhwc, memory::format_tag::nhwc, inputDataType, outputDataType, impl_type);
+                        pushDesc(memory::format_tag::nChw16c, memory::format_tag::nChw16c, inputDataType, outputDataType, impl_type);
+                    } else if (mayiuse(cpu::x64::avx2) || mayiuse(cpu::x64::sse41)) {
+                        pushDesc(memory::format_tag::nhwc, memory::format_tag::nhwc, inputDataType, outputDataType, impl_type);
+                        pushDesc(memory::format_tag::nChw8c, memory::format_tag::nChw8c, inputDataType, outputDataType, impl_type);
+                    }
+                } else if (src_rank == 5) {
+                    if (mayiuse(cpu::x64::avx512_common)) {
+                        pushDesc(memory::format_tag::ndhwc, memory::format_tag::ndhwc, inputDataType, outputDataType, impl_type);
+                        pushDesc(memory::format_tag::nCdhw16c, memory::format_tag::nCdhw16c, inputDataType, outputDataType, impl_type);
+                    } else if (mayiuse(cpu::x64::avx2) || mayiuse(cpu::x64::sse41)) {
+                        pushDesc(memory::format_tag::ndhwc, memory::format_tag::ndhwc, inputDataType, outputDataType, impl_type);
+                        pushDesc(memory::format_tag::nCdhw8c, memory::format_tag::nCdhw8c, inputDataType, outputDataType, impl_type);
+                    }
                 }
-            } else if (getParentEdgeAt(REDUCE_DATA)->getShape().getRank() == 5 && getParentEdgeAt(REDUCE_DATA)->getShape().getStaticDims()[1] > 1) {
-                if (mayiuse(cpu::x64::avx512_common)) {
-                    pushDesc(memory::format_tag::nCdhw16c, memory::format_tag::nCdhw16c, inputDataType, outputDataType, impl_type);
-                } else if (mayiuse(cpu::x64::avx2) || mayiuse(cpu::x64::sse41)) {
-                    pushDesc(memory::format_tag::nCdhw8c, memory::format_tag::nCdhw8c, inputDataType, outputDataType, impl_type);
+            } else {
+                auto planar_format = MKLDNNMemory::GetPlainFormatByRank(dst_rank);
+                if (src_rank == 4) {
+                    if (mayiuse(cpu::x64::avx512_common)) {
+                        pushDesc(memory::format_tag::nhwc, planar_format, inputDataType, outputDataType, impl_type);
+                        pushDesc(memory::format_tag::nChw16c, planar_format, inputDataType, outputDataType, impl_type);
+                    } else if (mayiuse(cpu::x64::avx2) || mayiuse(cpu::x64::sse41)) {
+                        pushDesc(memory::format_tag::nhwc, planar_format, inputDataType, outputDataType, impl_type);
+                        pushDesc(memory::format_tag::nChw8c, planar_format, inputDataType, outputDataType, impl_type);
+                    }
+                } else if (src_rank == 5) {
+                    if (mayiuse(cpu::x64::avx512_common)) {
+                        pushDesc(memory::format_tag::ndhwc, planar_format, inputDataType, outputDataType, impl_type);
+                        pushDesc(memory::format_tag::nCdhw16c, planar_format, inputDataType, outputDataType, impl_type);
+                    } else if (mayiuse(cpu::x64::avx2) || mayiuse(cpu::x64::sse41)) {
+                        pushDesc(memory::format_tag::ndhwc, planar_format, inputDataType, outputDataType, impl_type);
+                        pushDesc(memory::format_tag::nCdhw8c, planar_format, inputDataType, outputDataType, impl_type);
+                    }
                 }
             }
         }
     } else {
-        pushDesc(MKLDNNMemory::GetPlainFormatByRank(getParentEdgeAt(REDUCE_DATA)->getShape().getRank()),
-                 MKLDNNMemory::GetPlainFormatByRank(getChildEdgeAt(0)->getShape().getRank()),
+        pushDesc(MKLDNNMemory::GetPlainFormatByRank(src_rank), MKLDNNMemory::GetPlainFormatByRank(dst_rank),
                  memory::data_type::f32, memory::data_type::f32, impl_desc_type::ref);
     }
 }
 
 void MKLDNNReduceNode::createPrimitive() {
     auto &dstMemPtr = getChildEdgeAt(0)->getMemoryPtr();
-    auto &srcDataMemPtr = getParentEdgeAt(REDUCE_DATA)->getMemoryPtr();
-    auto &srcIndexesMemPtr = getParentEdgeAt(REDUCE_INDEXES)->getMemoryPtr();
+    auto &srcMemPtr = getParentEdgeAt(REDUCE_DATA)->getMemoryPtr();
     if (!dstMemPtr || !dstMemPtr->GetPrimitivePtr())
         IE_THROW() << errorPrefix << " has not allocated destination memory.";
-    if (!srcDataMemPtr || !srcDataMemPtr->GetPrimitivePtr() || !srcIndexesMemPtr || !srcIndexesMemPtr->GetPrimitivePtr())
+    if (!srcMemPtr || !srcMemPtr->GetPrimitivePtr())
         IE_THROW() << errorPrefix << " has not allocate input memory.";
     if (getSelectedPrimitiveDescriptor() == nullptr)
         IE_THROW() << errorPrefix << " has nullable preferable primitive descriptor";
 
-    auto selectedPD = getSelectedPrimitiveDescriptor();
-    planar_layout = getParentEdgeAt(REDUCE_DATA)->getMemory().GetDesc().hasLayoutType(LayoutType::ncsp);
+    if (getParentEdgeAt(REDUCE_DATA)->getMemory().GetDesc().hasLayoutType(LayoutType::ncsp)) {
+        layout = ReduceLayoutType::reduce_ncsp;
+    } else if (getParentEdgeAt(REDUCE_DATA)->getMemory().GetDesc().hasLayoutType(LayoutType::nspc)) {
+        layout = ReduceLayoutType::reduce_nspc;
+    } else {
+        layout = ReduceLayoutType::reduce_blocked;
+    }
+
+    // hybrid layout: nspc/blocked layout for input and ncsp for output
+    // !keep_dims is needed to avoid hybrid layout for cases eg. (A, B, C, D) reduce to (A, 1, 1, 1)
+    if (!keep_dims && (layout == ReduceLayoutType::reduce_nspc || layout == ReduceLayoutType::reduce_blocked)) {
+        is_hybrid_layout = getChildEdgeAt(REDUCE_DATA)->getMemory().GetDesc().hasLayoutType(LayoutType::ncsp);
+    }
+
+    src_dims = getParentEdgeAt(REDUCE_DATA)->getShape().getStaticDims();
+    dst_size = dstMemPtr->GetSize();
+    calc_process_dst_dims();
+    if (jit_mode) {
+        set_reduce_dim_flags();
+    }
 
     auto jcp = jit_reduce_config_params();
+    auto selectedPD = getSelectedPrimitiveDescriptor();
     jcp.src_dt = MKLDNNExtensionUtils::IEPrecisionToDataType(selectedPD->getConfig().inConfs[REDUCE_DATA].desc->getPrecision());
     jcp.dst_dt = MKLDNNExtensionUtils::IEPrecisionToDataType(selectedPD->getConfig().outConfs[0].desc->getPrecision());
     jcp.src_data_size = MKLDNNExtensionUtils::sizeOfDataType(jcp.src_dt);
     jcp.dst_data_size = MKLDNNExtensionUtils::sizeOfDataType(jcp.dst_dt);
-    jcp.planar_layout = planar_layout;
+    jcp.layout = layout;
     jcp.reduce_mode = getAlgorithm();
 
     if (mayiuse(cpu::x64::avx512_common)) {
         reduce_kernel.reset(new jit_uni_reduce_kernel_f32<cpu::x64::avx512_common>(jcp));
-        reduce_post_kernel.reset(new jit_uni_reduce_post_kernel_f32<cpu::x64::avx512_common>(jcp));
+        reduce_post_kernel.reset(new jit_uni_reduce_post_kernel_f32<cpu::x64::avx512_common>(jcp, *attr.get()));
         blk_size = 16;
     } else if (mayiuse(cpu::x64::avx2)) {
         reduce_kernel.reset(new jit_uni_reduce_kernel_f32<cpu::x64::avx2>(jcp));
-        reduce_post_kernel.reset(new jit_uni_reduce_post_kernel_f32<cpu::x64::avx2>(jcp));
+        reduce_post_kernel.reset(new jit_uni_reduce_post_kernel_f32<cpu::x64::avx2>(jcp, *attr.get()));
         blk_size = 8;
     } else if (mayiuse(cpu::x64::sse41)) {
         reduce_kernel.reset(new jit_uni_reduce_kernel_f32<cpu::x64::sse41>(jcp));
-        reduce_post_kernel.reset(new jit_uni_reduce_post_kernel_f32<cpu::x64::sse41>(jcp));
+        reduce_post_kernel.reset(new jit_uni_reduce_post_kernel_f32<cpu::x64::sse41>(jcp, *attr.get()));
         blk_size = 8;
     }
 
@@ -1556,52 +1757,23 @@ void MKLDNNReduceNode::createPrimitive() {
     if (reduce_post_kernel)
         reduce_post_kernel->create_ker();
 
-    jit_mode = jit_mode && reduce_kernel;
+    jit_mode = jit_mode && reduce_kernel && reduce_post_kernel;
 }
 
 void MKLDNNReduceNode::execute(mkldnn::stream strm) {
     auto &dstMemPtr = getChildEdgeAt(0)->getMemoryPtr();
     auto &srcMemPtr = getParentEdgeAt(REDUCE_DATA)->getMemoryPtr();
-    auto &srcIndexesMemPtr = getParentEdgeAt(REDUCE_INDEXES)->getMemoryPtr();
-
-    const auto idx_data = reinterpret_cast<const int32_t *>(srcIndexesMemPtr->GetData());
-    size_t dst_size = dstMemPtr->GetSize();
-    src_dims = getParentEdgeAt(REDUCE_DATA)->getShape().getStaticDims();
-    src_strides = getParentEdgeAt(REDUCE_DATA)->getMemory().GetDescWithType<BlockedMemoryDesc>().getStrides();
-    dims_size = src_dims.size();
-    calc_process_dst_dims(idx_data);
-
-    if (dims_size <= 5) {
-        if (dims_size == 5) {
-            SET_SRC_DIM_VALUE(src_dims[0], src_dims[1], src_dims[2], src_dims[3], src_dims[4]);
-            SET_DST_DIM_VALUE(process_dst_dims[0], process_dst_dims[1], process_dst_dims[2], process_dst_dims[3], process_dst_dims[4]);
-        } else if (dims_size == 4) {
-            SET_SRC_DIM_VALUE(src_dims[0], src_dims[1], 1, src_dims[2], src_dims[3]);
-            SET_DST_DIM_VALUE(process_dst_dims[0], process_dst_dims[1], 1, process_dst_dims[2], process_dst_dims[3]);
-        } else if (dims_size == 3) {
-            SET_SRC_DIM_VALUE(1, src_dims[0], 1, src_dims[1], src_dims[2]);
-            SET_DST_DIM_VALUE(1, process_dst_dims[0], 1, process_dst_dims[1], process_dst_dims[2]);
-        } else if (dims_size == 2) {
-            SET_SRC_DIM_VALUE(1, 1, 1, src_dims[0], src_dims[1]);
-            SET_DST_DIM_VALUE(1, 1, 1, process_dst_dims[0], process_dst_dims[1]);
-        } else {
-            SET_SRC_DIM_VALUE(1, src_dims[0], 1, 1, 1);
-            SET_DST_DIM_VALUE(1, process_dst_dims[0], 1, 1, 1);
-        }
-
-        ReduceN = IB != OB && OB == 1;
-        ReduceC = IC != OC && OC == 1;
-        ReduceD = ID != OD && OD == 1;
-        ReduceH = IH != OH && OH == 1;
-        ReduceW = IW != OW && OW == 1;
-    }
 
     const uint8_t *src_data = reinterpret_cast<const uint8_t *>(srcMemPtr->GetPtr());
     uint8_t *dst_data = reinterpret_cast<uint8_t *>(dstMemPtr->GetPtr());
+
     if (jit_mode) {
+        if (is_hybrid_layout) {
+            dst_data = reinterpret_cast<uint8_t *>(prc_mem->get_data_handle());
+        }
         reduce_type(src_data, dst_data, dst_size);
     } else {
-        if (planar_layout) {
+        if (layout == ReduceLayoutType::reduce_ncsp) {
             auto in_ptr = reinterpret_cast<const float *>(src_data);
             auto out_ptr = reinterpret_cast<float *>(dst_data);
             reduce_ref(in_ptr, out_ptr);
@@ -1614,14 +1786,25 @@ void MKLDNNReduceNode::execute(mkldnn::stream strm) {
 void MKLDNNReduceNode::reduce_type(const uint8_t *in_ptr, uint8_t *out_ptr, size_t dst_size) {
     init_dst_data(out_ptr, dst_size);
 
-    if (planar_layout) {
+    if (layout == ReduceLayoutType::reduce_ncsp || layout == ReduceLayoutType::reduce_nspc) {
         reduce_PLN(in_ptr, out_ptr);
     } else {
         if ((algorithm == ReduceAnd || algorithm == ReduceLogSumExp || algorithm == ReduceMax ||
-             algorithm == ReduceMin || algorithm == ReduceProd) && ReduceC) {
+             algorithm == ReduceMin || algorithm == ReduceProd) && ReduceC && (IC % blk_size)) {
             reduce_BLK_concern_padding(in_ptr, out_ptr);
         } else {
             reduce_BLK(in_ptr, out_ptr);
+        }
+    }
+
+    if (is_hybrid_layout) {
+        uint8_t *proc_ptr = out_ptr;
+        auto &dstMemPtr = getChildEdgeAt(0)->getMemoryPtr();
+        out_ptr = reinterpret_cast<uint8_t *>(dstMemPtr->GetPtr());
+        if (layout == ReduceLayoutType::reduce_nspc) {
+            nspc2ncsp(proc_ptr, out_ptr);
+        } else {
+            blocked2ncsp(proc_ptr, out_ptr);
         }
     }
 }
@@ -1664,6 +1847,16 @@ void MKLDNNReduceNode::reduce_PLN(const uint8_t *in_ptr, uint8_t *out_ptr) {
                     }
                 }
             }
+        } else if (ReduceC && ReduceD && ReduceH && !ReduceW) {
+            parallel_for(IW / blk_size, [&](size_t ibw){
+                size_t obw = ibw;
+                reduce_kernel_process(in_ptr_n + ibw * blk_size * src_data_size, out_ptr_n + obw * blk_size * dst_data_size,
+                                      blk_size, 0, IC * ID * IH);
+            });
+
+            size_t tail_start = IW / blk_size * blk_size;
+            reduce_kernel_process(in_ptr_n + tail_start * src_data_size, out_ptr_n + tail_start * dst_data_size,
+                                  IW - tail_start, 0, IC * ID * IH);
         } else {
             for (size_t ic = 0; ic < IC; ic++) {
                 size_t oc = ReduceC ? 0 : ic; GET_PTR_NC_PLN;
@@ -1698,13 +1891,24 @@ void MKLDNNReduceNode::reduce_BLK(const uint8_t *in_ptr, uint8_t *out_ptr) {
                 size_t ocb = icb, od = id; GET_PTR_NCD_BASE_PTR_N_BLK;
                 reduce_kernel_process(in_ptr_ncd, out_ptr_ncd, IH * IW * blk_size);
             });
-        } else if (ReduceH && ReduceW) {
-            for (size_t icb = 0; icb < ICB; icb++) {
-                size_t ocb = ReduceC ? 0 : icb; GET_PTR_NC_BLK;
-                for (size_t id = 0; id < ID; id++) {
-                    size_t od = ReduceD ? 0 : id; GET_PTR_NCD_BLK;
-                    reduce_kernel_process(in_ptr_ncd, out_ptr_ncd, IH * IW * blk_size);
-                }
+        } else if (ReduceC && ReduceD && ReduceH && ReduceW) {
+            if (input_prec != output_prec || getAlgorithm() == ReduceL2 ||
+                 algorithm == ReduceLogSumExp || algorithm == ReduceSumSquare) {
+                reduce_kernel_process(in_ptr_n, out_ptr_n, ICB * ID * IH * IW * blk_size);
+            } else {
+                // reduce parallelly
+                // step1: !ReduceC && ReduceD && ReduceH && ReduceW
+                size_t prc_size = ICB * blk_size * dst_data_size;
+                std::vector<uint8_t> vec_prc(prc_size);
+                init_dst_data(vec_prc.data(), prc_size);
+                uint8_t *out_ptr_n_cp = out_ptr_n;
+                out_ptr_n = vec_prc.data();
+                parallel_for(ICB, [&](size_t icb) {
+                    size_t ocb = icb; GET_PTR_NC_BLK;
+                    reduce_kernel_process(in_ptr_nc, out_ptr_nc, ID * IH * IW * blk_size);
+                });
+                // step2: ReduceC
+                reduce_kernel_process(out_ptr_n, out_ptr_n_cp, ICB * blk_size);
             }
         } else if (ReduceW) {
             for (size_t icb = 0; icb < ICB; icb++) {
@@ -1821,39 +2025,173 @@ void MKLDNNReduceNode::reduce_BLK_concern_padding(const uint8_t *in_ptr, uint8_t
     reduce_kernel_post_process(out_ptr);
 }
 
-inline void MKLDNNReduceNode::reduce_kernel_process(const uint8_t *in_p, uint8_t *out_p, size_t work_amount, size_t reduce_w) {
+inline void MKLDNNReduceNode::reduce_kernel_process(const uint8_t *in_p, uint8_t *out_p, size_t work_amount, size_t reduce_w, size_t work_batch) {
     auto arg = jit_reduce_call_args();
     arg.src = static_cast<const void *>(in_p);
     arg.dst = static_cast<void *>(out_p);
     arg.work_amount = work_amount;
+    arg.work_batch = work_batch;
     arg.reduce_w = reduce_w;
+    arg.reduce_w_stride = IW;
+
     (*reduce_kernel)(&arg);
 }
 
 inline void MKLDNNReduceNode::reduce_kernel_post_process(uint8_t *out_ptr) {
     const float divisor = static_cast<float>(IB * IC * ID * IH * IW / (OB * OC * OD * OH * OW));
-    if (planar_layout) {
-        size_t parallel_amount = OB * OC * OD;
-        parallel_for(parallel_amount, [&](size_t i) {
-            uint8_t *out_p = out_ptr + i * OH * OW * dst_data_size;
-            auto arg = jit_reduce_call_args();
+    if (layout == ReduceLayoutType::reduce_ncsp || layout == ReduceLayoutType::reduce_nspc) {
+        parallel_for2d(OB, OC, [&](size_t ob, size_t oc) {
+            uint8_t *out_p = out_ptr + (ob * OC + oc) * OD * OH * OW * dst_data_size;
+            auto arg = jit_reduce_post_call_args();
             arg.dst = static_cast<void *>(out_p);
-            arg.reduce_c = 2;
-            arg.work_amount = OH * OW;
+            arg.oc_off = layout == ReduceLayoutType::reduce_nspc ? 0 : oc * sizeof(float);
+            arg.channel_size = layout == ReduceLayoutType::reduce_nspc ? OW : OC; // OW is related to nspc-ncsp dimension reinterpret
+            arg.work_amount = OD * OH * OW;
             arg.divisor = &divisor;
             (*reduce_post_kernel)(&arg);
         });
     } else {
         size_t OCB = div_up(OC, blk_size);
-        size_t parallel_amount = OB * OCB * OD;
-        parallel_for(parallel_amount, [&](size_t i) {
-            uint8_t *out_p = out_ptr + i * OH * OW * blk_size * dst_data_size;
-            auto arg = jit_reduce_call_args();
+        parallel_for2d(OB, OCB, [&](size_t ob, size_t ocb) {
+            uint8_t *out_p = out_ptr + (ob * OCB + ocb) * OD * OH * OW * blk_size * dst_data_size;
+            auto arg = jit_reduce_post_call_args();
             arg.dst = static_cast<void *>(out_p);
             arg.reduce_c = ReduceC ? 1 : 0;
-            arg.work_amount = OH * OW * blk_size;
+            arg.oc_off = ocb * blk_size * sizeof(float);
+            arg.work_amount = OD * OH * OW * blk_size;
             arg.divisor = &divisor;
             (*reduce_post_kernel)(&arg);
+        });
+    }
+}
+
+void MKLDNNReduceNode::nspc2ncsp(uint8_t *proc_ptr, uint8_t *out_ptr) {
+    // dimension reinterpret after nspc reusing routine reduce_PLN
+    // demote -- nspc -- ncsp
+    //  DIM0  --   B  --  B
+    //  DIM1  --   C  --  W
+    //  DIM2  --   D  --  C
+    //  DIM3  --   H  --  D
+    //  DIM4  --   W  --  H
+    const size_t DIM0 = OB;
+    const size_t DIM1 = OW;
+    const size_t DIM2 = OC;
+    const size_t DIM3 = OD;
+    const size_t DIM4 = OH;
+    const size_t stride1 = DIM2 * DIM3 * DIM4;
+    const size_t stride0 = stride1 * DIM1;
+
+    if (dst_data_size == 4) {
+        auto src_data = reinterpret_cast<const float *>(proc_ptr);
+        auto dst_data = reinterpret_cast<float *>(out_ptr);
+        parallel_for2d(DIM0, stride1, [&](size_t b, size_t j) {
+            auto src_off = b * stride0 + j * DIM1;
+            auto dst_off = b * stride0 + j;
+            for (size_t dim1 = 0; dim1 < DIM1; dim1++) {
+                dst_data[dst_off] = src_data[src_off];
+                src_off++;
+                dst_off += stride1;
+            }
+        });
+    } else if (dst_data_size == 2) {
+        auto src_data = reinterpret_cast<const uint16_t *>(proc_ptr);
+        auto dst_data = reinterpret_cast<uint16_t *>(out_ptr);
+        parallel_for2d(DIM0, stride1, [&](size_t b, size_t j) {
+            auto src_off = b * stride0 + j * DIM1;
+            auto dst_off = b * stride0 + j;
+            for (size_t dim1 = 0; dim1 < DIM1; dim1++) {
+                dst_data[dst_off] = src_data[src_off];
+                src_off++;
+                dst_off += stride1;
+            }
+        });
+    } else {
+        auto src_data = reinterpret_cast<const uint8_t *>(proc_ptr);
+        auto dst_data = reinterpret_cast<uint8_t *>(out_ptr);
+        parallel_for2d(DIM0, stride1, [&](size_t b, size_t j) {
+            auto src_off = b * stride0 + j * DIM1;
+            auto dst_off = b * stride0 + j;
+            for (size_t dim1 = 0; dim1 < DIM1; dim1++) {
+                dst_data[dst_off] = src_data[src_off];
+                src_off++;
+                dst_off += stride1;
+            }
+        });
+    }
+}
+
+void MKLDNNReduceNode::blocked2ncsp(uint8_t *proc_ptr, uint8_t *out_ptr) {
+    const size_t DIM0 = OB;
+    const size_t DIM1 = OC;
+    const size_t DIM2 = OD;
+    const size_t DIM3 = OH;
+    const size_t DIM4 = OW;
+    const size_t stride1 = DIM2 * DIM3 * DIM4;
+    const size_t src_stride0 = stride1 * div_up(OC, blk_size) * blk_size;
+    const size_t dst_stride0 = stride1 * DIM1;
+
+    if (dst_data_size == 4) {
+        auto src_data = reinterpret_cast<const float *>(proc_ptr);
+        auto dst_data = reinterpret_cast<float *>(out_ptr);
+        parallel_for2d(DIM0, stride1, [&](size_t b, size_t j) {
+            auto src_off = b * src_stride0 + j * blk_size;
+            auto dst_off = b * dst_stride0 + j;
+            for (size_t dim1 = 0; dim1 + blk_size <= DIM1; dim1 += blk_size) {
+                for (size_t k = 0; k < blk_size; k++) {
+                    dst_data[dst_off] = src_data[src_off];
+                    src_off++;
+                    dst_off += stride1;
+                }
+                src_off += (stride1 - 1) * blk_size;
+            }
+            size_t tail = DIM1 % blk_size;
+            for (size_t k = 0; k < tail; k++) {
+                dst_data[dst_off] = src_data[src_off];
+                src_off++;
+                dst_off += stride1;
+            }
+        });
+    } else if (dst_data_size == 2) {
+        auto src_data = reinterpret_cast<const uint16_t *>(proc_ptr);
+        auto dst_data = reinterpret_cast<uint16_t *>(out_ptr);
+        parallel_for2d(DIM0, stride1, [&](size_t b, size_t j) {
+            auto src_off = b * src_stride0 + j * blk_size;
+            auto dst_off = b * dst_stride0 + j;
+            for (size_t dim1 = 0; dim1 + blk_size <= DIM1; dim1 += blk_size) {
+                for (size_t k = 0; k < blk_size; k++) {
+                    dst_data[dst_off] = src_data[src_off];
+                    src_off++;
+                    dst_off += stride1;
+                }
+                src_off += (stride1 - 1) * blk_size;
+            }
+            size_t tail = DIM1 % blk_size;
+            for (size_t k = 0; k < tail; k++) {
+                dst_data[dst_off] = src_data[src_off];
+                src_off++;
+                dst_off += stride1;
+            }
+        });
+    } else {
+        auto src_data = reinterpret_cast<const uint8_t *>(proc_ptr);
+        auto dst_data = reinterpret_cast<uint8_t *>(out_ptr);
+        parallel_for2d(DIM0, stride1, [&](size_t b, size_t j) {
+            auto src_off = b * src_stride0 + j * blk_size;
+            auto dst_off = b * dst_stride0 + j;
+            for (size_t dim1 = 0; dim1 + blk_size <= DIM1; dim1 += blk_size) {
+                for (size_t k = 0; k < blk_size; k++) {
+                    dst_data[dst_off] = src_data[src_off];
+                    src_off++;
+                    dst_off += stride1;
+                }
+                src_off += (stride1 - 1) * blk_size;
+            }
+            size_t tail = DIM1 % blk_size;
+            for (size_t k = 0; k < tail; k++) {
+                dst_data[dst_off] = src_data[src_off];
+                src_off++;
+                dst_off += stride1;
+            }
         });
     }
 }
@@ -1930,12 +2268,22 @@ inline void MKLDNNReduceNode::init_dst_data(uint8_t *out_ptr, size_t dst_size) {
     }
 }
 
-inline void MKLDNNReduceNode::calc_process_dst_dims(const int32_t *idx_data) {
+inline void MKLDNNReduceNode::create_working_memory() {
+    auto rank = getParentEdgeAt(REDUCE_DATA)->getShape().getRank();
+    memory::format_tag format = (layout == ReduceLayoutType::reduce_nspc) ? (rank == 4 ? memory::format_tag::nhwc : memory::format_tag::ndhwc)
+                                        : (rank == 4 ? (mayiuse(cpu::x64::avx512_common) ? memory::format_tag::nChw16c : memory::format_tag::nChw8c)
+                                                     : (mayiuse(cpu::x64::avx512_common) ? memory::format_tag::nCdhw16c : memory::format_tag::nCdhw8c));
+    auto prc_dims = rank == 4 ? std::vector<size_t>{OB, OC, OH, OW} : std::vector<size_t>{OB, OC, OD, OH, OW};
+    auto desc = mkldnn::memory::desc(MKLDNNExtensionUtils::convertToDnnlDims(prc_dims), outputDataType, format);
+    prc_mem = MKLDNNPlugin::make_unique<mkldnn::memory>(desc, getEngine());
+    dst_size = desc.get_size();
+}
+
+inline void MKLDNNReduceNode::calc_process_dst_dims() {
+    std::set<size_t> axes;
     SizeVector out_dims;
     SizeVector dst_dims = getChildEdgeAt(0)->getShape().getStaticDims();
-    std::set<size_t> axes;
-    for (size_t i = 0; i < getParentEdgeAt(REDUCE_INDEXES)->getShape().getStaticDims()[0]; i++) {
-        int32_t axis = idx_data[i];
+    for (auto &axis : raw_axes) {
         if (axis < 0)
             axis += src_dims.size();
         if (static_cast<size_t>(axis) > src_dims.size())
@@ -1962,6 +2310,57 @@ inline void MKLDNNReduceNode::calc_process_dst_dims(const int32_t *idx_data) {
     for (size_t i = 0; i < std::min(out_dims.size(), dst_dims.size()); i++) {
         if (out_dims[i] != dst_dims[i])
             IE_THROW() << errorPrefix << "gets incorrect number of output dimensions!";
+    }
+}
+
+inline void MKLDNNReduceNode::set_reduce_dim_flags() {
+    size_t dims_size = src_dims.size();
+    if (dims_size == 5) {
+        SET_SRC_DIM_VALUE(src_dims[0], src_dims[1], src_dims[2], src_dims[3], src_dims[4]);
+        SET_DST_DIM_VALUE(process_dst_dims[0], process_dst_dims[1], process_dst_dims[2], process_dst_dims[3], process_dst_dims[4]);
+    } else if (dims_size == 4) {
+        SET_SRC_DIM_VALUE(src_dims[0], src_dims[1], 1, src_dims[2], src_dims[3]);
+        SET_DST_DIM_VALUE(process_dst_dims[0], process_dst_dims[1], 1, process_dst_dims[2], process_dst_dims[3]);
+    } else if (dims_size == 3) {
+        SET_SRC_DIM_VALUE(1, src_dims[0], 1, src_dims[1], src_dims[2]);
+        SET_DST_DIM_VALUE(1, process_dst_dims[0], 1, process_dst_dims[1], process_dst_dims[2]);
+    } else if (dims_size == 2) {
+        SET_SRC_DIM_VALUE(1, 1, 1, src_dims[0], src_dims[1]);
+        SET_DST_DIM_VALUE(1, 1, 1, process_dst_dims[0], process_dst_dims[1]);
+    } else {
+        SET_SRC_DIM_VALUE(1, src_dims[0], 1, 1, 1);
+        SET_DST_DIM_VALUE(1, process_dst_dims[0], 1, 1, 1);
+    }
+
+    // must be done before the following dimension change
+    if (is_hybrid_layout) {
+        create_working_memory();
+    }
+
+    // Reducing a dimesion in nspc layout can be treated as reducing another dimension in ncsp layout,
+    // eg. reducing C in nspc can be treated as reducing W in ncsp layout, so that the routine reduce_PLN can be reused.
+    // nspc -- ncsp
+    //    D -- C
+    //    H -- D
+    //    W -- H
+    //    C -- W
+    if (layout == ReduceLayoutType::reduce_nspc) {
+        size_t ITmp = IC; IC = ID; ID = IH; IH = IW; IW = ITmp;
+        size_t OTmp = OC; OC = OD; OD = OH; OH = OW; OW = OTmp;
+    }
+
+    ReduceN = IB != OB && OB == 1;
+    ReduceC = IC != OC && OC == 1;
+    ReduceD = ID != OD && OD == 1;
+    ReduceH = IH != OH && OH == 1;
+    ReduceW = IW != OW && OW == 1;
+
+    // suit for parallel
+    if (ReduceH && IW == 1) {
+        ReduceW = true;
+    }
+    if (ReduceC && ReduceH && ID == 1) {
+        ReduceD = true;
     }
 }
 
@@ -2018,6 +2417,7 @@ void MKLDNNReduceNode::reduce_ref_process(const float *in_ptr, float *out_ptr, f
         reduced_dims_work_amount *= src_dims[i];
     reduced_dims_work_amount /= work_amount_dst;
 
+    SizeVector src_strides = getParentEdgeAt(REDUCE_DATA)->getMemory().GetDescWithType<BlockedMemoryDesc>().getStrides();
     parallel_nt(0, [&](const int ithr, const int nthr) {
         int j;
         size_t i, start = 0, end = 0;
@@ -2094,6 +2494,33 @@ inline void MKLDNNReduceNode::reduce_ref_map(float *out_ptr, size_t work_amount_
         default:
             IE_THROW() << errorPrefix << "gets unsupported reduce mode.";
     }
+}
+
+void MKLDNNReduceNode::setPostOps(mkldnn::primitive_attr &attr, bool initWeights) {
+    mkldnn::post_ops ops;
+    for (auto &node : fusedWith) {
+        auto* fakeQuantizeNode = dynamic_cast<MKLDNNFakeQuantizeNode *>(node.get());
+        if (fakeQuantizeNode) {
+            fakeQuantizeNode->appendPostOps(ops);
+            continue;
+        }
+
+        auto* eltwiseNode = dynamic_cast<MKLDNNEltwiseNode *>(node.get());
+        if (eltwiseNode) {
+            eltwiseNode->appendPostOps(ops);
+            continue;
+        }
+        IE_THROW() << "Fusing of " << NameFromType(node->getType()) << " operation to " << NameFromType(this->getType()) << " node is not implemented";
+    }
+    attr.set_post_ops(ops);
+}
+
+bool MKLDNNReduceNode::canFuse(const MKLDNNNodePtr& node) const {
+    if (!jit_mode || algorithm == ReduceAnd || algorithm == ReduceOr) {
+        return false;
+    }
+
+    return canFuseSimpleOperation(node);
 }
 
 bool MKLDNNReduceNode::created() const {
