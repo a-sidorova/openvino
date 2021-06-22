@@ -116,20 +116,15 @@ void MKLDNNGatherNode::execute(mkldnn::stream strm) {
     uint8_t* dstData = reinterpret_cast<uint8_t*>(getChildEdgeAt(0)->getMemoryPtr()->GetPtr());
 
     parallel_for2d(batchSize, idxBatchStride, [&](const size_t i, const size_t j) {
-        const unsigned int idx = static_cast<uint32_t>(srcIndexes[i * idxBatchStride + j]);
+        int32_t idx = (srcIndexes[i * idxBatchStride + j]);
+        if (idx < 0)
+            idx += indexRange;
 
-        // while negative indices are not supported, should set zero
-        if (idx < indexRange) {
-            for (size_t k = 0; k < outerSize; ++k) {
-                const size_t srcStride = (i * srcBatchStride + k * dataLength * indexRange) * dataSize;
-                const size_t dstStride = (i * dstBatchStride + k * dataLength * idxBatchStride) * dataSize;
+        for (size_t k = 0; k < outerSize; ++k) {
+            const size_t srcStride = (i * srcBatchStride + k * dataLength * indexRange) * dataSize;
+            const size_t dstStride = (i * dstBatchStride + k * dataLength * idxBatchStride) * dataSize;
 
-                cpu_memcpy(&dstData[dstStride + j * len], &srcData[srcStride + idx * len], len);
-            }
-        } else {
-            for (size_t k = 0; k < outerSize; ++k) {
-                memset(&dstData[(i * dstBatchStride + k * dataLength * idxBatchStride) * dataSize + j * len], 0, len);
-            }
+            cpu_memcpy(&dstData[dstStride + j * len], &srcData[srcStride + idx * len], len);
         }
     });
 }
