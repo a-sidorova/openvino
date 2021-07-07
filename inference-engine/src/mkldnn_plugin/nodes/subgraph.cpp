@@ -206,34 +206,36 @@ void MKLDNNSnippetNode::createPrimitive() {
 void MKLDNNSnippetNode::execute(dnnl::stream strm) {
     if (schedule.ptr == nullptr) {
         interpret();
-    } else {
-        std::vector<const uint8_t *> inputs(inDims.size(), nullptr);
-        for (size_t i = 0; i < inDims.size(); i++) {
-            auto & parents = getParentEdgesAtPort(i);
-            auto &mem = parents[0]->getMemory();
-            inputs[i] = reinterpret_cast<const uint8_t*>(mem.GetData()) + start_offset_in[i];
-        }
+        return;
+    }
 
-        std::vector<uint8_t *> outputs(outDims.size(), nullptr);
-        for (size_t i = 0; i < outDims.size(); i++) {
-            auto & child = getChildEdgesAtPort(i);
-            auto &mem = child[0]->getMemory();
-            outputs[i] = reinterpret_cast<uint8_t*>(mem.GetData()) + start_offset_out[i];
-        }
+    std::vector<const uint8_t *> inputs(inDims.size(), nullptr);
+    for (size_t i = 0; i < inDims.size(); i++) {
+        auto &parents = getParentEdgesAtPort(i);
+        auto &mem = parents[0]->getMemory();
+        inputs[i] = reinterpret_cast<const uint8_t *>(mem.GetData()) + start_offset_in[i];
+    }
 
-        if (isDynBatchEnabled) {
-            for (int i = 0; i < outDims.size(); i++) {
-                // All supported layout assumes batch to be outermost dimension
-                dims_out[i][batchDimIdx] = static_cast<size_t>(batchToProcess());
-            }
-        }
+    std::vector<uint8_t *> outputs(outDims.size(), nullptr);
+    for (size_t i = 0; i < outDims.size(); i++) {
+        auto &child = getChildEdgesAtPort(i);
+        auto &mem = child[0]->getMemory();
+        outputs[i] = reinterpret_cast<uint8_t *>(mem.GetData()) + start_offset_out[i];
+    }
 
-        if (tensorRank == rank6D) {
-            shedule_6d(outputs, inputs);
-        } else {
-            shedule_nt(outputs, inputs);
+    if (isDynBatchEnabled) {
+        for (int i = 0; i < outDims.size(); i++) {
+            // All supported layout assumes batch to be outermost dimension
+            dims_out[i][batchDimIdx] = static_cast<size_t>(batchToProcess());
         }
     }
+
+    if (tensorRank == rank6D) {
+        shedule_6d(outputs, inputs);
+        return;
+    }
+
+    shedule_nt(outputs, inputs);
 }
 
 bool MKLDNNSnippetNode::created() const {
@@ -400,14 +402,24 @@ void MKLDNNSnippetNode::define_shedule() {
         size_t minimalJitWorkAmount = 256;
         size_t currentJitWorkAmount = dims_out[max_rank_out_desc_idx].back();
         bool hasDifferentDims = false;
+
+        // TODO: we support dim collapsion only for equal in and out dims without broadcasting now
+        for (int i = 0; i < dims_in.size(); i++) {
+            for (int j = 0; j < dims_out.size(); j++) {
+                for (int k = 0; k < dims_in[i].size(); k++)
+                    if (dims_in[i][k] != dims_out[j][k])
+                        return collapsedDims;
+            }
+        }
+
         while (currentJitWorkAmount < minimalJitWorkAmount && currentJitWorkAmount < fullWorkAmount &&
                // we shouldn't collapse batch dimension in case dynamic batch is enabled
                (!isDynBatchEnabled || (config.outConfs[max_rank_out_desc_idx].desc.getBlockingDesc().getBlockDims().size() - collapsedDims > 2))) {
             if (dims_out[max_rank_out_desc_idx].size() - collapsedDims - 2 < 0)
                 break;
 
-            for (int j = 1; j < dims_in.size(); j++) {
-                if (dims_in[j].back() != dims_in[0].back()) {
+            for (int j = 0; j < dims_in.size(); j++) {
+                if (dims_in[j].back() != dims_in[0].back() || dims_in[j].back() != dims_out[max_rank_out_desc_idx].back()) {
                     hasDifferentDims = true;
                 }
             }
@@ -465,7 +477,7 @@ void MKLDNNSnippetNode::define_shedule() {
 
     isDynBatchEnabled = config.dynBatchSupport;
 
-    int collapsedDims = 0; // find_dims_to_collapse();
+    int collapsedDims = find_dims_to_collapse();
     batchDimIdx = tensorRank - config.outConfs[max_rank_out_desc_idx].desc.getBlockingDesc().getBlockDims().size() + collapsedDims;
     schedulerWorkAmount = fullWorkAmount / dims_out[max_rank_out_desc_idx].back();
 
@@ -519,7 +531,6 @@ void MKLDNNSnippetNode::shedule_6d(const std::vector<uint8_t *>& outputs, const 
 
     // Add code to collapse inner dimensions.
     // Callargs are scheduling invariant.
-
     // < N, C, H, W > < 1, 1, N, C*H*W>
     parallel_for5d(dom[0], dom[1], dom[2], dom[3], dom[4],
         [&](size_t d0, size_t d1, size_t d2, size_t d3, size_t d4) {
