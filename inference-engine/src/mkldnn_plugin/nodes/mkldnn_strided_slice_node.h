@@ -27,7 +27,6 @@ public:
     static bool isSupportedOperation(const std::shared_ptr<ngraph::Node>& op, std::string& errorMessage) noexcept;
 
 private:
-    void stridedSliceV();
     void stridedSlice();
 
     void addHiddenDims(const size_t nSrcDims);
@@ -35,6 +34,7 @@ private:
     void dimsNormalization(InferenceEngine::SizeVector& newSrcDims, InferenceEngine::SizeVector& newDstDims);
     void dimsGluing(const size_t realNDims, const InferenceEngine::SizeVector& newSrcDims, const InferenceEngine::SizeVector& newDstDims);
     void indicesCalculation();
+    void indicesCalculationForOptimized();
 
     const size_t DATA_ID = 0;
     const size_t BEGIN_ID = 1;
@@ -69,6 +69,8 @@ private:
         size_t workAmount = 0;
         size_t lastDstDim = 0;
         size_t dataSize = 0;
+        size_t srcShift = 0;
+        bool isOptimized = false;
         bool equalDims = false;
         bool parametersAreConstant = true;
     } params;
