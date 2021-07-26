@@ -215,6 +215,7 @@ protected:
     void InitDescriptors();
     void InitOptimalPrimitiveDescriptors();
     void InitEdges();
+    void InitInPlaceForNodes();
     void Allocate();
     void AllocateWithReuse();
     void CreatePrimitives();

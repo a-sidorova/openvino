@@ -839,15 +839,14 @@ void MKLDNNNode::prepareMemory(const NodeDesc *selected_pd, mkldnn::primitive_de
     }
 }
 
-bool MKLDNNNode::isInplace() const {
+void MKLDNNNode::initInPlace() {
     auto selected_pd = getSelectedPrimitiveDescriptor();
     if (selected_pd == nullptr)
         IE_THROW() << "Preferable primitive descriptor is not set.";
     auto config = selected_pd->getConfig();
 
-    for (auto &in : config.inConfs) if (in.inPlace >= 0) return true;
-    for (auto &out : config.outConfs) if (out.inPlace >= 0) return true;
-    return false;
+    for (auto &in : config.inConfs) if (in.inPlace >= 0) inplace = true;
+    for (auto &out : config.outConfs) if (out.inPlace >= 0) inplace = true;
 }
 
 bool MKLDNNNode::isConstant() {

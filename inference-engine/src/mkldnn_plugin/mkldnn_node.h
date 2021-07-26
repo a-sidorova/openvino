@@ -363,7 +363,9 @@ public:
 
     bool isConstant();
 
-    bool isInplace() const;
+    bool isInplace() const {
+        return inplace;
+    }
 
     bool isFusedWith(Type type) const;
 
@@ -460,6 +462,8 @@ public:
         else
             selectedPrimitiveDescriptorIndex = index;
     }
+
+    void initInPlace();
 
     std::string getPrimitiveDescriptorType();
 
@@ -694,6 +698,7 @@ protected:
     bool permanent = false;
     bool temporary = false;
     int dynBatchLim = 0;
+    bool inplace = false;
     enum class ConstantType {
         Unknown,
         Const,

@@ -327,6 +327,8 @@ void MKLDNNGraph::InitGraph() {
 
     InitEdges();
 
+    InitInPlaceForNodes();
+
     optimizer.ApplyImplSpecificGraphOptimizations(*this);
     SortTopologically();
 
@@ -686,6 +688,13 @@ void MKLDNNGraph::Allocate() {
     for (auto& edge : graphEdges) edge->validate();
 }
 
+void MKLDNNGraph::InitInPlaceForNodes() {
+    OV_ITT_SCOPE(FIRST_INFERENCE, itt::domains::MKLDNN_LT, "MKLDNNGraph::InitInPlaceForNodes");
+    for (const auto& node : graphNodes) {
+        node->initInPlace();
+    }
+}
+
 void MKLDNNGraph::CreatePrimitives() {
     OV_ITT_SCOPED_TASK(itt::domains::MKLDNNPlugin, "MKLDNNGraph::CreatePrimitives");
     for (auto& node : graphNodes) {
@@ -699,8 +708,12 @@ void MKLDNNGraph::PushInputData(const std::string& name, const InferenceEngine::
 
     auto input = inputNodesMap.find(name);
     if (input != inputNodesMap.end()) {
+        auto inTensorDesc = in->getTensorDesc();
+        auto childEdge = input->second->getChildEdgeAt(0);
+        auto outDims = childEdge->getShape();
+
         const void *ext_data_ptr = in->cbuffer();
-        void *inter_data_ptr = input->second->getChildEdgeAt(0)->getMemory().GetData();
+        void *inter_data_ptr = childEdge->getMemory().GetData();
 
         if (ext_data_ptr != inter_data_ptr) {
             auto ext_tdesc = MemoryDescUtils::convertToMKLDNNMemoryDesc(in->getTensorDesc());
@@ -708,17 +721,16 @@ void MKLDNNGraph::PushInputData(const std::string& name, const InferenceEngine::
             auto ext_mem = MKLDNNMemory(eng);
             ext_mem.Create(ext_tdesc, ext_data_ptr, false);
 
-            input->second->getChildEdgeAt(0)->getMemory().SetData(ext_mem, 0, false);
+            childEdge->getMemory().SetData(ext_mem, 0, false);
         }
 
         // todo: make sure 'name' exists in this map...
         if (_normalizePreprocMap.find(name) != _normalizePreprocMap.end()) {
-            if (in->getTensorDesc().getPrecision() == InferenceEngine::Precision::FP32) {
-                _normalizePreprocMap[name].NormalizeImage(input->second->getChildEdgeAt(0)->getShape(),
-                                                          reinterpret_cast<float *>(inter_data_ptr),
-                                                          in->getTensorDesc().getLayout());
+            if (inTensorDesc.getPrecision() == InferenceEngine::Precision::FP32) {
+                _normalizePreprocMap[name].NormalizeImage(outDims, reinterpret_cast<float *>(inter_data_ptr),
+                                                          inTensorDesc.getLayout());
             } else {
-                IE_THROW() << "Mean image of type " << in->getTensorDesc().getPrecision().name() << " is unsupported";
+                IE_THROW() << "Mean image of type " << inTensorDesc.getPrecision().name() << " is unsupported";
             }
         }
     } else {
@@ -733,7 +745,8 @@ void MKLDNNGraph::PullOutputData(const BlobMap &out) {
     for (auto &outputMap : outputNodesMap) {
         auto name = outputMap.first;
         auto node = outputMap.second;
-        const MKLDNNMemory& intr_blob = node->getParentEdgeAt(0)->getMemory();
+        auto parentEdge = node->getParentEdgeAt(0);
+        const MKLDNNMemory& intr_blob = parentEdge->getMemory();
 
         if (!out.count(name)) {
             IE_THROW(Unexpected) << "The network outputs do not contain mkldnn graph output node name: \"" << name << "\"";
@@ -741,14 +754,16 @@ void MKLDNNGraph::PullOutputData(const BlobMap &out) {
 
         const Blob::Ptr &ext_blob = out.at(name);
 
+        const auto expectedDesc = ext_blob->getTensorDesc();
         auto srcPrec = MKLDNNExtensionUtils::DataTypeToIEPrecision(intr_blob.GetDataType());
-        auto dstPrec = ext_blob->getTensorDesc().getPrecision();
+        auto dstPrec = expectedDesc.getPrecision();
         if (srcPrec == dstPrec && ext_blob->byteSize() != intr_blob.GetSize())
                 IE_THROW() << "Output blob byte size is not equal network output byte size ("
                                    << ext_blob->byteSize() << "!=" << intr_blob.GetSize() << ").";
-        if (ext_blob->size() != intr_blob.GetElementsCount())
+        auto intrElemCount = intr_blob.GetElementsCount();
+        if (ext_blob->size() != intrElemCount)
             IE_THROW() << "Output blob number of elements is not equal network output number of elements ("
-                               << ext_blob->size() << "!=" << intr_blob.GetElementsCount() << ").";
+                               << ext_blob->size() << "!=" << intrElemCount << ").";
 
         void *ext_blob_ptr = ext_blob->buffer();
         void *intr_blob_ptr = intr_blob.GetData();
@@ -756,19 +771,10 @@ void MKLDNNGraph::PullOutputData(const BlobMap &out) {
         // That is the same memory. No need to copy
         if (ext_blob_ptr == intr_blob_ptr) continue;
 
-        int MB = intr_blob.GetDims()[0];
-        int MB_to_process = node->batchToProcess();
-        // TODO: Should we support InferenceEngine::PluginConfigParams::KEY_DYN_BATCH_LIMIT???
-        if (config.batchLimit)
-            MB_to_process = std::min<int>(config.batchLimit, MB_to_process);
-        size_t size_to_copy = intr_blob.GetElementsCount() * MB_to_process / MB;
-
-        const auto actualDesc = MemoryDescUtils::convertToTensorDesc(node->getParentEdgeAt(0)->getDesc());
-        const auto expectedDesc = ext_blob->getTensorDesc();
-
         // TODO [NM]: need to create universal reorder which will be detect cases when we really need to use it
         // WA: for cases when output shape after transformation will be 1x1x1x1 but model output is scalar
         bool isScalarOutput = false;
+        const auto actualDesc = MemoryDescUtils::convertToTensorDesc(parentEdge->getDesc());
         if (actualDesc.getLayout() == SCALAR) {
             isScalarOutput = expectedDesc.getLayout() == SCALAR ||
                              std::accumulate(expectedDesc.getDims().begin(), expectedDesc.getDims().end(), (size_t)1, std::multiplies<size_t>()) == 1;
@@ -784,6 +790,13 @@ void MKLDNNGraph::PullOutputData(const BlobMap &out) {
 
             outBloMem.SetData(intr_blob, 0, false);
         } else {
+            const int MB = intr_blob.GetDims()[0];
+            int MB_to_process = node->batchToProcess();
+            // TODO: Should we support InferenceEngine::PluginConfigParams::KEY_DYN_BATCH_LIMIT???
+            if (config.batchLimit)
+                MB_to_process = std::min<int>(config.batchLimit, MB_to_process);
+            size_t size_to_copy = intrElemCount * MB_to_process / MB;
+
             cpu_convert(intr_blob_ptr, ext_blob_ptr, srcPrec, dstPrec, size_to_copy);
         }
     }
