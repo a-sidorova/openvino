@@ -327,10 +327,10 @@ void MKLDNNGraph::InitGraph() {
 
     InitEdges();
 
-    InitInPlaceForNodes();
-
     optimizer.ApplyImplSpecificGraphOptimizations(*this);
     SortTopologically();
+
+    InitInPlaceForNodes();
 
     Allocate();
 
