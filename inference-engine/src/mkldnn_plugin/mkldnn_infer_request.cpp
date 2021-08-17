@@ -452,15 +452,14 @@ void MKLDNNPlugin::MKLDNNInferRequest::changeDefaultPtr() {
                     canBeInPlace = false;
                     break;
                 }
-                auto* concat = dynamic_cast<MKLDNNConcatNode *>(child.get());
-                if (concat && concat->isOptimized()) {
+
+                if (child->getType() == Concatenation && dynamic_cast<MKLDNNConcatNode*>(child.get())->isOptimized()) {
                     canBeInPlace = false;
                     break;
                 }
 
                 // Cannot be in-place before split because split is using different ptrs without offsets
-                auto* split = dynamic_cast<MKLDNNSplitNode *>(child.get());
-                if (split) {
+                if (child->getType() == Split) {
                     canBeInPlace = false;
                     break;
                 }
