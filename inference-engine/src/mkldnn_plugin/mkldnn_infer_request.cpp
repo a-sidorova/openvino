@@ -74,7 +74,7 @@ MKLDNNPlugin::MKLDNNInferRequest::~MKLDNNInferRequest() {
 }
 
 void MKLDNNPlugin::MKLDNNInferRequest::pushInput(const std::string& inputName, InferenceEngine::Blob::Ptr& inputBlob, InferenceEngine::Precision inPrec) {
-    auto tensorDesc = inputBlob->getTensorDesc();
+    auto& tensorDesc = inputBlob->getTensorDesc();
     bool needConvert = inPrec != tensorDesc.getPrecision();
 
     const void* srcData = inputBlob->cbuffer().as<const void *>();
@@ -107,7 +107,7 @@ void MKLDNNPlugin::MKLDNNInferRequest::PushInputData() {
             IE_THROW() << "Input blobs map contains not registered during IInferencePlugin::LoadNetwork blob with name " << inputName;
         }
         auto inputBlob = input.second;
-        auto inputTensorDesc = inputBlob->getTensorDesc();
+        auto& inputTensorDesc = inputBlob->getTensorDesc();
         auto inPrec = inputTensorDesc.getPrecision();
         if (graph->hasMeanImageFor(inputName) && one_of(inPrec, InferenceEngine::Precision::U8, InferenceEngine::Precision::BOOL)) {
             inPrec = InferenceEngine::Precision::FP32;
@@ -438,11 +438,14 @@ void MKLDNNPlugin::MKLDNNInferRequest::changeDefaultPtr() {
             MKLDNNNodePtr inputNodePtr = input->second;
             if (inputNodePtr->getChildEdgeAt(0)->getMemory().GetPrimitive().get_data_handle() == it.second)
                 continue;
-            auto childEdges = inputNodePtr->getChildEdges();
+            auto& childEdges = inputNodePtr->getChildEdges();
             // Input cannot be in-place with other primitives
             bool canBeInPlace = true;
             for (auto& childEdge : childEdges) {
                 auto ce = childEdge.lock();
+                if (!ce)
+                    IE_THROW() << "Node " << inputNodePtr->getName() << " contains empty child edge";
+
                 auto& child = ce->getChild();
 
                 if (child->isConstant()) {
@@ -467,9 +470,13 @@ void MKLDNNPlugin::MKLDNNInferRequest::changeDefaultPtr() {
                     break;
                 }
 
-                auto edges = child->getChildEdges();
+                auto& edges = child->getChildEdges();
                 for (auto& edge : edges) {
-                    if (edge.lock()->getMemory().GetPrimitive().get_data_handle() == ce->getMemory().GetPrimitive().get_data_handle()) {
+                    auto e = edge.lock();
+                    if (!e)
+                        IE_THROW() << "Node " << child->getName() << " contains empty child edge";
+
+                    if (e->getMemory().GetPrimitive().get_data_handle() == ce->getMemory().GetPrimitive().get_data_handle()) {
                         canBeInPlace = false;
                         break;
                     }
@@ -479,8 +486,13 @@ void MKLDNNPlugin::MKLDNNInferRequest::changeDefaultPtr() {
                     break;
             }
             if (canBeInPlace) {
-                for (auto& edge : childEdges)
-                    changeEdgePtr(edge.lock(), it.second);
+                for (auto& edge : childEdges) {
+                    auto e = edge.lock();
+                    if (!e)
+                        IE_THROW() << "Node " << inputNodePtr->getName() << " contains empty child edge";
+
+                    changeEdgePtr(e, it.second);
+                }
             }
 
             continue;
@@ -504,9 +516,12 @@ void MKLDNNPlugin::MKLDNNInferRequest::changeDefaultPtr() {
                     break;
                 }
 
-                auto parentEdges = parent->getParentEdges();
+                auto& parentEdges = parent->getParentEdges();
                 for (auto& edge : parentEdges) {
                     auto e = edge.lock();
+                    if (!e)
+                        IE_THROW() << "Node " << parent->getName() << " contains empty parent edge";
+
                     if (e->getMemory().GetPrimitivePtr()->get_data_handle() == defaultPtr) {
                         parent = e->getParent();
                         break;

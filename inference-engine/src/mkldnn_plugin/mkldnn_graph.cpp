@@ -708,9 +708,9 @@ void MKLDNNGraph::PushInputData(const std::string& name, const InferenceEngine::
 
     auto input = inputNodesMap.find(name);
     if (input != inputNodesMap.end()) {
-        auto inTensorDesc = in->getTensorDesc();
+        auto& inTensorDesc = in->getTensorDesc();
         auto childEdge = input->second->getChildEdgeAt(0);
-        auto outDims = childEdge->getShape();
+        auto& outDims = childEdge->getShape();
 
         const void *ext_data_ptr = in->cbuffer();
         void *inter_data_ptr = childEdge->getMemory().GetData();
@@ -754,7 +754,7 @@ void MKLDNNGraph::PullOutputData(const BlobMap &out) {
 
         const Blob::Ptr &ext_blob = out.at(name);
 
-        const auto expectedDesc = ext_blob->getTensorDesc();
+        const auto& expectedDesc = ext_blob->getTensorDesc();
         auto srcPrec = MKLDNNExtensionUtils::DataTypeToIEPrecision(intr_blob.GetDataType());
         auto dstPrec = expectedDesc.getPrecision();
         if (srcPrec == dstPrec && ext_blob->byteSize() != intr_blob.GetSize())
