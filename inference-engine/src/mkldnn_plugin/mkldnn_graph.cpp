@@ -330,8 +330,6 @@ void MKLDNNGraph::InitGraph() {
     optimizer.ApplyImplSpecificGraphOptimizations(*this);
     SortTopologically();
 
-    InitInPlaceForNodes();
-
     Allocate();
 
     CreatePrimitives();
@@ -686,13 +684,6 @@ void MKLDNNGraph::Allocate() {
 
     // Check all getters. Should work.
     for (auto& edge : graphEdges) edge->validate();
-}
-
-void MKLDNNGraph::InitInPlaceForNodes() {
-    OV_ITT_SCOPE(FIRST_INFERENCE, itt::domains::MKLDNN_LT, "MKLDNNGraph::InitInPlaceForNodes");
-    for (const auto& node : graphNodes) {
-        node->initInPlace();
-    }
 }
 
 void MKLDNNGraph::CreatePrimitives() {

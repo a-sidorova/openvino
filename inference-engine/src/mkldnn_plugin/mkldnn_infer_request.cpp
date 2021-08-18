@@ -464,7 +464,7 @@ void MKLDNNPlugin::MKLDNNInferRequest::changeDefaultPtr() {
                     break;
                 }
 
-                if (child->isInplace()) {
+                if (child->isInPlace()) {
                     canBeInPlace = false;
                     break;
                 }
@@ -510,7 +510,7 @@ void MKLDNNPlugin::MKLDNNInferRequest::changeDefaultPtr() {
             MKLDNNNodePtr previousParent;
             do {
                 previousParent = parent;
-                if (parent->getChildEdges().size() != 1 || parent->isConstant() || parent->isInplace()) {
+                if (parent->getChildEdges().size() != 1 || parent->isConstant() || parent->isInPlace()) {
                     canBeInPlace = false;
                     break;
                 }

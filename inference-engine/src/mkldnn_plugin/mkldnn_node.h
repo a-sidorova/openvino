@@ -361,11 +361,10 @@ public:
         return engine;
     }
 
-    bool isConstant();
+    // can be called after init optimal primitive descriptor
+    bool isInPlace();
 
-    bool isInplace() const {
-        return inplace;
-    }
+    bool isConstant();
 
     bool isFusedWith(Type type) const;
 
@@ -462,8 +461,6 @@ public:
         else
             selectedPrimitiveDescriptorIndex = index;
     }
-
-    void initInPlace();
 
     std::string getPrimitiveDescriptorType();
 
@@ -698,12 +695,17 @@ protected:
     bool permanent = false;
     bool temporary = false;
     int dynBatchLim = 0;
-    bool inplace = false;
+    enum class InPlaceType {
+        Unknown,
+        InPlace,
+        NoInPlace
+    };
     enum class ConstantType {
         Unknown,
         Const,
         NoConst
     };
+    InPlaceType inplace = InPlaceType::Unknown;
     ConstantType constant = ConstantType::Unknown;
     std::vector<InferenceEngine::Blob::Ptr> internalBlobs;
     std::vector<MKLDNNMemoryPtr> internalBlobMemory;
