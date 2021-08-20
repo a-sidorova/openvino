@@ -12,6 +12,34 @@
 
 namespace MKLDNNPlugin {
 
+struct jit_matmul_params {
+    const size_t m;
+    const size_t n;
+    const size_t k;
+};
+
+struct jit_matmul_call_args {
+    const void *src_ptr_A;
+    const void *src_ptr_B;
+    void *dst;
+};
+
+struct jit_uni_matmul_kernel {
+    void (*ker_)(const jit_matmul_call_args *);
+
+    void operator()(const jit_matmul_call_args *args) {
+       assert(ker_);
+       ker_(args);
+   }
+
+   explicit jit_uni_matmul_kernel(jit_matmul_params jep) : ker_(nullptr), jep_(jep) {}
+   virtual ~jit_uni_matmul_kernel() {}
+
+   virtual void create_ker() = 0;
+
+    jit_matmul_params jep_;
+};
+
 class MKLDNNMatMulNode : public MKLDNNNode {
 public:
     MKLDNNMatMulNode(const std::shared_ptr<ngraph::Node>& op, const mkldnn::engine& eng, MKLDNNWeightsSharing::Ptr &cache);
@@ -42,6 +70,8 @@ private:
 
     /* whether to transpose input */
     std::array<bool, 2> transposeIn;
+
+    bool isOptimized = false;
 
     std::array<std::unique_ptr<MKLDNNMemoryDesc>, 2> inDataDesc;
     std::unique_ptr<MKLDNNMemoryDesc> outDataDesc;

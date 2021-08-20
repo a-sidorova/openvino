@@ -22,9 +22,19 @@
 #include "utils/general_utils.h"
 #include "cpu_memory_desc_utils.h"
 
+#include "emitters/jit_emitter.hpp"
+#include "emitters/jit_eltwise_emitters.hpp"
+#include "emitters/jit_mkldnn_emitters.hpp"
+
 using namespace mkldnn;
 using namespace MKLDNNPlugin;
 using namespace InferenceEngine;
+using namespace mkldnn::impl::utils;
+using namespace mkldnn::impl::cpu;
+using namespace mkldnn::impl::cpu::x64;
+using namespace Xbyak;
+
+#define GET_OFF(field) offsetof(jit_matmul_call_args, field)
 
 bool MKLDNNMatMulNode::isSupportedOperation(const std::shared_ptr<ngraph::Node>& op, std::string& errorMessage) noexcept {
     try {
