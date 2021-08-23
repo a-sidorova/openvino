@@ -12,32 +12,35 @@
 
 namespace MKLDNNPlugin {
 
-struct jit_matmul_params {
-    const size_t m;
-    const size_t n;
-    const size_t k;
+struct jit_matmul_config_params {
+    size_t m;
+    size_t n;
+    size_t k;
 };
 
-struct jit_matmul_call_args {
-    const void *src_ptr_A;
-    const void *src_ptr_B;
+struct jit_matmul_args {
+    void *src_A;
+    void *src_B;
     void *dst;
 };
 
-struct jit_uni_matmul_kernel {
-    void (*ker_)(const jit_matmul_call_args *);
+class MKLDNNMatMulNode;
 
-    void operator()(const jit_matmul_call_args *args) {
+struct jit_uni_matmul_kernel {
+    void (*ker_)(const jit_matmul_args *);
+
+    void operator()(const jit_matmul_args *args) {
        assert(ker_);
        ker_(args);
    }
 
-   explicit jit_uni_matmul_kernel(jit_matmul_params jep) : ker_(nullptr), jep_(jep) {}
+   explicit jit_uni_matmul_kernel(jit_matmul_config_params jcp, const mkldnn_primitive_attr &attr) : ker_(nullptr), jcp_(jcp), attr_(attr) {}
    virtual ~jit_uni_matmul_kernel() {}
 
    virtual void create_ker() = 0;
 
-    jit_matmul_params jep_;
+    jit_matmul_config_params jcp_;
+    const mkldnn_primitive_attr &attr_;
 };
 
 class MKLDNNMatMulNode : public MKLDNNNode {
@@ -50,6 +53,7 @@ public:
     void initSupportedPrimitiveDescriptors() override;
     std::unique_ptr<MKLDNNMemoryDesc> getSrcMemDesc(mkldnn::primitive_desc_iterator &primitive_desc_it, size_t idx) override;
     void createPrimitive() override;
+    void execute(mkldnn::stream strm) override;
     bool canFuse(const MKLDNNNodePtr& node) const override;
     bool created() const override;
     int getMaxBatch() override;
@@ -59,9 +63,6 @@ public:
     }
 
     static bool isSupportedOperation(const std::shared_ptr<ngraph::Node>& op, std::string& errorMessage) noexcept;
-
-protected:
-    std::shared_ptr<mkldnn::primitive_attr> initPrimitiveAttr() const override;
 
 private:
     void setPostOps(mkldnn::primitive_attr &attr, bool initWeights) const;
@@ -75,6 +76,9 @@ private:
 
     std::array<std::unique_ptr<MKLDNNMemoryDesc>, 2> inDataDesc;
     std::unique_ptr<MKLDNNMemoryDesc> outDataDesc;
+
+    mkldnn::primitive_attr attr;
+    std::shared_ptr<jit_uni_matmul_kernel> matmul_kernel = nullptr;
 };
 
 }  // namespace MKLDNNPlugin

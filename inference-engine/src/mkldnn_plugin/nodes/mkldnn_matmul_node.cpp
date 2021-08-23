@@ -34,7 +34,104 @@ using namespace mkldnn::impl::cpu;
 using namespace mkldnn::impl::cpu::x64;
 using namespace Xbyak;
 
-#define GET_OFF(field) offsetof(jit_matmul_call_args, field)
+#define GET_OFF(field) offsetof(jit_matmul_args, field)
+
+
+template <cpu_isa_t isa>
+struct jit_uni_matmul_kernel_f32 : public jit_uni_matmul_kernel, public jit_generator {
+    DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_matmul_kernel_f32)
+
+    explicit jit_uni_matmul_kernel_f32(jit_matmul_config_params jcp_, const mkldnn_primitive_attr &attr) : jit_uni_matmul_kernel(jcp_, attr), jit_generator() {}
+
+    void create_ker() override {
+        jit_generator::create_kernel();
+        ker_ = (decltype(ker_))jit_ker();
+    }
+
+    void generate() override {
+        const auto &p = attr_.post_ops_;
+        for (int i = 0; i < p.len(); i++) {
+            auto &post_op = p.entry_[i];
+            if (post_op.is_eltwise()) {
+                eltwise_injectors.push_back(std::make_shared<jit_uni_eltwise_injector_f32<isa>>(
+                        this,
+                        post_op.eltwise.alg,
+                        post_op.eltwise.alpha,
+                        post_op.eltwise.beta,
+                        1));
+            } else {
+                IE_THROW() << "MatMul supports only eltwise post ops!";
+            }
+        }
+
+        this->preamble();
+
+        mov(reg_src_a, ptr[reg_params + GET_OFF(src_A)]);
+        mov(reg_src_b, ptr[reg_params + GET_OFF(src_B)]);
+        mov(reg_dst, ptr[reg_params + GET_OFF(dst)]);
+
+        const auto &jcp = jcp_;
+
+        for (auto i0 = 0; i0 < jcp.m; i0++) {
+            for (auto i1 = 0; i1 < jcp.k; i1++) {
+                mov(reg_src_aux_a, reg_src_a);
+
+                mov(reg_src_aux_b, reg_src_b);
+                add(reg_src_aux_b, i1 * sizeof(float));
+
+                uni_vpxor(xmm2, xmm2, xmm2);
+                for (auto i2 = 0; i2 < jcp.n; i2++) {
+                    movss(xmm, ptr[reg_src_aux_a]);
+                    movss(xmm1, ptr[reg_src_aux_b]);
+
+                    add(reg_src_aux_a, sizeof(float));
+                    add(reg_src_aux_b, sizeof(float) * jcp.k);
+
+                    uni_vfmadd231ss(xmm2, xmm, xmm1);
+                }
+            //    apply_post_ops();
+                movss(ptr[reg_dst], xmm2);
+
+                add(reg_dst, sizeof(float));
+            }
+
+            add(reg_src_a, jcp.n * sizeof(float));
+        }
+
+        this->postamble();
+    }
+
+
+    inline void apply_post_ops() {
+        const auto &p = attr_.post_ops_;
+        int eltwise_inj_idx = 0;
+        for (int i = 0; i < p.len(); i++) {
+            auto& post_op = p.entry_[i];
+            if (post_op.is_eltwise()) {
+                eltwise_injectors[eltwise_inj_idx++]->compute_vector_range(xmm2.getIdx(), xmm2.getIdx() + 1);
+            }
+        }
+    }
+
+private:
+    using Vmm = typename conditional3<isa == x64::sse41, Xbyak::Xmm, isa == x64::avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
+    uint32_t vlen = cpu_isa_traits<isa>::vlen;
+
+    Xbyak::Reg64 reg_src_a = r8;
+    Xbyak::Reg64 reg_src_b = r9;
+    Xbyak::Reg64 reg_dst = r10;
+    Xbyak::Reg64 reg_src_aux_a = r11;
+    Xbyak::Reg64 reg_src_aux_b = r12;
+
+    Xbyak::Reg64 reg_params = abi_param1;
+
+    Vmm vmm = Vmm(0);
+    Xmm xmm = Xmm(0);
+    Xmm xmm1 = Xmm(1);
+    Xmm xmm2 = Xmm(2);
+
+    std::vector<std::shared_ptr<jit_uni_eltwise_injector_f32<isa>>> eltwise_injectors;
+};
 
 bool MKLDNNMatMulNode::isSupportedOperation(const std::shared_ptr<ngraph::Node>& op, std::string& errorMessage) noexcept {
     try {
@@ -99,15 +196,6 @@ void MKLDNNMatMulNode::setPostOps(mkldnn::primitive_attr &attr, bool initWeights
     }
 
     attr.set_post_ops(ops);
-}
-
-
-std::shared_ptr<mkldnn::primitive_attr> MKLDNNMatMulNode::initPrimitiveAttr() const {
-    auto attr = std::make_shared<mkldnn::primitive_attr>(mkldnn::primitive_attr());
-
-    setPostOps(*attr, true);
-
-    return attr;
 }
 
 void MKLDNNMatMulNode::getSupportedDescriptors() {
@@ -218,10 +306,10 @@ void MKLDNNMatMulNode::initSupportedPrimitiveDescriptors() {
     if (!supportedPrimitiveDescriptors.empty())
         return;
 
-    auto attr = initPrimitiveAttr();
+    setPostOps(attr, true);
 
     for (auto& desc : descs) {
-        auto itpd = desc.createPrimitiveDescriptorIterator(getEngine(), *attr);
+        auto itpd = desc.createPrimitiveDescriptorIterator(getEngine(), attr);
         while (static_cast<bool>(itpd)) {
             NodeConfig config;
             config.dynBatchSupport = true;
@@ -261,13 +349,32 @@ void MKLDNNMatMulNode::createPrimitive() {
     if (getSelectedPrimitiveDescriptor() == nullptr)
         IE_THROW()  << errorPrefix << " did not set preferable primitive descriptor";
 
+    if (inputShapes[0].getRank() == 2 && !transposeIn[0] && !transposeIn[1]) {
+        jit_matmul_config_params jep;
+        jep.m = inputShapes[0].getStaticDims()[0];
+        jep.n = inputShapes[0].getStaticDims()[1];
+        jep.k = inputShapes[1].getStaticDims()[1];
+
+        if (mayiuse(x64::avx512_common)) {
+            matmul_kernel.reset(new jit_uni_matmul_kernel_f32<x64::avx512_common>(jep, *attr.get()));
+        } else if (mayiuse(x64::avx2)) {
+            matmul_kernel.reset(new jit_uni_matmul_kernel_f32<x64::avx2>(jep, *attr.get()));
+        } else if (mayiuse(x64::sse41)) {
+            matmul_kernel.reset(new jit_uni_matmul_kernel_f32<x64::sse41>(jep, *attr.get()));
+        }
+
+        if (matmul_kernel)
+            matmul_kernel->create_ker();
+
+        return;
+    }
+
     if (prim)
         return;
 
-    std::shared_ptr<mkldnn::primitive_attr> attr = initPrimitiveAttr();
     std::shared_ptr<matmul::primitive_desc> prim_desc;
     prim_desc = std::make_shared<matmul::primitive_desc>(
-            createPrimitiveDescriptor<matmul::primitive_desc, matmul::desc>(*attr));
+            createPrimitiveDescriptor<matmul::primitive_desc, matmul::desc>(attr));
 
     prim.reset(new matmul(*prim_desc));
 
@@ -276,6 +383,21 @@ void MKLDNNMatMulNode::createPrimitive() {
     auto dst = getChildEdgesAtPort(0)[0]->getMemoryPtr()->GetPrimitive();
 
     primArgs = {{DNNL_ARG_SRC_0, src0}, {DNNL_ARG_WEIGHTS_0, src1}, {DNNL_ARG_DST, dst}};
+}
+
+void MKLDNNMatMulNode::execute(mkldnn::stream strm) {
+    if (matmul_kernel) {
+        std::cout << "MATMUL" << std::endl;
+        auto arg = jit_matmul_args();
+        arg.src_A =  reinterpret_cast<uint8_t*>(getParentEdgeAt(0)->getMemory().GetPtr());
+        arg.src_B =  reinterpret_cast<uint8_t*>(getParentEdgeAt(1)->getMemory().GetPtr());
+        arg.dst =  reinterpret_cast<uint8_t*>(getChildEdgeAt(0)->getMemory().GetPtr());
+
+        (*matmul_kernel)(&arg);
+        return;
+    }
+
+    MKLDNNNode::execute(strm);
 }
 
 std::unique_ptr<MKLDNNMemoryDesc> MKLDNNMatMulNode::getSrcMemDesc(mkldnn::primitive_desc_iterator &primitive_desc_it, size_t idx) {
