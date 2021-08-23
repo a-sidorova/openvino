@@ -72,7 +72,7 @@ struct jit_uni_matmul_kernel_f32 : public jit_uni_matmul_kernel, public jit_gene
 
         const auto &jcp = jcp_;
 
-        for (auto i0 = 0; i0 < jcp.m; i0++) {
+    /*    for (auto i0 = 0; i0 < jcp.m; i0++) {
             for (auto i1 = 0; i1 < jcp.k; i1++) {
                 mov(reg_src_aux_a, reg_src_a);
 
@@ -89,7 +89,7 @@ struct jit_uni_matmul_kernel_f32 : public jit_uni_matmul_kernel, public jit_gene
 
                     uni_vfmadd231ss(xmm2, xmm, xmm1);
                 }
-            //    apply_post_ops();
+                apply_post_ops();
                 movss(ptr[reg_dst], xmm2);
 
                 add(reg_dst, sizeof(float));
@@ -98,7 +98,76 @@ struct jit_uni_matmul_kernel_f32 : public jit_uni_matmul_kernel, public jit_gene
             add(reg_src_a, jcp.n * sizeof(float));
         }
 
+        this->postamble();*/
+
+        std::array<Xbyak::Label, 3> label;
+        std::array<Xbyak::Label, 3> label_end;
+
+        mov(m, 0);
+        L(label[0]);
+        {
+            cmp(m, jcp.m);
+            je(label_end[0], T_NEAR);
+
+            mov(k, 0);
+            L(label[1]);
+            {
+                cmp(k, jcp.k);
+                je(label_end[1], T_NEAR);
+
+                mov(reg_src_aux_a, reg_src_a);
+
+                mov(reg_src_aux_b, reg_src_b);
+                mov(temp, k);
+                imul(temp, temp, sizeof(float));
+                add(reg_src_aux_b, temp);
+
+                uni_vpxor(xmm2, xmm2, xmm2);
+
+                mov(n, 0);
+                L(label[2]);
+                {
+                    cmp(n, jcp.n);
+                    je(label_end[2], T_NEAR);
+
+                    movss(xmm, ptr[reg_src_aux_a]);
+                    movss(xmm1, ptr[reg_src_aux_b]);
+
+                    add(reg_src_aux_a, sizeof(float));
+                    add(reg_src_aux_b, sizeof(float) * jcp.k);
+
+                    uni_vfmadd231ss(xmm2, xmm, xmm1);
+
+                    add(n, 1);
+
+                    jmp(label[2]);
+                }
+                L(label_end[2]);
+
+                apply_post_ops();
+                movss(ptr[reg_dst], xmm2);
+
+                add(reg_dst, sizeof(float));
+
+                add(k, 1);
+
+                jmp(label[1]);
+            }
+            L(label_end[1]);
+
+            add(reg_src_a, jcp.n * sizeof(float));
+
+            add(m, 1);
+
+            jmp(label[0]);
+        }
+
+        L(label_end[0]);
+
         this->postamble();
+
+        for (auto& inj : eltwise_injectors)
+            inj->prepare_table();
     }
 
 
@@ -122,6 +191,11 @@ private:
     Xbyak::Reg64 reg_dst = r10;
     Xbyak::Reg64 reg_src_aux_a = r11;
     Xbyak::Reg64 reg_src_aux_b = r12;
+
+    Xbyak::Reg64 m = r13;
+    Xbyak::Reg64 n = r14;
+    Xbyak::Reg64 k = r15;
+    Xbyak::Reg64 temp = abi_param2;
 
     Xbyak::Reg64 reg_params = abi_param1;
 
@@ -387,7 +461,6 @@ void MKLDNNMatMulNode::createPrimitive() {
 
 void MKLDNNMatMulNode::execute(mkldnn::stream strm) {
     if (matmul_kernel) {
-        std::cout << "MATMUL" << std::endl;
         auto arg = jit_matmul_args();
         arg.src_A =  reinterpret_cast<uint8_t*>(getParentEdgeAt(0)->getMemory().GetPtr());
         arg.src_B =  reinterpret_cast<uint8_t*>(getParentEdgeAt(1)->getMemory().GetPtr());
