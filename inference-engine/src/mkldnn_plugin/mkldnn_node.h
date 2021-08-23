@@ -361,7 +361,9 @@ public:
         return engine;
     }
 
-    // can be called after init optimal primitive descriptor
+    // should be called every time selected primitive descriptor is changed
+    void initInPlace();
+
     bool isInPlace();
 
     bool isConstant();
@@ -460,6 +462,8 @@ public:
             selectedPrimitiveDescriptorIndex = -1;
         else
             selectedPrimitiveDescriptorIndex = index;
+
+        initInPlace();
     }
 
     std::string getPrimitiveDescriptorType();
