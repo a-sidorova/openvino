@@ -361,8 +361,6 @@ public:
         return engine;
     }
 
-    void initInPlace();
-
     bool isInPlace();
 
     bool isConstant();
@@ -810,6 +808,8 @@ private:
 
     PerfCount perfCounter;
     PerfCounters profiling;
+
+    inline void initInPlace();
 
     bool isEdgesEmpty(const std::vector<MKLDNNEdgeWeakPtr>& edges) const;
 
