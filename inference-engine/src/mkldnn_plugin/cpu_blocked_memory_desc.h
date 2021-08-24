@@ -97,4 +97,6 @@ private:
     std::vector<size_t> offsetPaddingToData;
     size_t offsetPadding;
 };
+using BlockedMemoryDescPtr = std::unique_ptr<BlockedMemoryDesc>;
+using BlockedMemoryDescCPtr = std::unique_ptr<const BlockedMemoryDesc>;
 } // namespace MKLDNNPlugin

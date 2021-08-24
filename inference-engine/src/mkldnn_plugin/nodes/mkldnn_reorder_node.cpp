@@ -9,6 +9,7 @@
 #include <mkldnn_types.h>
 #include <mkldnn_extension_utils.h>
 #include "ie_parallel.hpp"
+#include "common/cpu_memcpy.h"
 #include "utils/general_utils.h"
 #include <cpu/x64/cpu_isa_traits.hpp>
 
@@ -77,7 +78,48 @@ void MKLDNNReorderNode::createPrimitive() {
     auto inDims = getParentEdgeAt(0)->getShape().getStaticDims();
 
     if (!isOptimized) {
-        if (MKLDNNPlugin::one_of(inDims.size(), 4, 5) &&
+        BlockedMemoryDescPtr srcBlockDesc;
+        BlockedMemoryDescPtr dstBlockDesc;
+        bool descsAreBlocked = true;
+        // This ugly construction will be changed with a bitmask check when the Dynamic Shapes Phase 2 is completed
+        try {
+            srcBlockDesc = MKLDNNPlugin::make_unique<BlockedMemoryDesc>(srcMemPtr->GetDescWithType<BlockedMemoryDesc>());
+            dstBlockDesc = MKLDNNPlugin::make_unique<BlockedMemoryDesc>(dstMemPtr->GetDescWithType<BlockedMemoryDesc>());
+        }
+        catch (const InferenceEngine::GeneralError& excp) {
+            descsAreBlocked = false;
+        }
+
+        if (descsAreBlocked &&
+            srcBlockDesc->isDefined() && dstBlockDesc->isDefined()) {
+            // Only partial compatibility check since we allow incompatible offsets
+            useDirectCopy = srcBlockDesc->getShape().getRank() == srcBlockDesc->getShape().getRank() &&
+                    srcBlockDesc->getShape().getRank() != 0 &&
+                    srcBlockDesc->getPrecision() == dstBlockDesc->getPrecision() &&
+                    srcBlockDesc->getBlockDims() == dstBlockDesc->getBlockDims() &&
+                    srcBlockDesc->getOrder() == dstBlockDesc->getOrder() &&
+                    srcBlockDesc->getOffsetPaddingToData() == dstBlockDesc->getOffsetPaddingToData();
+
+            auto& srcStrides = srcBlockDesc->getStrides();
+            auto& dstStrides = dstBlockDesc->getStrides();
+            size_t startAxis = srcBlockDesc->getBlockDims().front() == 1 ? 1 : 0;
+            useDirectCopy = useDirectCopy && std::equal(srcStrides.begin() + startAxis, srcStrides.end(), dstStrides.begin() + startAxis);
+
+            //Check that the tensors are dense
+            useDirectCopy = srcStrides.back() == 1;
+            auto &blkDims = srcBlockDesc->getBlockDims();
+            for (size_t i = startAxis; useDirectCopy && i < srcStrides.size() - 1; ++i) {
+                useDirectCopy = useDirectCopy && (srcStrides[i] == blkDims[i + 1] * srcStrides[i + 1]);
+            }
+
+            if (useDirectCopy) {
+                directCopyParams.srcMem = srcMemPtr;
+                directCopyParams.dstMem = dstMemPtr;
+                directCopyParams.dataSize = dstMemPtr->GetSize(); // be careful since this is just padded elements count multiplied by the data size
+            }
+        }
+        if (!useDirectCopy) {
+            if (MKLDNNPlugin::one_of(inDims.size(), 4, 5) &&
                 inDims[1] <= 64 &&
                 inDims[1] >= 16 &&
                 (getParentEdgeAt(0)->getMemory().GetElementsCount() / inDims[1]) >= 128 &&
@@ -85,19 +127,20 @@ void MKLDNNReorderNode::createPrimitive() {
                 getChildEdgeAt(0)->getMemory().GetDesc().hasLayoutType(LayoutType::ncsp) &&
                 getParentEdgeAt(0)->getMemory().GetDesc().getPrecision() == Precision::FP32 &&
                 getChildEdgeAt(0)->getMemory().GetDesc().getPrecision() == Precision::FP32) {
-            // oneDNN JIT reorder shows bad perf for nspc to ncsp reorder case so we fallback on simple c++ implementation
-            canUseOptimizedNspc2Ncsp = true;
-        } else if (!impl::cpu::x64::mayiuse(impl::cpu::x64::avx2) &&
-                   MKLDNNPlugin::one_of(inDims.size(), 4, 5) &&
-                   getParentEdgeAt(0)->getMemory().GetDesc().hasLayoutType(LayoutType::ncsp) &&
-                   getChildEdgeAt(0)->getMemory().GetDesc().hasLayoutType(LayoutType::nspc) &&
-                   getParentEdgeAt(0)->getMemory().GetDataType() == getChildEdgeAt(0)->getMemory().GetDataType() &&
-                   MKLDNNExtensionUtils::sizeOfDataType(getParentEdgeAt(0)->getMemory().GetDataType()) == 1) {
-            // oneDNN doesn't provide JIT reorder impl for non-avx2 targets so we fallback on simple c++ implementation which shows better perf
-            canUseOptimizedNcsp2Nspc = true;
-        } else {
-            createReorderPrimitive(srcMemPtr->GetDescriptor(), srcMemPtr->GetPrimitive().get_data_handle(),
-                                   dstMemPtr->GetDescriptor(), dstMemPtr->GetPrimitive().get_data_handle());
+                // oneDNN JIT reorder shows bad perf for nspc to ncsp reorder case so we fallback on simple c++ implementation
+                canUseOptimizedNspc2Ncsp = true;
+            } else if (!impl::cpu::x64::mayiuse(impl::cpu::x64::avx2) &&
+                       MKLDNNPlugin::one_of(inDims.size(), 4, 5) &&
+                       getParentEdgeAt(0)->getMemory().GetDesc().hasLayoutType(LayoutType::ncsp) &&
+                       getChildEdgeAt(0)->getMemory().GetDesc().hasLayoutType(LayoutType::nspc) &&
+                       getParentEdgeAt(0)->getMemory().GetDataType() == getChildEdgeAt(0)->getMemory().GetDataType() &&
+                       MKLDNNExtensionUtils::sizeOfDataType(getParentEdgeAt(0)->getMemory().GetDataType()) == 1) {
+                // oneDNN doesn't provide JIT reorder impl for non-avx2 targets so we fallback on simple c++ implementation which shows better perf
+                canUseOptimizedNcsp2Nspc = true;
+            } else {
+                createReorderPrimitive(srcMemPtr->GetDescriptor(), srcMemPtr->GetPrimitive().get_data_handle(),
+                                       dstMemPtr->GetDescriptor(), dstMemPtr->GetPrimitive().get_data_handle());
+            }
         }
     }
 }
@@ -230,7 +273,11 @@ void MKLDNNReorderNode::execute(mkldnn::stream strm) {
     if (isOptimized)
         return;
 
-    if (canUseOptimizedNspc2Ncsp) {
+    if (useDirectCopy) {
+        auto srcPtr = directCopyParams.srcMem->GetPtr();
+        auto dstPtr = directCopyParams.dstMem->GetPtr();
+        cpu_memcpy(dstPtr, srcPtr, directCopyParams.dataSize);
+    } else if (canUseOptimizedNspc2Ncsp) {
         optimizedNspc2Ncsp();
     } else if (canUseOptimizedNcsp2Nspc) {
         optimizedNcsp2Nspc();
