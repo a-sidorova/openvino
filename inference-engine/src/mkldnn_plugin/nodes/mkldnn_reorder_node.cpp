@@ -106,7 +106,7 @@ void MKLDNNReorderNode::createPrimitive() {
             useDirectCopy = useDirectCopy && std::equal(srcStrides.begin() + startAxis, srcStrides.end(), dstStrides.begin() + startAxis);
 
             //Check that the tensors are dense
-            useDirectCopy = srcStrides.back() == 1;
+            useDirectCopy = useDirectCopy && srcStrides.back() == 1;
             auto &blkDims = srcBlockDesc->getBlockDims();
             for (size_t i = startAxis; useDirectCopy && i < srcStrides.size() - 1; ++i) {
                 useDirectCopy = useDirectCopy && (srcStrides[i] == blkDims[i + 1] * srcStrides[i + 1]);
