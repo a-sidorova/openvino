@@ -16,6 +16,7 @@ struct jit_matmul_config_params {
     size_t m;
     size_t n;
     size_t k;
+    bool b_is_optimized;
 };
 
 struct jit_matmul_args {

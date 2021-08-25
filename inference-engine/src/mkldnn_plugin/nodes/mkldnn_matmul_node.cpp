@@ -25,6 +25,7 @@
 #include "emitters/jit_emitter.hpp"
 #include "emitters/jit_eltwise_emitters.hpp"
 #include "emitters/jit_mkldnn_emitters.hpp"
+#include "emitters/jit_load_store_emitters.hpp"
 
 using namespace mkldnn;
 using namespace MKLDNNPlugin;
@@ -64,110 +65,212 @@ struct jit_uni_matmul_kernel_f32 : public jit_uni_matmul_kernel, public jit_gene
             }
         }
 
+        load_emitter.reset(new jit_load_emitter(this, isa, nullptr));
+        store_emitter.reset(new jit_store_emitter(this, isa, nullptr));
+
         this->preamble();
 
         mov(reg_src_a, ptr[reg_params + GET_OFF(src_A)]);
         mov(reg_src_b, ptr[reg_params + GET_OFF(src_B)]);
         mov(reg_dst, ptr[reg_params + GET_OFF(dst)]);
 
-        const auto &jcp = jcp_;
+        load_pool_gpr_idxs = {static_cast<size_t>(reg_load_store_mask.getIdx()), static_cast<size_t>(reg_load_table.getIdx())};
+        store_pool_gpr_idxs = {static_cast<size_t>(reg_load_store_mask.getIdx())};
+        store_pool_vec_idxs = {static_cast<size_t>(vmm_zero.getIdx())};
 
-    /*    for (auto i0 = 0; i0 < jcp.m; i0++) {
-            for (auto i1 = 0; i1 < jcp.k; i1++) {
-                mov(reg_src_aux_a, reg_src_a);
+        k_full = jcp_.k / step;
+        k_tail = jcp_.k % step;
 
-                mov(reg_src_aux_b, reg_src_b);
-                add(reg_src_aux_b, i1 * sizeof(float));
-
-                uni_vpxor(xmm2, xmm2, xmm2);
-                for (auto i2 = 0; i2 < jcp.n; i2++) {
-                    movss(xmm, ptr[reg_src_aux_a]);
-                    movss(xmm1, ptr[reg_src_aux_b]);
-
-                    add(reg_src_aux_a, sizeof(float));
-                    add(reg_src_aux_b, sizeof(float) * jcp.k);
-
-                    uni_vfmadd231ss(xmm2, xmm, xmm1);
-                }
-                apply_post_ops();
-                movss(ptr[reg_dst], xmm2);
-
-                add(reg_dst, sizeof(float));
-            }
-
-            add(reg_src_a, jcp.n * sizeof(float));
-        }
-
-        this->postamble();*/
-
-        std::array<Xbyak::Label, 3> label;
-        std::array<Xbyak::Label, 3> label_end;
-
-        mov(m, 0);
-        L(label[0]);
-        {
-            cmp(m, jcp.m);
-            je(label_end[0], T_NEAR);
-
-            mov(k, 0);
-            L(label[1]);
-            {
-                cmp(k, jcp.k);
-                je(label_end[1], T_NEAR);
-
-                mov(reg_src_aux_a, reg_src_a);
-
-                mov(reg_src_aux_b, reg_src_b);
-                mov(temp, k);
-                imul(temp, temp, sizeof(float));
-                add(reg_src_aux_b, temp);
-
-                uni_vpxor(xmm2, xmm2, xmm2);
-
-                mov(n, 0);
-                L(label[2]);
-                {
-                    cmp(n, jcp.n);
-                    je(label_end[2], T_NEAR);
-
-                    movss(xmm, ptr[reg_src_aux_a]);
-                    movss(xmm1, ptr[reg_src_aux_b]);
-
-                    add(reg_src_aux_a, sizeof(float));
-                    add(reg_src_aux_b, sizeof(float) * jcp.k);
-
-                    uni_vfmadd231ss(xmm2, xmm, xmm1);
-
-                    add(n, 1);
-
-                    jmp(label[2]);
-                }
-                L(label_end[2]);
-
-                apply_post_ops();
-                movss(ptr[reg_dst], xmm2);
-
-                add(reg_dst, sizeof(float));
-
-                add(k, 1);
-
-                jmp(label[1]);
-            }
-            L(label_end[1]);
-
-            add(reg_src_a, jcp.n * sizeof(float));
-
-            add(m, 1);
-
-            jmp(label[0]);
-        }
-
-        L(label_end[0]);
+        common_body();
 
         this->postamble();
 
+        load_emitter->emit_data();
+        store_emitter->emit_data();
+
         for (auto& inj : eltwise_injectors)
             inj->prepare_table();
+    }
+
+private:
+    using Vmm = typename conditional3<isa == x64::sse41, Xbyak::Xmm, isa == x64::avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
+    const int vlen = cpu_isa_traits<isa>::vlen;
+    const int step = vlen / sizeof(float);
+    int k_full;
+    int k_tail;
+
+    Xbyak::Reg64 reg_src_a = r8;
+    Xbyak::Reg64 reg_src_b = r9;
+    Xbyak::Reg64 reg_dst = r10;
+    Xbyak::Reg64 reg_src_aux_a = r11;
+    Xbyak::Reg64 reg_src_aux_b = r12;
+
+    Xbyak::Reg64 reg_params = abi_param1;
+    Xbyak::Reg64 reg_load_store_mask = abi_param2;
+    Xbyak::Reg64 reg_load_table = r13;
+
+    Xbyak::Reg64 idx = r15;
+    Xbyak::Reg64 temp = abi_param2; // reg_load_store_mask
+
+    Xmm xmm_temp = Xmm(0);
+    Xmm xmm_temp_1 = Xmm(1);
+    Ymm ymm_temp = Ymm(0);
+    Vmm vmm_zero = Vmm(0);
+    Vmm vmm_a = Vmm(1);
+    Vmm vmm_b = Vmm(2);
+    Vmm vmm_dst = Vmm(3);
+
+    std::unique_ptr<jit_load_emitter> load_emitter = nullptr;
+    std::unique_ptr<jit_store_emitter> store_emitter = nullptr;
+
+    std::vector<size_t> load_pool_gpr_idxs;
+    std::vector<size_t> store_pool_gpr_idxs;
+    std::vector<size_t> store_pool_vec_idxs;
+
+    std::vector<std::shared_ptr<jit_uni_eltwise_injector_f32<isa>>> eltwise_injectors;
+
+    inline void common_body() {
+        Xbyak::Label label_m;
+        Xbyak::Label label_m_end;
+
+        mov(idx, 0);
+        L(label_m); {
+            cmp(idx, jcp_.m);
+            je(label_m_end, T_NEAR);
+
+            push(idx);
+            mov(idx, 0);
+
+            if (jcp_.b_is_optimized) {
+                optimized_body_internal_loop();
+            } else {
+                body_internal_loop();
+                if (k_tail != 0) {
+                    body_internal_loop(true);
+                }
+            }
+
+            add(reg_src_a, jcp_.n * sizeof(float));
+            pop(idx);
+            add(idx, 1);
+
+            jmp(label_m);
+        }
+        L(label_m_end);
+    }
+
+    inline void body_internal_loop(bool is_tail = false) {
+        Xbyak::Label label_k;
+        Xbyak::Label label_k_end;
+        Xbyak::Label label_n;
+        Xbyak::Label label_n_end;
+
+        int elt_num = is_tail ? k_tail : step;
+        int amount =  is_tail ? k_full + 1 : k_full;
+
+        L(label_k); {
+            cmp(idx, amount);
+            je(label_k_end);
+
+            mov(reg_src_aux_a, reg_src_a);
+            mov(reg_src_aux_b, reg_src_b);
+            mov(temp, idx);
+            imul(temp, temp, vlen);
+            add(reg_src_aux_b, temp);
+            uni_vpxor(vmm_dst, vmm_dst, vmm_dst);
+
+            push(idx);
+            mov(idx, 0);
+            L(label_n); {
+                cmp(idx, jcp_.n);
+                je(label_n_end);
+
+                uni_vbroadcastss(vmm_a, ptr[reg_src_aux_a]);
+                load_emitter->emit_code({static_cast<size_t>(reg_src_aux_b.getIdx())}, {static_cast<size_t>(vmm_b.getIdx())},
+                                        std::make_shared<load_emitter_context>(Precision::FP32, Precision::FP32, elt_num),
+                                        {}, load_pool_gpr_idxs);
+
+                uni_vfmadd231ps(vmm_dst, vmm_a, vmm_b);
+
+                add(reg_src_aux_a, sizeof(float));
+                add(reg_src_aux_b, jcp_.k * sizeof(float));
+                add(idx, 1);
+                jmp(label_n);
+            }
+            L(label_n_end);
+
+            apply_post_ops();
+
+            store_emitter->emit_code({static_cast<size_t>(vmm_dst.getIdx())}, {static_cast<size_t>(reg_dst.getIdx())},
+                                     std::make_shared<store_emitter_context>(Precision::FP32, Precision::FP32, elt_num),
+                                     store_pool_vec_idxs, store_pool_gpr_idxs);
+
+            add(reg_dst, elt_num * sizeof(float));
+            pop(idx);
+            add(idx, 1);
+
+            jmp(label_k);
+        }
+        L(label_k_end);
+    }
+
+    inline void optimized_body_internal_loop() {
+        Xbyak::Label label_k;
+        Xbyak::Label label_k_end;
+        Xbyak::Label label_n;
+        Xbyak::Label label_n_end;
+
+        const int n_full = jcp_.n / step;
+     //   const int n_tail = jcp_.n % step;
+        mov(reg_src_aux_b, reg_src_b);
+        L(label_k); {
+            cmp(idx, jcp_.k);
+            je(label_k_end);
+
+            mov(reg_src_aux_a, reg_src_a);
+            uni_vpxor(vmm_dst, vmm_dst, vmm_dst);
+            push(idx);
+            mov(idx, 0);
+
+            L(label_n); {
+                cmp(idx, n_full);
+                je(label_n_end);
+
+                load_emitter->emit_code({static_cast<size_t>(reg_src_aux_a.getIdx())}, {static_cast<size_t>(vmm_a.getIdx())},
+                                        std::make_shared<load_emitter_context>(Precision::FP32, Precision::FP32, step),
+                                        {}, load_pool_gpr_idxs);
+                load_emitter->emit_code({static_cast<size_t>(reg_src_aux_b.getIdx())}, {static_cast<size_t>(vmm_b.getIdx())},
+                                        std::make_shared<load_emitter_context>(Precision::FP32, Precision::FP32, step),
+                                        {}, load_pool_gpr_idxs);
+
+                uni_vfmadd231ps(vmm_dst, vmm_a, vmm_b);
+
+                add(reg_src_aux_a, vlen);
+                add(reg_src_aux_b, vlen);
+
+                add(idx, 1);
+                jmp(label_n);
+            }
+            L(label_n_end);
+
+            vhaddps(vmm_dst, vmm_dst);
+            vhaddps(vmm_dst, vmm_dst);
+            mov(ymm_temp, vmm_dst);
+            vextractf128(xmm_temp, ymm_temp, 0x1);
+            uni_vaddps(vmm_dst, xmm_temp, ymm_temp);
+
+            store_emitter->emit_code({static_cast<size_t>(vmm_dst.getIdx())}, {static_cast<size_t>(reg_dst.getIdx())},
+                                     std::make_shared<store_emitter_context>(Precision::FP32, Precision::FP32, 1),
+                                     store_pool_vec_idxs, store_pool_gpr_idxs);
+
+            add(reg_dst, sizeof(float));
+
+            pop(idx);
+            add(idx, 1);
+
+            jmp(label_k);
+        }
+        L(label_k_end);
     }
 
 
@@ -181,30 +284,6 @@ struct jit_uni_matmul_kernel_f32 : public jit_uni_matmul_kernel, public jit_gene
             }
         }
     }
-
-private:
-    using Vmm = typename conditional3<isa == x64::sse41, Xbyak::Xmm, isa == x64::avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
-    uint32_t vlen = cpu_isa_traits<isa>::vlen;
-
-    Xbyak::Reg64 reg_src_a = r8;
-    Xbyak::Reg64 reg_src_b = r9;
-    Xbyak::Reg64 reg_dst = r10;
-    Xbyak::Reg64 reg_src_aux_a = r11;
-    Xbyak::Reg64 reg_src_aux_b = r12;
-
-    Xbyak::Reg64 m = r13;
-    Xbyak::Reg64 n = r14;
-    Xbyak::Reg64 k = r15;
-    Xbyak::Reg64 temp = abi_param2;
-
-    Xbyak::Reg64 reg_params = abi_param1;
-
-    Vmm vmm = Vmm(0);
-    Xmm xmm = Xmm(0);
-    Xmm xmm1 = Xmm(1);
-    Xmm xmm2 = Xmm(2);
-
-    std::vector<std::shared_ptr<jit_uni_eltwise_injector_f32<isa>>> eltwise_injectors;
 };
 
 bool MKLDNNMatMulNode::isSupportedOperation(const std::shared_ptr<ngraph::Node>& op, std::string& errorMessage) noexcept {
@@ -423,8 +502,9 @@ void MKLDNNMatMulNode::createPrimitive() {
     if (getSelectedPrimitiveDescriptor() == nullptr)
         IE_THROW()  << errorPrefix << " did not set preferable primitive descriptor";
 
-    if (inputShapes[0].getRank() == 2 && !transposeIn[0] && !transposeIn[1]) {
+    if (inputShapes[0].getRank() == 2 && !transposeIn[0]) {
         jit_matmul_config_params jep;
+        jep.b_is_optimized = transposeIn[1];
         jep.m = inputShapes[0].getStaticDims()[0];
         jep.n = inputShapes[0].getStaticDims()[1];
         jep.k = inputShapes[1].getStaticDims()[1];
