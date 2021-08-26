@@ -112,13 +112,16 @@ private:
     Xbyak::Reg64 idx = r15;
     Xbyak::Reg64 temp = abi_param2; // reg_load_store_mask
 
-    Xmm xmm_acc = Xmm(4);
-    Xmm xmm_temp = Xmm(3);
-    Ymm ymm_temp = Ymm(3);
     Vmm vmm_zero = Vmm(0);
     Vmm vmm_a = Vmm(1);
     Vmm vmm_b = Vmm(2);
+
     Vmm vmm_dst = Vmm(3);
+    Xmm xmm_dst = Xmm(3);
+    Ymm ymm_dst = Ymm(3);
+    Zmm zmm_dst = Zmm(3);
+
+    Xmm xmm_temp = Xmm(4);
 
     std::unique_ptr<jit_load_emitter> load_emitter = nullptr;
     std::unique_ptr<jit_store_emitter> store_emitter = nullptr;
@@ -174,8 +177,7 @@ private:
 
             mov(reg_src_aux_a, reg_src_a);
             mov(reg_src_aux_b, reg_src_b);
-            mov(temp, idx);
-            imul(temp, temp, vlen);
+            imul(temp, idx, vlen);
             add(reg_src_aux_b, temp);
             uni_vpxor(vmm_dst, vmm_dst, vmm_dst);
 
@@ -186,9 +188,7 @@ private:
                 je(label_n_end);
 
                 uni_vbroadcastss(vmm_a, ptr[reg_src_aux_a]);
-                load_emitter->emit_code({static_cast<size_t>(reg_src_aux_b.getIdx())}, {static_cast<size_t>(vmm_b.getIdx())},
-                                        std::make_shared<load_emitter_context>(Precision::FP32, Precision::FP32, elt_num),
-                                        {}, load_pool_gpr_idxs);
+                load(reg_src_aux_b, vmm_b, elt_num, is_tail);
 
                 uni_vfmadd231ps(vmm_dst, vmm_a, vmm_b);
 
@@ -201,9 +201,7 @@ private:
 
             apply_post_ops();
 
-            store_emitter->emit_code({static_cast<size_t>(vmm_dst.getIdx())}, {static_cast<size_t>(reg_dst.getIdx())},
-                                     std::make_shared<store_emitter_context>(Precision::FP32, Precision::FP32, elt_num),
-                                     store_pool_vec_idxs, store_pool_gpr_idxs);
+            store(vmm_dst, reg_dst, elt_num);
 
             add(reg_dst, elt_num * sizeof(float));
             pop(idx);
@@ -232,17 +230,19 @@ private:
             if (amount_tail != 0) {
                 optimized_body_internal_loop(true);
             }
-
-            vhaddps(vmm_dst, vmm_dst);
-            vhaddps(vmm_dst, vmm_dst);
-            vextractf128(xmm_acc, ymm_temp, 0x1);
-            vaddss(xmm_temp, xmm_acc, xmm_temp);
+            
+            if (isa == x64::avx512_common) {
+                //vred
+            } else if (isa == x64::avx2) {
+                vhaddps(vmm_dst, vmm_dst);
+                vhaddps(vmm_dst, vmm_dst);
+                vextractf128(xmm_temp, ymm_dst, 0x1);
+                vaddss(xmm_dst, xmm_temp, xmm_dst);
+            }
 
             apply_post_ops();
 
-            store_emitter->emit_code({static_cast<size_t>(vmm_dst.getIdx())}, {static_cast<size_t>(reg_dst.getIdx())},
-                                     std::make_shared<store_emitter_context>(Precision::FP32, Precision::FP32, 1),
-                                     store_pool_vec_idxs, store_pool_gpr_idxs);
+            store(vmm_dst, reg_dst, 1);
 
             add(reg_dst, sizeof(float));
 
@@ -265,12 +265,8 @@ private:
             cmp(idx, amount);
             je(label_n_end, T_NEAR);
 
-            load_emitter->emit_code({static_cast<size_t>(reg_src_aux_a.getIdx())}, {static_cast<size_t>(vmm_a.getIdx())},
-                                    std::make_shared<load_emitter_context>(Precision::FP32, Precision::FP32, elt_num, 0, is_tail),
-                                    {}, load_pool_gpr_idxs);
-            load_emitter->emit_code({static_cast<size_t>(reg_src_aux_b.getIdx())}, {static_cast<size_t>(vmm_b.getIdx())},
-                                    std::make_shared<load_emitter_context>(Precision::FP32, Precision::FP32, elt_num, 0, is_tail),
-                                    {}, load_pool_gpr_idxs);
+            load(reg_src_aux_a, vmm_a, elt_num, is_tail);
+            load(reg_src_aux_b, vmm_b, elt_num, is_tail);
 
             uni_vfmadd231ps(vmm_dst, vmm_a, vmm_b);
 
@@ -293,6 +289,18 @@ private:
                 eltwise_injectors[eltwise_inj_idx++]->compute_vector_range(vmm_dst.getIdx(), vmm_dst.getIdx() + 1);
             }
         }
+    }
+    
+    inline void load(Xbyak::Reg64 reg, Vmm vmm, int load_num, bool is_fill = false) {
+        load_emitter->emit_code({static_cast<size_t>(reg.getIdx())}, {static_cast<size_t>(vmm.getIdx())},
+                                std::make_shared<load_emitter_context>(Precision::FP32, Precision::FP32, load_num, 0, is_fill),
+                                {}, load_pool_gpr_idxs);
+    }
+
+    inline void store(Vmm vmm, Xbyak::Reg64 reg, int load_num) {
+        store_emitter->emit_code({static_cast<size_t>(vmm.getIdx())}, {static_cast<size_t>(reg.getIdx())},
+                                 std::make_shared<store_emitter_context>(Precision::FP32, Precision::FP32, load_num),
+                                 store_pool_vec_idxs, store_pool_gpr_idxs);
     }
 };
 
