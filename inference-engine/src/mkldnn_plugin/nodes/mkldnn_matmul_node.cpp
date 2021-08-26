@@ -78,10 +78,10 @@ struct jit_uni_matmul_kernel_f32 : public jit_uni_matmul_kernel, public jit_gene
         store_pool_gpr_idxs = {static_cast<size_t>(reg_load_store_mask.getIdx())};
         store_pool_vec_idxs = {static_cast<size_t>(vmm_zero.getIdx())};
 
-        k_full = jcp_.k / step;
-        k_tail = jcp_.k % step;
+        amount_full = (jcp_.b_is_optimized ? jcp_.n : jcp_.k) / step;
+        amount_tail = (jcp_.b_is_optimized ? jcp_.n : jcp_.k) % step;
 
-        common_body();
+        body();
 
         this->postamble();
 
@@ -96,8 +96,8 @@ private:
     using Vmm = typename conditional3<isa == x64::sse41, Xbyak::Xmm, isa == x64::avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
     const int vlen = cpu_isa_traits<isa>::vlen;
     const int step = vlen / sizeof(float);
-    int k_full;
-    int k_tail;
+    int amount_full;
+    int amount_tail;
 
     Xbyak::Reg64 reg_src_a = r8;
     Xbyak::Reg64 reg_src_b = r9;
@@ -112,9 +112,9 @@ private:
     Xbyak::Reg64 idx = r15;
     Xbyak::Reg64 temp = abi_param2; // reg_load_store_mask
 
-    Xmm xmm_temp = Xmm(0);
-    Xmm xmm_temp_1 = Xmm(1);
-    Ymm ymm_temp = Ymm(0);
+    Xmm xmm_acc = Xmm(4);
+    Xmm xmm_temp = Xmm(3);
+    Ymm ymm_temp = Ymm(3);
     Vmm vmm_zero = Vmm(0);
     Vmm vmm_a = Vmm(1);
     Vmm vmm_b = Vmm(2);
@@ -129,7 +129,7 @@ private:
 
     std::vector<std::shared_ptr<jit_uni_eltwise_injector_f32<isa>>> eltwise_injectors;
 
-    inline void common_body() {
+    inline void body() {
         Xbyak::Label label_m;
         Xbyak::Label label_m_end;
 
@@ -142,11 +142,11 @@ private:
             mov(idx, 0);
 
             if (jcp_.b_is_optimized) {
-                optimized_body_internal_loop();
+                optimized_body_loop();
             } else {
-                body_internal_loop();
-                if (k_tail != 0) {
-                    body_internal_loop(true);
+                body_loop();
+                if (amount_tail != 0) {
+                    body_loop(true);
                 }
             }
 
@@ -154,23 +154,23 @@ private:
             pop(idx);
             add(idx, 1);
 
-            jmp(label_m);
+            jmp(label_m, T_NEAR);
         }
         L(label_m_end);
     }
 
-    inline void body_internal_loop(bool is_tail = false) {
+    inline void body_loop(bool is_tail = false) {
         Xbyak::Label label_k;
         Xbyak::Label label_k_end;
         Xbyak::Label label_n;
         Xbyak::Label label_n_end;
 
-        int elt_num = is_tail ? k_tail : step;
-        int amount =  is_tail ? k_full + 1 : k_full;
+        int elt_num = is_tail ? amount_tail : step;
+        int amount =  is_tail ? amount_full + 1 : amount_full;
 
         L(label_k); {
             cmp(idx, amount);
-            je(label_k_end);
+            je(label_k_end, T_NEAR);
 
             mov(reg_src_aux_a, reg_src_a);
             mov(reg_src_aux_b, reg_src_b);
@@ -209,55 +209,36 @@ private:
             pop(idx);
             add(idx, 1);
 
-            jmp(label_k);
+            jmp(label_k, T_NEAR);
         }
         L(label_k_end);
     }
 
-    inline void optimized_body_internal_loop() {
+    inline void optimized_body_loop() {
         Xbyak::Label label_k;
         Xbyak::Label label_k_end;
-        Xbyak::Label label_n;
-        Xbyak::Label label_n_end;
 
-        const int n_full = jcp_.n / step;
-     //   const int n_tail = jcp_.n % step;
         mov(reg_src_aux_b, reg_src_b);
         L(label_k); {
             cmp(idx, jcp_.k);
-            je(label_k_end);
+            je(label_k_end, T_NEAR);
 
             mov(reg_src_aux_a, reg_src_a);
             uni_vpxor(vmm_dst, vmm_dst, vmm_dst);
             push(idx);
             mov(idx, 0);
 
-            L(label_n); {
-                cmp(idx, n_full);
-                je(label_n_end);
-
-                load_emitter->emit_code({static_cast<size_t>(reg_src_aux_a.getIdx())}, {static_cast<size_t>(vmm_a.getIdx())},
-                                        std::make_shared<load_emitter_context>(Precision::FP32, Precision::FP32, step),
-                                        {}, load_pool_gpr_idxs);
-                load_emitter->emit_code({static_cast<size_t>(reg_src_aux_b.getIdx())}, {static_cast<size_t>(vmm_b.getIdx())},
-                                        std::make_shared<load_emitter_context>(Precision::FP32, Precision::FP32, step),
-                                        {}, load_pool_gpr_idxs);
-
-                uni_vfmadd231ps(vmm_dst, vmm_a, vmm_b);
-
-                add(reg_src_aux_a, vlen);
-                add(reg_src_aux_b, vlen);
-
-                add(idx, 1);
-                jmp(label_n);
+            optimized_body_internal_loop();
+            if (amount_tail != 0) {
+                optimized_body_internal_loop(true);
             }
-            L(label_n_end);
 
             vhaddps(vmm_dst, vmm_dst);
             vhaddps(vmm_dst, vmm_dst);
-            mov(ymm_temp, vmm_dst);
-            vextractf128(xmm_temp, ymm_temp, 0x1);
-            uni_vaddps(vmm_dst, xmm_temp, ymm_temp);
+            vextractf128(xmm_acc, ymm_temp, 0x1);
+            vaddss(xmm_temp, xmm_acc, xmm_temp);
+
+            apply_post_ops();
 
             store_emitter->emit_code({static_cast<size_t>(vmm_dst.getIdx())}, {static_cast<size_t>(reg_dst.getIdx())},
                                      std::make_shared<store_emitter_context>(Precision::FP32, Precision::FP32, 1),
@@ -268,9 +249,38 @@ private:
             pop(idx);
             add(idx, 1);
 
-            jmp(label_k);
+            jmp(label_k, T_NEAR);
         }
         L(label_k_end);
+    }
+
+    inline void optimized_body_internal_loop(bool is_tail = false) {
+        Xbyak::Label label_n;
+        Xbyak::Label label_n_end;
+
+        int elt_num = is_tail ? amount_tail : step;
+        int amount =  is_tail ? amount_full + 1 : amount_full;
+
+        L(label_n); {
+            cmp(idx, amount);
+            je(label_n_end, T_NEAR);
+
+            load_emitter->emit_code({static_cast<size_t>(reg_src_aux_a.getIdx())}, {static_cast<size_t>(vmm_a.getIdx())},
+                                    std::make_shared<load_emitter_context>(Precision::FP32, Precision::FP32, elt_num, 0, is_tail),
+                                    {}, load_pool_gpr_idxs);
+            load_emitter->emit_code({static_cast<size_t>(reg_src_aux_b.getIdx())}, {static_cast<size_t>(vmm_b.getIdx())},
+                                    std::make_shared<load_emitter_context>(Precision::FP32, Precision::FP32, elt_num, 0, is_tail),
+                                    {}, load_pool_gpr_idxs);
+
+            uni_vfmadd231ps(vmm_dst, vmm_a, vmm_b);
+
+            add(reg_src_aux_a, elt_num * sizeof(float));
+            add(reg_src_aux_b, elt_num * sizeof(float));
+
+            add(idx, 1);
+            jmp(label_n, T_NEAR);
+        }
+        L(label_n_end);
     }
 
 
@@ -280,7 +290,7 @@ private:
         for (int i = 0; i < p.len(); i++) {
             auto& post_op = p.entry_[i];
             if (post_op.is_eltwise()) {
-                eltwise_injectors[eltwise_inj_idx++]->compute_vector_range(xmm2.getIdx(), xmm2.getIdx() + 1);
+                eltwise_injectors[eltwise_inj_idx++]->compute_vector_range(vmm_dst.getIdx(), vmm_dst.getIdx() + 1);
             }
         }
     }
@@ -331,9 +341,7 @@ MKLDNNMatMulNode::MKLDNNMatMulNode(const std::shared_ptr<ngraph::Node>& op, cons
 }
 
 bool MKLDNNMatMulNode::canFuse(const MKLDNNNodePtr& node) const {
-    return one_of(node->getAlgorithm(), EltwiseRelu, EltwiseGelu, EltwiseElu, EltwiseSigmoid, EltwiseClamp, EltwiseTanh,
-                  EltwiseSwish, EltwiseHswish, EltwiseMish, EltwiseHsigmoid, EltwiseRoundHalfToEven,
-                  EltwiseRoundHalfAwayFromZero, EltwiseAbs, EltwiseSqrt, EltwiseSoftRelu);
+    return canFuseSimpleOperation(node);
 }
 
 void MKLDNNMatMulNode::setPostOps(mkldnn::primitive_attr &attr, bool initWeights = false) const {
@@ -504,10 +512,10 @@ void MKLDNNMatMulNode::createPrimitive() {
 
     if (inputShapes[0].getRank() == 2 && !transposeIn[0]) {
         jit_matmul_config_params jep;
-        jep.b_is_optimized = transposeIn[1];
         jep.m = inputShapes[0].getStaticDims()[0];
         jep.n = inputShapes[0].getStaticDims()[1];
         jep.k = inputShapes[1].getStaticDims()[1];
+        jep.b_is_optimized = transposeIn[1] || jep.k == 1;
 
         if (mayiuse(x64::avx512_common)) {
             matmul_kernel.reset(new jit_uni_matmul_kernel_f32<x64::avx512_common>(jep, *attr.get()));

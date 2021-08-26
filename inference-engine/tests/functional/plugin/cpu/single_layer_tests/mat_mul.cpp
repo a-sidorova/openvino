@@ -233,9 +233,9 @@ const std::vector<ShapeRelatedParams> IS = {
     {{{10, 10, 10}, true}, {{10, 10, 10}, true}},*/
 
     {{{5, 2}, false}, {{2, 3}, false}},
-    {{{55, 12}, true}, {{12, 55}, false}},
+    {{{55, 12}, false}, {{12, 55}, false}},
     {{{55, 12}, false}, {{12, 55}, true}},
-    {{{55, 12}, true}, {{12, 55}, true}},
+    {{{55, 12}, false}, {{12, 1}, false}},
 };
 
 std::vector<fusingSpecificParams> matmulFusingParams {
