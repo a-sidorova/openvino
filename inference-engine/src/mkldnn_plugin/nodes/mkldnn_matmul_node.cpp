@@ -24,6 +24,7 @@
 
 #include "emitters/jit_emitter.hpp"
 #include "emitters/jit_eltwise_emitters.hpp"
+#include <cpu/x64/jit_uni_depthwise_injector.hpp>
 #include "emitters/jit_mkldnn_emitters.hpp"
 #include "emitters/jit_load_store_emitters.hpp"
 
@@ -106,8 +107,9 @@ private:
     Xbyak::Reg64 reg_src_aux_b = r12;
 
     Xbyak::Reg64 reg_params = abi_param1;
-    Xbyak::Reg64 reg_load_store_mask = abi_param2;
+    Xbyak::Reg64 reg_load_store_mask = rsi;
     Xbyak::Reg64 reg_load_table = r13;
+    Xbyak::Reg64 idx_k = r14;
 
     Xbyak::Reg64 idx = r15;
     Xbyak::Reg64 temp = abi_param2; // reg_load_store_mask
@@ -115,13 +117,11 @@ private:
     Vmm vmm_zero = Vmm(0);
     Vmm vmm_a = Vmm(1);
     Vmm vmm_b = Vmm(2);
-
     Vmm vmm_dst = Vmm(3);
-    Xmm xmm_dst = Xmm(3);
-    Ymm ymm_dst = Ymm(3);
-    Zmm zmm_dst = Zmm(3);
 
-    Xmm xmm_temp = Xmm(4);
+    Xmm xmm_aux1 = Xmm(1);
+    Xmm xmm_aux2 = Xmm(2);
+    Xmm xmm_aux3 = Xmm(3);
 
     std::unique_ptr<jit_load_emitter> load_emitter = nullptr;
     std::unique_ptr<jit_store_emitter> store_emitter = nullptr;
@@ -230,14 +230,25 @@ private:
             if (amount_tail != 0) {
                 optimized_body_internal_loop(true);
             }
-            
-            if (isa == x64::avx512_common) {
-                //vred
+
+            if (isa == x64::avx512_common) {1,
+                Xbyak::Zmm zmm_dst = Xbyak::Zmm(vmm_dst.getIdx());
+                vextractf32x4(xmm_aux1, zmm_dst, 0);
+                vextractf32x4(xmm_aux2, zmm_dst, 1);
+                vaddps(xmm_aux3, xmm_aux1, xmm_aux2);
+                vextractf32x4(xmm_aux1, zmm_dst, 2);
+                vextractf32x4(xmm_aux2, zmm_dst, 3);
+                addps(xmm_aux2, xmm_aux3);
+                addps(xmm_aux3, xmm_aux2);
+                hsum(xmm_aux3);
             } else if (isa == x64::avx2) {
-                vhaddps(vmm_dst, vmm_dst);
-                vhaddps(vmm_dst, vmm_dst);
-                vextractf128(xmm_temp, ymm_dst, 0x1);
-                vaddss(xmm_dst, xmm_temp, xmm_dst);
+                Xbyak::Ymm ymm_dst = Xbyak::Ymm(vmm_dst.getIdx());
+                vextractf128(xmm_aux1, ymm_dst, 0);
+                vextractf128(xmm_aux2, ymm_dst, 1);
+                vaddps(xmm_aux3, xmm_aux1, xmm_aux2);
+                hsum(xmm_aux3);
+            } else {
+                hsum(vmm_dst);
             }
 
             apply_post_ops();
@@ -279,6 +290,12 @@ private:
         L(label_n_end);
     }
 
+    inline void hsum(Xbyak::Xmm xmm) {
+        movshdup(xmm_aux2, xmm);
+        addps(xmm, xmm_aux2);
+        movhlps(xmm_aux2, xmm);
+        addps(xmm, xmm_aux2);
+    }
 
     inline void apply_post_ops() {
         const auto &p = attr_.post_ops_;
@@ -290,7 +307,7 @@ private:
             }
         }
     }
-    
+
     inline void load(Xbyak::Reg64 reg, Vmm vmm, int load_num, bool is_fill = false) {
         load_emitter->emit_code({static_cast<size_t>(reg.getIdx())}, {static_cast<size_t>(vmm.getIdx())},
                                 std::make_shared<load_emitter_context>(Precision::FP32, Precision::FP32, load_num, 0, is_fill),
@@ -349,7 +366,9 @@ MKLDNNMatMulNode::MKLDNNMatMulNode(const std::shared_ptr<ngraph::Node>& op, cons
 }
 
 bool MKLDNNMatMulNode::canFuse(const MKLDNNNodePtr& node) const {
-    return canFuseSimpleOperation(node);
+    return one_of(node->getAlgorithm(), EltwiseRelu, EltwiseGelu, EltwiseElu, EltwiseSigmoid, EltwiseClamp, EltwiseTanh,
+                  EltwiseSwish, EltwiseHswish, EltwiseMish, EltwiseHsigmoid, EltwiseRoundHalfToEven,
+                  EltwiseRoundHalfAwayFromZero, EltwiseAbs, EltwiseSqrt, EltwiseSoftRelu);
 }
 
 void MKLDNNMatMulNode::setPostOps(mkldnn::primitive_attr &attr, bool initWeights = false) const {
