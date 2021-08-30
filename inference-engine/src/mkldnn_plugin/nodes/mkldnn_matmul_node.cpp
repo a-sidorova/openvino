@@ -100,18 +100,27 @@ private:
     int amount_full;
     int amount_tail;
 
+    Reg64 get_aux_reg(const int idx) {
+        return Reg64(r13.getIdx() + idx);
+    }
+
+    Vmm get_aux_vmm(const int idx) {
+        return Vmm(3 + idx);
+    }
+
     Xbyak::Reg64 reg_src_a = r8;
     Xbyak::Reg64 reg_src_b = r9;
     Xbyak::Reg64 reg_dst = r10;
-    Xbyak::Reg64 reg_src_aux_a = r11;
-    Xbyak::Reg64 reg_src_aux_b = r12;
+    Xbyak::Reg64 idx = r11;
+    Xbyak::Reg64 reg_src_aux_a = r12;
+    Xbyak::Reg64 reg_src_aux_b = r13;
+    Xbyak::Reg64 reg_temp = rcx;
 
-    Xbyak::Reg64 reg_params = abi_param1;
+    Xbyak::Reg64 reg_params = abi_param1; // RDI | RCX
+
+    // loaders and stores
     Xbyak::Reg64 reg_load_store_mask = rsi;
-    Xbyak::Reg64 reg_load_table = r13;
-
-    Xbyak::Reg64 idx = r15;
-    Xbyak::Reg64 temp = abi_param2; // reg_load_store_mask
+    Xbyak::Reg64 reg_load_table = rdi;
 
     Vmm vmm_zero = Vmm(0);
     Vmm vmm_dst = Vmm(1);
@@ -170,16 +179,23 @@ private:
 
         int elt_num = is_tail ? amount_tail : step;
         int amount =  is_tail ? amount_full + 1 : amount_full;
+        int unroll_count = !is_tail && amount_full % 2 == 0 ? 2 : 1;
 
         L(label_k); {
             cmp(idx, amount);
             je(label_k_end, T_NEAR);
 
-            uni_vpxor(vmm_dst, vmm_dst, vmm_dst);
+            for (int i = 0; i < unroll_count; i++)
+                uni_vpxor(get_aux_vmm(unroll_count + i), get_aux_vmm(unroll_count + i), get_aux_vmm(unroll_count + i));
+
             mov(reg_src_aux_a, reg_src_a);
             mov(reg_src_aux_b, reg_src_b);
-            imul(temp, idx, vlen);
-            add(reg_src_aux_b, temp);
+            imul(reg_temp, idx, vlen);
+            add(reg_src_aux_b, reg_temp);
+            for (int i = 1; i < unroll_count; i++)
+                mov(get_aux_reg(i), reg_src_aux_b);
+            for (int i = 1; i < unroll_count; i++)
+                add(get_aux_reg(i), vlen * i);
 
             push(idx);
             mov(idx, 0);
@@ -188,24 +204,30 @@ private:
                 je(label_n_end);
 
                 uni_vbroadcastss(vmm_a, ptr[reg_src_aux_a]);
-                load(reg_src_aux_b, vmm_b, elt_num, is_tail);
+                for (int i = 0; i < unroll_count; i++)
+                    load(get_aux_reg(i), get_aux_vmm(i), elt_num, is_tail);
 
-                uni_vfmadd231ps(vmm_dst, vmm_a, vmm_b);
+                for (int i = 0; i < unroll_count; i++)
+                    uni_vfmadd231ps(get_aux_vmm(unroll_count + i), vmm_a, get_aux_vmm(i));
 
                 add(reg_src_aux_a, sizeof(float));
-                add(reg_src_aux_b, jcp_.k * sizeof(float));
+                for (int i = 0; i < unroll_count; i++)
+                    add(get_aux_reg(i), jcp_.k * sizeof(float));
                 add(idx, 1);
                 jmp(label_n);
             }
             L(label_n_end);
 
-            apply_post_ops();
+            for (int i = 0; i < unroll_count; i++)
+                apply_post_ops(unroll_count + i);
 
-            store(vmm_dst, reg_dst, elt_num);
-            add(reg_dst, elt_num * sizeof(float));
+            for (int i = 0; i < unroll_count; i++) {
+                store(get_aux_vmm(unroll_count + i), reg_dst, elt_num);
+                add(reg_dst, elt_num * sizeof(float));
+            }
 
             pop(idx);
-            add(idx, 1);
+            add(idx, unroll_count);
 
             jmp(label_k, T_NEAR);
         }
@@ -300,13 +322,13 @@ private:
         addps(xmm, xmm_aux2);
     }
 
-    inline void apply_post_ops() {
+    inline void apply_post_ops(const int idx = 1) {
         const auto &p = attr_.post_ops_;
         int eltwise_inj_idx = 0;
         for (int i = 0; i < p.len(); i++) {
             auto& post_op = p.entry_[i];
             if (post_op.is_eltwise()) {
-                eltwise_injectors[eltwise_inj_idx++]->compute_vector_range(vmm_dst.getIdx(), vmm_dst.getIdx() + 1);
+                eltwise_injectors[eltwise_inj_idx++]->compute_vector_range(idx, idx + 1);
             }
         }
     }
