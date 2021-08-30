@@ -109,15 +109,14 @@ private:
     Xbyak::Reg64 reg_params = abi_param1;
     Xbyak::Reg64 reg_load_store_mask = rsi;
     Xbyak::Reg64 reg_load_table = r13;
-    Xbyak::Reg64 idx_k = r14;
 
     Xbyak::Reg64 idx = r15;
     Xbyak::Reg64 temp = abi_param2; // reg_load_store_mask
 
     Vmm vmm_zero = Vmm(0);
-    Vmm vmm_a = Vmm(1);
-    Vmm vmm_b = Vmm(2);
-    Vmm vmm_dst = Vmm(3);
+    Vmm vmm_dst = Vmm(1);
+    Vmm vmm_a = Vmm(2);
+    Vmm vmm_b = Vmm(3);
 
     Xmm xmm_aux1 = Xmm(1);
     Xmm xmm_aux2 = Xmm(2);
@@ -162,6 +161,7 @@ private:
         L(label_m_end);
     }
 
+    // common execution : broadcast(a) * vmm_b
     inline void body_loop(bool is_tail = false) {
         Xbyak::Label label_k;
         Xbyak::Label label_k_end;
@@ -175,11 +175,11 @@ private:
             cmp(idx, amount);
             je(label_k_end, T_NEAR);
 
+            uni_vpxor(vmm_dst, vmm_dst, vmm_dst);
             mov(reg_src_aux_a, reg_src_a);
             mov(reg_src_aux_b, reg_src_b);
             imul(temp, idx, vlen);
             add(reg_src_aux_b, temp);
-            uni_vpxor(vmm_dst, vmm_dst, vmm_dst);
 
             push(idx);
             mov(idx, 0);
@@ -202,8 +202,8 @@ private:
             apply_post_ops();
 
             store(vmm_dst, reg_dst, elt_num);
-
             add(reg_dst, elt_num * sizeof(float));
+
             pop(idx);
             add(idx, 1);
 
@@ -212,6 +212,7 @@ private:
         L(label_k_end);
     }
 
+    // optimized execution for cases with transposed b or k = 1
     inline void optimized_body_loop() {
         Xbyak::Label label_k;
         Xbyak::Label label_k_end;
@@ -223,30 +224,32 @@ private:
 
             mov(reg_src_aux_a, reg_src_a);
             uni_vpxor(vmm_dst, vmm_dst, vmm_dst);
+
             push(idx);
             mov(idx, 0);
 
-            optimized_body_internal_loop();
+            optimized_body_internal_loop_by_n();
             if (amount_tail != 0) {
-                optimized_body_internal_loop(true);
+                optimized_body_internal_loop_by_n(true);
             }
 
-            if (isa == x64::avx512_common) {1,
+            // hsum
+            if (isa == x64::avx512_common) {
                 Xbyak::Zmm zmm_dst = Xbyak::Zmm(vmm_dst.getIdx());
-                vextractf32x4(xmm_aux1, zmm_dst, 0);
-                vextractf32x4(xmm_aux2, zmm_dst, 1);
-                vaddps(xmm_aux3, xmm_aux1, xmm_aux2);
-                vextractf32x4(xmm_aux1, zmm_dst, 2);
-                vextractf32x4(xmm_aux2, zmm_dst, 3);
+                vextractf32x4(xmm_aux2, zmm_dst, 0);
+                vextractf32x4(xmm_aux3, zmm_dst, 1);
                 addps(xmm_aux2, xmm_aux3);
-                addps(xmm_aux3, xmm_aux2);
-                hsum(xmm_aux3);
+                vextractf32x4(xmm_aux3, zmm_dst, 2);
+                vextractf32x4(xmm_aux1, zmm_dst, 3);
+                addps(xmm_aux3, xmm_aux1);
+                addps(xmm_aux1, xmm_aux3);
+                hsum(xmm_aux1);
             } else if (isa == x64::avx2) {
                 Xbyak::Ymm ymm_dst = Xbyak::Ymm(vmm_dst.getIdx());
-                vextractf128(xmm_aux1, ymm_dst, 0);
-                vextractf128(xmm_aux2, ymm_dst, 1);
-                vaddps(xmm_aux3, xmm_aux1, xmm_aux2);
-                hsum(xmm_aux3);
+                vextractf128(xmm_aux2, ymm_dst, 0);
+                vextractf128(xmm_aux3, ymm_dst, 1);
+                vaddps(xmm_aux1, xmm_aux2, xmm_aux3);
+                hsum(xmm_aux1);
             } else {
                 hsum(vmm_dst);
             }
@@ -265,7 +268,7 @@ private:
         L(label_k_end);
     }
 
-    inline void optimized_body_internal_loop(bool is_tail = false) {
+    inline void optimized_body_internal_loop_by_n(bool is_tail = false) {
         Xbyak::Label label_n;
         Xbyak::Label label_n_end;
 
