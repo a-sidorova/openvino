@@ -556,12 +556,21 @@ void MKLDNNMatMulNode::createPrimitive() {
     if (getSelectedPrimitiveDescriptor() == nullptr)
         IE_THROW()  << errorPrefix << " did not set preferable primitive descriptor";
 
-    if (inputShapes[0].getRank() == 2 && !transposeIn[0]) {
+    const int m = inputShapes[0].getStaticDims()[0];
+    const int n = inputShapes[0].getStaticDims()[1];
+    const int k = outputShapes[0].getStaticDims()[1];
+
+    if (inputShapes[0].getRank() == 2 && !transposeIn[0]) { // add condition for shapes
         jit_matmul_config_params jep;
-        jep.m = inputShapes[0].getStaticDims()[0];
-        jep.n = inputShapes[0].getStaticDims()[1];
-        jep.k = inputShapes[1].getStaticDims()[1];
+        jep.m = m;
+        jep.n = n;
+        jep.k = k;
         jep.b_is_optimized = transposeIn[1] || jep.k == 1;
+
+        arg = jit_matmul_args();
+        memSrcA = getParentEdgeAt(0)->getMemoryPtr();
+        memSrcB = getParentEdgeAt(1)->getMemoryPtr();
+        memDst = getChildEdgeAt(0)->getMemoryPtr();
 
         if (mayiuse(x64::avx512_common)) {
             matmul_kernel.reset(new jit_uni_matmul_kernel_f32<x64::avx512_common>(jep, *attr.get()));
@@ -595,10 +604,9 @@ void MKLDNNMatMulNode::createPrimitive() {
 
 void MKLDNNMatMulNode::execute(mkldnn::stream strm) {
     if (matmul_kernel) {
-        auto arg = jit_matmul_args();
-        arg.src_A =  reinterpret_cast<uint8_t*>(getParentEdgeAt(0)->getMemory().GetPtr());
-        arg.src_B =  reinterpret_cast<uint8_t*>(getParentEdgeAt(1)->getMemory().GetPtr());
-        arg.dst =  reinterpret_cast<uint8_t*>(getChildEdgeAt(0)->getMemory().GetPtr());
+        arg.src_A = memSrcA->GetPtr();
+        arg.src_B = memSrcB->GetPtr();
+        arg.dst   = memDst->GetPtr();
 
         (*matmul_kernel)(&arg);
         return;

@@ -73,11 +73,14 @@ private:
     /* whether to transpose input */
     std::array<bool, 2> transposeIn;
 
-    bool isOptimized = false;
-
     std::array<std::unique_ptr<MKLDNNMemoryDesc>, 2> inDataDesc;
     std::unique_ptr<MKLDNNMemoryDesc> outDataDesc;
 
+    MKLDNNMemoryPtr memSrcA;
+    MKLDNNMemoryPtr memSrcB;
+    MKLDNNMemoryPtr memDst;
+
+    jit_matmul_args arg;
     mkldnn::primitive_attr attr;
     std::shared_ptr<jit_uni_matmul_kernel> matmul_kernel = nullptr;
 };
