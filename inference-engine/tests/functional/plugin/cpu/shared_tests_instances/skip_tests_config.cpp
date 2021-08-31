@@ -85,6 +85,10 @@ std::vector<std::string> disabledTestPatterns() {
         R"(.*Behavior.*InferRequestIOBBlobSetLayoutTest.*CanSetOutBlobWithDifferentLayouts.*layout=CN.*targetDevice=(AUTO|MULTI).*)",
         R"(.*Behavior.*InferRequestSetBlobByType.*Batched.*)",
         R"(.*Auto_Behavior.*InferRequestIOBBlobTest.*canProcessDeallocatedOutputBlobAfterGetAndSetBlob.*)",
+        // Issue: 53914. Disabled the reduce to pooling transformation
+        R"(.*smoke_LPT.*Reduce.*Transformation.*)",
+        // Issue: 62846 Here shape[1] is not the channel dimension size
+        R"(.*smoke_Reduce.*KeepNoDims.*(_axes=\((0.*|.*1.*)).*Fused=.*PerChannel.*)",
         // azure is failing after #6199
         R"(.*/NmsLayerTest.*)",
     };
