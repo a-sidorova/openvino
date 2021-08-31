@@ -24,7 +24,6 @@
 
 #include "emitters/jit_emitter.hpp"
 #include "emitters/jit_eltwise_emitters.hpp"
-#include <cpu/x64/jit_uni_depthwise_injector.hpp>
 #include "emitters/jit_mkldnn_emitters.hpp"
 #include "emitters/jit_load_store_emitters.hpp"
 
@@ -556,11 +555,16 @@ void MKLDNNMatMulNode::createPrimitive() {
     if (getSelectedPrimitiveDescriptor() == nullptr)
         IE_THROW()  << errorPrefix << " did not set preferable primitive descriptor";
 
-    const int m = inputShapes[0].getStaticDims()[0];
-    const int n = inputShapes[0].getStaticDims()[1];
-    const int k = outputShapes[0].getStaticDims()[1];
+    const int inNDims0 = inputShapes[0].getRank();
+    const int inNDims1 = inputShapes[1].getRank();
+    const int outNDims = inputShapes[0].getRank();
+    const int m = inputShapes[0].getStaticDims()[inNDims0 - 2];
+    const int n = inputShapes[0].getStaticDims()[inNDims0 - 1];
+    const int k = outputShapes[0].getStaticDims()[outNDims - 1];
 
-    if (inputShapes[0].getRank() == 2 && !transposeIn[0]) { // add condition for shapes
+    bool canUseOptimizedExecution = inNDims0 == inNDims1 && inNDims0 == 2 && !transposeIn[0] &&
+                                    m <= 128 && n <= 128 && k <= 128;
+    if (canUseOptimizedExecution) {
         jit_matmul_config_params jep;
         jep.m = m;
         jep.n = n;
@@ -582,11 +586,9 @@ void MKLDNNMatMulNode::createPrimitive() {
 
         if (matmul_kernel)
             matmul_kernel->create_ker();
-
-        return;
     }
 
-    if (prim)
+    if (prim || matmul_kernel)
         return;
 
     std::shared_ptr<matmul::primitive_desc> prim_desc;

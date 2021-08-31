@@ -73,12 +73,12 @@ private:
     /* whether to transpose input */
     std::array<bool, 2> transposeIn;
 
-    std::array<std::unique_ptr<MKLDNNMemoryDesc>, 2> inDataDesc;
-    std::unique_ptr<MKLDNNMemoryDesc> outDataDesc;
-
     MKLDNNMemoryPtr memSrcA;
     MKLDNNMemoryPtr memSrcB;
     MKLDNNMemoryPtr memDst;
+
+    std::array<std::unique_ptr<MKLDNNMemoryDesc>, 2> inDataDesc;
+    std::unique_ptr<MKLDNNMemoryDesc> outDataDesc;
 
     jit_matmul_args arg;
     mkldnn::primitive_attr attr;
