@@ -101,7 +101,7 @@ private:
     int amount_tail;
 
     Reg64 get_aux_reg(const int idx) {
-        return Reg64(r13.getIdx() + idx);
+        return Reg64(r12.getIdx() + idx);
     }
 
     Vmm get_aux_vmm(const int idx) {
@@ -111,10 +111,14 @@ private:
     Xbyak::Reg64 reg_src_a = r8;
     Xbyak::Reg64 reg_src_b = r9;
     Xbyak::Reg64 reg_dst = r10;
-    Xbyak::Reg64 idx = r11;
-    Xbyak::Reg64 reg_src_aux_a = r12;
-    Xbyak::Reg64 reg_src_aux_b = r13;
-    Xbyak::Reg64 reg_temp = rcx;
+    Xbyak::Reg64 reg_src_aux_a = r11;
+    Xbyak::Reg64 reg_src_aux_b = r12;
+    Xbyak::Reg64 reg_temp = rbp;
+
+    // indexes
+    Xbyak::Reg64 m = rax;
+    Xbyak::Reg64 n = rbx;
+    Xbyak::Reg64 k = rcx;
 
     Xbyak::Reg64 reg_params = abi_param1; // RDI | RCX
 
@@ -144,14 +148,12 @@ private:
         Xbyak::Label label_m;
         Xbyak::Label label_m_end;
 
-        mov(idx, 0);
+        mov(m, 0);
         L(label_m); {
-            cmp(idx, jcp_.m);
+            cmp(m, jcp_.m);
             je(label_m_end, T_NEAR);
 
-            push(idx);
-            mov(idx, 0);
-
+            mov(k, 0);
             if (jcp_.b_is_optimized) {
                 optimized_body_loop();
             } else {
@@ -162,9 +164,7 @@ private:
             }
 
             add(reg_src_a, jcp_.n * sizeof(float));
-            pop(idx);
-            add(idx, 1);
-
+            add(m, 1);
             jmp(label_m, T_NEAR);
         }
         L(label_m_end);
@@ -182,7 +182,7 @@ private:
         int unroll_count = !is_tail && amount_full % 2 == 0 ? 2 : 1;
 
         L(label_k); {
-            cmp(idx, amount);
+            cmp(k, amount);
             je(label_k_end, T_NEAR);
 
             for (int i = 0; i < unroll_count; i++)
@@ -190,17 +190,16 @@ private:
 
             mov(reg_src_aux_a, reg_src_a);
             mov(reg_src_aux_b, reg_src_b);
-            imul(reg_temp, idx, vlen);
+            imul(reg_temp, k, vlen);
             add(reg_src_aux_b, reg_temp);
             for (int i = 1; i < unroll_count; i++)
                 mov(get_aux_reg(i), reg_src_aux_b);
             for (int i = 1; i < unroll_count; i++)
                 add(get_aux_reg(i), vlen * i);
 
-            push(idx);
-            mov(idx, 0);
+            mov(n, 0);
             L(label_n); {
-                cmp(idx, jcp_.n);
+                cmp(n, jcp_.n);
                 je(label_n_end);
 
                 uni_vbroadcastss(vmm_a, ptr[reg_src_aux_a]);
@@ -213,7 +212,8 @@ private:
                 add(reg_src_aux_a, sizeof(float));
                 for (int i = 0; i < unroll_count; i++)
                     add(get_aux_reg(i), jcp_.k * sizeof(float));
-                add(idx, 1);
+
+                add(n, 1);
                 jmp(label_n);
             }
             L(label_n_end);
@@ -226,9 +226,7 @@ private:
                 add(reg_dst, elt_num * sizeof(float));
             }
 
-            pop(idx);
-            add(idx, unroll_count);
-
+            add(k, unroll_count);
             jmp(label_k, T_NEAR);
         }
         L(label_k_end);
@@ -241,15 +239,13 @@ private:
 
         mov(reg_src_aux_b, reg_src_b);
         L(label_k); {
-            cmp(idx, jcp_.k);
+            cmp(k, jcp_.k);
             je(label_k_end, T_NEAR);
 
             mov(reg_src_aux_a, reg_src_a);
             uni_vpxor(vmm_dst, vmm_dst, vmm_dst);
 
-            push(idx);
-            mov(idx, 0);
-
+            mov(n, 0);
             optimized_body_internal_loop_by_n();
             if (amount_tail != 0) {
                 optimized_body_internal_loop_by_n(true);
@@ -282,9 +278,7 @@ private:
 
             add(reg_dst, sizeof(float));
 
-            pop(idx);
-            add(idx, 1);
-
+            add(k, 1);
             jmp(label_k, T_NEAR);
         }
         L(label_k_end);
@@ -298,7 +292,7 @@ private:
         int amount =  is_tail ? amount_full + 1 : amount_full;
 
         L(label_n); {
-            cmp(idx, amount);
+            cmp(n, amount);
             je(label_n_end, T_NEAR);
 
             load(reg_src_aux_a, vmm_a, elt_num, is_tail);
@@ -309,7 +303,7 @@ private:
             add(reg_src_aux_a, elt_num * sizeof(float));
             add(reg_src_aux_b, elt_num * sizeof(float));
 
-            add(idx, 1);
+            add(n, 1);
             jmp(label_n, T_NEAR);
         }
         L(label_n_end);

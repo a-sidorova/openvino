@@ -1695,10 +1695,12 @@ void MKLDNNEltwiseNode::appendPostOps(mkldnn::post_ops& ops) {
             case EltwiseMultiply:
             case EltwiseDivide:
             case EltwiseMulAdd:
-            case EltwisePowerStatic:
                 if (scales.empty() || shifts.empty())
                     IE_THROW() << errorPrefix << "cannot be performed since buffers are not allocated";
                 ops.append_depthwise(mkldnn::algorithm::depthwise_scale_shift, &scales[0], &shifts[0]);
+                break;
+            case EltwisePowerStatic:
+                ops.append_eltwise(1.0, mkldnn::algorithm::eltwise_linear, scales[0], shifts[0]);
                 break;
             case EltwisePrelu:
                 if (scales.empty())
