@@ -42,7 +42,7 @@ namespace MKLDNNPlugin {
 class MKLDNNMemoryDesc : public MemoryDesc {
 public:
     /** Construct a tensor desc with plain layout format (like ND C array) */
-    MKLDNNMemoryDesc(const std::vector<size_t>& _dims, mkldnn::memory::data_type dataType);
+    MKLDNNMemoryDesc(const std::vector<size_t>& _dims, mkldnn::memory::data_type dataType, const std::vector<size_t>& strides = {});
 
     /** Construct a tensor desc with specified layout format tag. Any and Undef is not supported */
     MKLDNNMemoryDesc(const std::vector<size_t>& _dims, mkldnn::memory::data_type dataType, mkldnn::memory::format_tag format);

@@ -82,5 +82,5 @@ InferenceEngine::SizeVector MKLDNNExtensionUtils::convertToSizeVector(const mkld
 }
 
 std::vector<dnnl::memory::dim> MKLDNNExtensionUtils::convertToDnnlDims(const InferenceEngine::SizeVector& dims) {
-    return std::vector<dnnl::memory::dim>(dims.begin(), dims.end());;
+    return std::vector<dnnl::memory::dim>(dims.begin(), dims.end());
 }

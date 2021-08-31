@@ -340,10 +340,16 @@ MKLDNNMemoryDesc::MKLDNNMemoryDesc(const std::vector<size_t>& _dims, mkldnn::mem
     }
 }
 
-MKLDNNMemoryDesc::MKLDNNMemoryDesc(const std::vector<size_t>& _dims, mkldnn::memory::data_type dataType)
-        : MemoryDesc(Shape(_dims), Mkldnn), desc() {
+MKLDNNMemoryDesc::MKLDNNMemoryDesc(const std::vector<size_t>& _dims, mkldnn::memory::data_type dataType, const std::vector<size_t>& strides)
+    : MemoryDesc(Shape(_dims), Mkldnn), desc() {
+    if (!strides.empty()) {
+        desc = {MKLDNNExtensionUtils::convertToDnnlDims(_dims), dataType, MKLDNNExtensionUtils::convertToDnnlDims(strides)};
+        return;
+    }
+
     const auto ndims = _dims.size();
     mkldnn::memory::dims plain_strides(ndims, 1);
+
     for (size_t i = 1; i < ndims; i++) {
         plain_strides[ndims - i -1] = plain_strides[ndims - i] * _dims[ndims - i];
     }

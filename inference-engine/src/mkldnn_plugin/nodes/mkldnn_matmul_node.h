@@ -4,72 +4,85 @@
 
 #pragma once
 
-#include <ie_common.h>
 #include <mkldnn_node.h>
+#include <ie_common.h>
 #include <string>
 #include <vector>
+#include <array>
 
 namespace MKLDNNPlugin {
+
+struct jit_matmul_config_params {
+    size_t m;
+    size_t n;
+    size_t k;
+    bool b_is_optimized;
+};
+
+struct jit_matmul_args {
+    void *src_A;
+    void *src_B;
+    void *dst;
+};
+
+class MKLDNNMatMulNode;
+
+struct jit_uni_matmul_kernel {
+    void (*ker_)(const jit_matmul_args *);
+
+    void operator()(const jit_matmul_args *args) {
+       assert(ker_);
+       ker_(args);
+   }
+
+   explicit jit_uni_matmul_kernel(jit_matmul_config_params jcp, const mkldnn_primitive_attr &attr) : ker_(nullptr), jcp_(jcp), attr_(attr) {}
+   virtual ~jit_uni_matmul_kernel() {}
+
+   virtual void create_ker() = 0;
+
+    jit_matmul_config_params jcp_;
+    const mkldnn_primitive_attr &attr_;
+};
 
 class MKLDNNMatMulNode : public MKLDNNNode {
 public:
     MKLDNNMatMulNode(const std::shared_ptr<ngraph::Node>& op, const mkldnn::engine& eng, MKLDNNWeightsSharing::Ptr &cache);
 
     void getSupportedDescriptors() override;
+    void createDescriptor(const std::vector<const MemoryDesc*>& inputDesc,
+                          const std::vector<const MemoryDesc*>& outputDesc) override;
     void initSupportedPrimitiveDescriptors() override;
-    void initOptimalPrimitiveDescriptor() override;
+    std::unique_ptr<MKLDNNMemoryDesc> getSrcMemDesc(mkldnn::primitive_desc_iterator &primitive_desc_it, size_t idx) override;
     void createPrimitive() override;
     void execute(mkldnn::stream strm) override;
+    bool canFuse(const MKLDNNNodePtr& node) const override;
     bool created() const override;
     int getMaxBatch() override;
-
     InferenceEngine::Precision getRuntimePrecision() const override;
+    size_t descInputNumbers(MKLDNNDescriptor desc) override {
+        return getOriginalInputsNumber();
+    }
 
     static bool isSupportedOperation(const std::shared_ptr<ngraph::Node>& op, std::string& errorMessage) noexcept;
 
 private:
-    float alpha = 1.f;
-    float beta = 0.f;
-    bool transposeA = false;
-    bool transposeB = false;
-
-    int xAxis = 0;
-    int yAxis = 0;
-
-    std::vector<int> aOffsets;
-    std::vector<int> bOffsets;
-    std::vector<int> cOffsets;
-
-    InferenceEngine::Precision runtimePrecision;
-
-    template<typename T0, typename T1> inline void process_data();
+    void setPostOps(mkldnn::primitive_attr &attr, bool initWeights) const;
 
     std::string errorPrefix;
 
-    struct {
-        MKLDNNMemoryPtr src0_mem_ptr = nullptr;
-        MKLDNNMemoryPtr src1_mem_ptr = nullptr;
-        MKLDNNMemoryPtr dst_mem_ptr = nullptr;
+    /* whether to transpose input */
+    std::array<bool, 2> transposeIn;
 
-        char transa = 'N';
-        char transb = 'N';
+    MKLDNNMemoryPtr memSrcA;
+    MKLDNNMemoryPtr memSrcB;
+    MKLDNNMemoryPtr memDst;
 
-        int MB1 = 1;
-        int MB2 = 1;
+    std::array<std::unique_ptr<MKLDNNMemoryDesc>, 2> inDataDesc;
+    std::unique_ptr<MKLDNNMemoryDesc> outDataDesc;
 
-        int M = 0;
-        int N = 0;
-        int K = 0;
-
-        int lda = 0;
-        int ldb = 0;
-        int ldc = 0;
-
-        int shift1 = 0;
-        int shift2 = 0;
-
-        size_t ndims = 0;
-    } params;
+    jit_matmul_args arg;
+    mkldnn::primitive_attr attr;
+    std::shared_ptr<jit_uni_matmul_kernel> matmul_kernel = nullptr;
 };
 
 }  // namespace MKLDNNPlugin
