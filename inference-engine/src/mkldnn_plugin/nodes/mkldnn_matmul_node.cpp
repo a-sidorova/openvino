@@ -493,9 +493,9 @@ void MKLDNNMatMulNode::getSupportedDescriptors() {
     const std::vector<size_t> inStrides1 = getStridesAndDims(inputShapes[1], transposeIn[1]);
     const std::vector<size_t> outStrides = getStridesAndDims(outputShapes[0], false);
 
-    inDataDesc[0] = make_unique<MKLDNNMemoryDesc>(inDims0, firstInDataType, inStrides0);
-    inDataDesc[1] = make_unique<MKLDNNMemoryDesc>(inDims1, secondInDataType, inStrides1);
-    outDataDesc   = make_unique<MKLDNNMemoryDesc>(outDims, outputDataType, outStrides);
+    inDataDesc[0] = MKLDNNPlugin::make_unique<MKLDNNMemoryDesc>(inDims0, firstInDataType, inStrides0);
+    inDataDesc[1] = MKLDNNPlugin::make_unique<MKLDNNMemoryDesc>(inDims1, secondInDataType, inStrides1);
+    outDataDesc   = MKLDNNPlugin::make_unique<MKLDNNMemoryDesc>(outDims, outputDataType, outStrides);
 
     createDescriptor({inDataDesc[0].get(), inDataDesc[1].get()}, {outDataDesc.get()});
 }
