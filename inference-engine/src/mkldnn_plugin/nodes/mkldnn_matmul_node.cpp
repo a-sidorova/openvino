@@ -575,6 +575,9 @@ void MKLDNNMatMulNode::createPrimitive() {
         memSrcA = getParentEdgeAt(0)->getMemoryPtr();
         memSrcB = getParentEdgeAt(1)->getMemoryPtr();
         memDst = getChildEdgeAt(0)->getMemoryPtr();
+        arg.src_A = memSrcA->GetPtr();
+        arg.src_B = memSrcB->GetPtr();
+        arg.dst   = memDst->GetPtr();
 
         if (mayiuse(x64::avx512_common)) {
             matmul_kernel.reset(new jit_uni_matmul_kernel_f32<x64::avx512_common>(jep, *attr.get()));
@@ -606,10 +609,6 @@ void MKLDNNMatMulNode::createPrimitive() {
 
 void MKLDNNMatMulNode::execute(mkldnn::stream strm) {
     if (matmul_kernel) {
-        arg.src_A = memSrcA->GetPtr();
-        arg.src_B = memSrcB->GetPtr();
-        arg.dst   = memDst->GetPtr();
-
         (*matmul_kernel)(&arg);
         return;
     }

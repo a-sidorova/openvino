@@ -544,7 +544,7 @@ int main(int argc, char* argv[]) {
                     {"batch size", std::to_string(batchSize)},
                     {"number of iterations", std::to_string(niter)},
                     {"number of parallel infer requests", std::to_string(nireq)},
-                    {"duration (ms)", std::to_string(getDurationInMilliseconds(duration_seconds))},
+                    {"duration (ms)", std::to_string(getDurationInNanoseconds(duration_seconds))},
                 });
             for (auto& nstreams : device_nstreams) {
                 std::stringstream ss;
@@ -589,7 +589,7 @@ int main(int argc, char* argv[]) {
         }
         ss << ", limits: ";
         if (duration_seconds > 0) {
-            ss << getDurationInMilliseconds(duration_seconds) << " ms duration";
+            ss << getDurationInNanoseconds(duration_seconds) << " ms duration";
         }
         if (niter != 0) {
             if (duration_seconds == 0) {

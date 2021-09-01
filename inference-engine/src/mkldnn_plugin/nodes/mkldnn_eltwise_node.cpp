@@ -1440,6 +1440,10 @@ void MKLDNNEltwiseNode::createPrimitive() {
 
     if (eltwise_kernel)
         eltwise_kernel->create_ker();
+
+    for (int i = 0; i < inputNum; i++)
+        args_ptrs.src_ptr[i] = reinterpret_cast<const uint8_t*>(memPtrs[i]->GetData()) + start_offset_in[i];
+    args_ptrs.dst_ptr = reinterpret_cast<uint8_t*>(memPtrs.back()->GetData()) + start_offset_out;
 }
 
 void MKLDNNEltwiseNode::selectOptimalPrimitiveDescriptor() {
@@ -1594,11 +1598,6 @@ void MKLDNNEltwiseNode::executeReference() {
 }
 
 void MKLDNNEltwiseNode::execute(mkldnn::stream strm) {
-    std::vector<const uint8_t *> src_ptrs(inputNum);
-    for (int i = 0; i < inputNum; i++)
-        args_ptrs.src_ptr[i] = reinterpret_cast<const uint8_t*>(memPtrs[i]->GetData()) + start_offset_in[i];
-    args_ptrs.dst_ptr = reinterpret_cast<uint8_t*>(memPtrs.back()->GetData()) + start_offset_out;
-
     // In general case we need to recompute offsets as well but currently all supported layout assumes batch to be outermost dimension
     if (isDynBatchEnabled)
         dims_out[batchDimIdx] = static_cast<size_t>(batchToProcess());

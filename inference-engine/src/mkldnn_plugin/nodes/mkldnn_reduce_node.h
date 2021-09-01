@@ -137,6 +137,9 @@ private:
 
     std::unique_ptr<mkldnn::memory> prc_mem;
 
+    const uint8_t *src_data;
+    uint8_t *dst_data;
+
     std::shared_ptr<jit_uni_reduce_kernel> reduce_kernel;
     std::shared_ptr<jit_uni_reduce_post_kernel> reduce_post_kernel;
 

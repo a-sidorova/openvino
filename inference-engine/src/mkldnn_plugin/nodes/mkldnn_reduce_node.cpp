@@ -1758,15 +1758,11 @@ void MKLDNNReduceNode::createPrimitive() {
         reduce_post_kernel->create_ker();
 
     jit_mode = jit_mode && reduce_kernel && reduce_post_kernel;
+    src_data = reinterpret_cast<const uint8_t *>(srcMemPtr->GetPtr());
+    dst_data = reinterpret_cast<uint8_t *>(dstMemPtr->GetPtr());
 }
 
 void MKLDNNReduceNode::execute(mkldnn::stream strm) {
-    auto &dstMemPtr = getChildEdgeAt(0)->getMemoryPtr();
-    auto &srcMemPtr = getParentEdgeAt(REDUCE_DATA)->getMemoryPtr();
-
-    const uint8_t *src_data = reinterpret_cast<const uint8_t *>(srcMemPtr->GetPtr());
-    uint8_t *dst_data = reinterpret_cast<uint8_t *>(dstMemPtr->GetPtr());
-
     if (jit_mode) {
         if (is_hybrid_layout) {
             dst_data = reinterpret_cast<uint8_t *>(prc_mem->get_data_handle());

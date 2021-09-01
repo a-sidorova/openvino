@@ -83,6 +83,8 @@ void MKLDNNReorderNode::createPrimitive() {
             directCopyParams.srcMem = srcMemPtr;
             directCopyParams.dstMem = dstMemPtr;
             directCopyParams.dataSize = dstMemPtr->GetSize(); // be careful since this is just padded elements count multiplied by the data size
+            srcPtr = reinterpret_cast<const uint8_t*>(directCopyParams.srcMem->GetPtr());
+            dstPtr = reinterpret_cast<uint8_t*>(directCopyParams.dstMem->GetPtr());
         } else {
             if (MKLDNNPlugin::one_of(inDims.size(), 4, 5) &&
                 inDims[1] <= 64 &&
@@ -239,8 +241,6 @@ void MKLDNNReorderNode::execute(mkldnn::stream strm) {
         return;
 
     if (useDirectCopy) {
-        const uint8_t* srcPtr = reinterpret_cast<const uint8_t*>(directCopyParams.srcMem->GetPtr());
-        uint8_t* dstPtr = reinterpret_cast<uint8_t*>(directCopyParams.dstMem->GetPtr());
         cpu_memcpy(dstPtr, srcPtr, directCopyParams.dataSize);
     } else if (canUseOptimizedNspc2Ncsp) {
         optimizedNspc2Ncsp();

@@ -67,7 +67,7 @@ public:
 
     double getExecutionTimeInMilliseconds() const {
         auto execTime = std::chrono::duration_cast<ns>(_endTime - _startTime);
-        return static_cast<double>(execTime.count()) * 0.000001;
+        return static_cast<double>(execTime.count());
     }
 
 private:
@@ -107,7 +107,7 @@ public:
     }
 
     double getDurationInMilliseconds() {
-        return std::chrono::duration_cast<ns>(_endTime - _startTime).count() * 0.000001;
+        return std::chrono::duration_cast<ns>(_endTime - _startTime).count();
     }
 
     void putIdleRequest(size_t id, const double latency) {

@@ -68,6 +68,9 @@ private:
         size_t dataSize;
     } directCopyParams;
 
+    const uint8_t* srcPtr;
+    uint8_t* dstPtr;
+
     void optimizedNspc2Ncsp();
     void optimizedNcsp2Nspc();
     void createReorderPrimitive(const mkldnn::memory::desc &srcDesc, void* srcPtr, const mkldnn::memory::desc &dstDesc, void* dstPtr);

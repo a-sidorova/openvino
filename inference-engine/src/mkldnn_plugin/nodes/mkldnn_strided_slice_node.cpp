@@ -523,6 +523,9 @@ void MKLDNNStridedSliceNode::dimsGluing(const size_t realNDims, const SizeVector
         params.srcShift = stride.back() == 1 && stride.size() > 1 ?
                           begin[params.nDimsForWork] * params.srcStrides[params.nDimsForWork] * params.dataSize : 0;
     }
+
+    srcData = reinterpret_cast<const uint8_t*>(params.srcMemPtr->GetPtr()) + params.srcShift;
+    dstData = reinterpret_cast<uint8_t*>(params.dstMemPtr->GetPtr());
 }
 
 void MKLDNNStridedSliceNode::indicesCalculation() {
@@ -633,9 +636,6 @@ void MKLDNNStridedSliceNode::execute(mkldnn::stream strm) {
 }
 
 inline void MKLDNNStridedSliceNode::stridedSlice() {
-    const uint8_t* srcData = reinterpret_cast<const uint8_t*>(params.srcMemPtr->GetPtr()) + params.srcShift;
-    uint8_t* dstData = reinterpret_cast<uint8_t*>(params.dstMemPtr->GetPtr());
-
     parallel_nt(params.nThreads, [&](const int ithr, const int nthr) {
         size_t start = 0, end = 0;
         splitter(params.workAmount, nthr, ithr, start, end);

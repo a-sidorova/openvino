@@ -55,6 +55,9 @@ private:
     InferenceEngine::SizeVector endDims;
     InferenceEngine::SizeVector strideDims;
 
+    const uint8_t* srcData;
+    uint8_t* dstData;
+
     struct {
         MKLDNNMemoryPtr srcMemPtr = nullptr;
         MKLDNNMemoryPtr dstMemPtr = nullptr;

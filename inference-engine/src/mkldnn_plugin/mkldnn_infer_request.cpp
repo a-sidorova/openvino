@@ -178,7 +178,7 @@ void MKLDNNPlugin::MKLDNNInferRequest::InferImpl() {
 
     execDataPreprocessing(_inputs);
 
-    changeDefaultPtr();
+  //  changeDefaultPtr();
 
     ThrowIfCanceled();
 
