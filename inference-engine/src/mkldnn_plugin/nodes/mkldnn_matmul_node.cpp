@@ -133,6 +133,7 @@ private:
     Xmm xmm_aux1 = Xmm(1);
     Xmm xmm_aux2 = Xmm(2);
     Xmm xmm_aux3 = Xmm(3);
+    Xmm xmm_aux4 = Xmm(4);
 
     std::unique_ptr<jit_load_emitter> load_emitter = nullptr;
     std::unique_ptr<jit_store_emitter> store_emitter = nullptr;
@@ -257,9 +258,9 @@ private:
                 vextractf32x4(xmm_aux3, zmm_dst, 1);
                 addps(xmm_aux2, xmm_aux3);
                 vextractf32x4(xmm_aux3, zmm_dst, 2);
-                vextractf32x4(xmm_aux1, zmm_dst, 3);
-                addps(xmm_aux3, xmm_aux1);
-                addps(xmm_aux1, xmm_aux3);
+                vextractf32x4(xmm_aux4, zmm_dst, 3);
+                addps(xmm_aux3, xmm_aux4);
+                vaddps(xmm_aux1, xmm_aux2, xmm_aux3);
                 hsum(xmm_aux1);
             } else if (isa == x64::avx2) {
                 Xbyak::Ymm ymm_dst = Xbyak::Ymm(vmm_dst.getIdx());
