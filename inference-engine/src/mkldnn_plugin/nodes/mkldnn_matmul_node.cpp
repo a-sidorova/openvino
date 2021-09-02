@@ -562,9 +562,12 @@ void MKLDNNMatMulNode::createPrimitive() {
     const int m = inputShapes[0].getStaticDims()[inNDims0 - 2];
     const int n = inputShapes[0].getStaticDims()[inNDims0 - 1];
     const int k = outputShapes[0].getStaticDims()[outNDims - 1];
+    const auto precision0 = getSelectedPrimitiveDescriptor()->getConfig().inConfs[0].desc->getPrecision();
+    const auto precision1 = getSelectedPrimitiveDescriptor()->getConfig().inConfs[1].desc->getPrecision();
 
     bool canUseOptimizedExecution = inNDims0 == inNDims1 && inNDims0 == 2 && !transposeIn[0] &&
-                                    m <= 128 && n <= 128 && k <= 128;
+                                    m <= 128 && n <= 128 && k <= 128 &&
+                                    precision0 == Precision::FP32 && precision1 == Precision::FP32;
     if (canUseOptimizedExecution) {
         jit_matmul_config_params jep;
         jep.m = m;
