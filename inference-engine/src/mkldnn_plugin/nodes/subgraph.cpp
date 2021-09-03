@@ -62,25 +62,6 @@ void MKLDNNSnippetNode::initSupportedPrimitiveDescriptors() {
         inputPrecisions.push_back(i);
     }
 
-    auto hasBroadcastByC = [this]() -> bool {
-        for (auto op : ngraph::as_type_ptr<ngraph::snippets::op::Subgraph>(snippet)->get_body()->get_ops()) {
-            if (ngraph::op::supports_auto_broadcast(op)) {
-                auto shape = op->input(0).get_shape();
-                // Filter out scalar empty shape Shape{}
-                if (ngraph::shape_size(shape) != 1) {
-                    for (auto input : op->inputs()) {
-                        if (input.get_shape().size() > 1 && shape[1] != input.get_shape()[1] && ngraph::shape_size(input.get_shape()) != 1) {
-                            return true;
-                        }
-                    }
-                } else {
-                    return false;
-                }
-            }
-        }
-        return false;
-    };
-
     Precision prec = Precision::FP32;
 
     NodeConfig config;
@@ -106,7 +87,7 @@ void MKLDNNSnippetNode::initSupportedPrimitiveDescriptors() {
 
     const size_t ndims = outputShapes[0].getRank();
     const bool isChannelsFirstApplicable = dnnl::impl::utils::one_of(ndims, 1, 2, 4, 5) && dimRanksAreEqual;
-    const bool isBlockedApplicable = dnnl::impl::utils::one_of(ndims,  4, 5) && dimRanksAreEqual && !hasBroadcastByC();
+    const bool isBlockedApplicable = dnnl::impl::utils::one_of(ndims,  4, 5) && dimRanksAreEqual;
 
     std::vector<LayoutType> tdCreatorTypes;
     if (isChannelsFirstApplicable) {
