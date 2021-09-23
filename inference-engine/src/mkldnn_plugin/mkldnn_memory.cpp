@@ -86,6 +86,9 @@ void MKLDNNMemory::Create(const mkldnn::memory::desc& desc, const void *data, bo
         //
         // ========================
     }
+
+    dataPtr = prim->get_data_handle();
+    descPtr = std::make_shared<mkldnn::memory::desc>(prim->get_desc());
 }
 
 void MKLDNNMemory::Create(const MemoryDesc &desc, const void *data, bool pads_zeroing) {
@@ -137,7 +140,7 @@ void MKLDNNMemory::FillZero() {
 
 void *MKLDNNMemory::GetPtr() const  {
     auto ptr = static_cast<uint8_t*>(GetData());
-    auto md = prim->get_desc().data;
+    auto md = descPtr->data;
     mkldnn::impl::memory_desc_wrapper wrapper(md);
     ptr += wrapper.offset0() * wrapper.data_type_size();
     return ptr;
