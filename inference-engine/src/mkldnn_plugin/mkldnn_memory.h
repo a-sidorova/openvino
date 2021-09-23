@@ -130,8 +130,8 @@ private:
     mkldnn::engine eng;
     bool useExternalStorage = false;
     size_t memUpperBound = 0ul;
-    void* dataPtr;
-    std::shared_ptr<mkldnn::memory::desc> descPtr;
+    void* dataPtr = nullptr;
+    size_t dataOffset = 0lu;
 };
 
 using MKLDNNMemoryPtr = std::shared_ptr<MKLDNNMemory>;
