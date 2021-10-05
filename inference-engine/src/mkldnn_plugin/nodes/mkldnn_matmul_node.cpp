@@ -83,7 +83,25 @@ struct jit_uni_matmul_kernel_f32 : public jit_uni_matmul_kernel, public jit_gene
         amount_full = (jcp_.b_is_optimized ? jcp_.k : jcp_.n) / vec_step;
         amount_tail = (jcp_.b_is_optimized ? jcp_.k : jcp_.n) % vec_step;
 
-        body();
+        Xbyak::Label label_batch;
+        Xbyak::Label label_batch_end;
+
+        mov(batch, 0);
+        L(label_batch); {
+            cmp(batch, jcp_.b);
+            je(label_batch_end, T_NEAR);
+
+            body();
+
+            if (jcp_.stride0 == 0)
+                sub(reg_src_a, jcp_.stride0 * sizeof(float));
+            if (jcp_.stride1 != 0)
+                add(reg_src_b, jcp_.stride1 * sizeof(float));
+
+            add(batch, 1);
+            jmp(label_batch, T_NEAR);
+        }
+        L(label_batch_end);
 
         this->postamble();
 
@@ -121,6 +139,7 @@ private:
     Xbyak::Reg64 reg_src_aux_b = r12;
 
     // indexes
+    Xbyak::Reg64 batch = abi_param1; // reg_params
     Xbyak::Reg64 m = rax;
     Xbyak::Reg64 k = rbx;
     Xbyak::Reg64 n = rdx;
@@ -557,16 +576,26 @@ void MKLDNNMatMulNode::createPrimitive() {
     if (getSelectedPrimitiveDescriptor() == nullptr)
         IE_THROW()  << errorPrefix << " did not set preferable primitive descriptor";
 
-    const int inNDims0 = inputShapes[0].getRank();
-    const int inNDims1 = inputShapes[1].getRank();
-    const int outNDims = inputShapes[0].getRank();
-    const int m = inputShapes[0].getStaticDims()[inNDims0 - 2];
-    const int k = inputShapes[0].getStaticDims()[inNDims0 - 1];
-    const int n = outputShapes[0].getStaticDims()[outNDims - 1];
-    const auto precision = getSelectedPrimitiveDescriptor()->getConfig().inConfs[0].desc->getPrecision();
+    const size_t ndims = inputShapes[0].getRank();
+    const size_t m = inputShapes[0].getStaticDims()[ndims - 2];
+    const size_t k = inputShapes[0].getStaticDims()[ndims - 1];
+    const size_t n = outputShapes[0].getStaticDims()[ndims - 1];
+    const int lastBatchIdx = ndims - 2;
+    size_t inputBatch0 = 1, inputBatch1 = 1, batch = 1;
+    bool hasBroadcast = false;
+    if (lastBatchIdx >= 0) {
+        inputBatch0 = std::accumulate(inputShapes[0].getStaticDims().begin(), inputShapes[0].getStaticDims().begin() + lastBatchIdx,
+                                      1, std::multiplies<size_t>());
+        inputBatch1 = std::accumulate(inputShapes[1].getStaticDims().begin(), inputShapes[1].getStaticDims().begin() + lastBatchIdx,
+                                      1, std::multiplies<size_t>());
+        hasBroadcast = inputBatch0 != inputBatch1 && (inputBatch0 != 1 || inputBatch1 != 1);
+        batch = std::max(inputBatch0, inputBatch1);
+    }
 
-    bool canUseOptimizedExecution = inNDims0 == inNDims1 && inNDims0 == 2 && !transposeIn[0] &&
-                                    m <= 128 && k <= 128 && precision == Precision::FP32;
+    const auto precision = getSelectedPrimitiveDescriptor()->getConfig().inConfs[0].desc->getPrecision();
+    const int cacheFloatSize = dnnl::utils::get_cache_size(1, true) / sizeof(float);
+    bool canUseOptimizedExecution = !transposeIn[0] && !hasBroadcast && batch <= 10 && precision == Precision::FP32 &&
+            (inputShapes[0].getElementsCount() + inputShapes[1].getElementsCount() + outputShapes[0].getElementsCount()) <= cacheFloatSize;
 
     // to have enough vmm for unrolling by n for first algorithm with broadcast(a)
     if (canUseOptimizedExecution && !transposeIn[1] && n != 1) {
@@ -587,9 +616,12 @@ void MKLDNNMatMulNode::createPrimitive() {
     }
     if (canUseOptimizedExecution) {
         jit_matmul_config_params jep;
+        jep.b = batch;
         jep.m = m;
         jep.k = k;
         jep.n = n;
+        jep.stride0 = inputBatch0 > 1 ? m * k : 0;
+        jep.stride1 = inputBatch1 > 1 ? k * n : 0;
         jep.b_is_optimized = transposeIn[1] || jep.n == 1;
 
         arg = jit_matmul_args();
