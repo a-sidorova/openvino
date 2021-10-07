@@ -63,8 +63,8 @@ void StatisticsReport::dumpPerformanceCountersRequest(CsvDumper& dumper, const P
            << "execStatus"
            << "layerType"
            << "execType";
-    dumper << "realTime (ms)"
-           << "cpuTime (ms)";
+    dumper << "realTime (ns)"
+           << "cpuTime (ns)";
     dumper.endLine();
 
     for (const auto& layer : performanceMapSorted) {

@@ -22,7 +22,7 @@ class TRANSFORMATIONS_API TransposeReshapeEliminationForMatmul;
 /**
  * @ingroup ie_transformation_common_api
  * @brief TransposeReshapeEliminationForMatmul transformation eliminates Transpose and Reshape
- * which were created to align input and output dimension ranks before and after MatMul
+ * which were created to align input and output dimension ranks before second MatMul input and after MatMul output
  */
 class ngraph::pass::TransposeReshapeEliminationForMatmul: public ngraph::pass::MatcherPass {
 public:

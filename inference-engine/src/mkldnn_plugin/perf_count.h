@@ -32,7 +32,7 @@ private:
 
     void finish_itr() {
         __finish = std::chrono::high_resolution_clock::now();
-        total_duration += std::chrono::duration_cast<std::chrono::microseconds>(__finish - __start).count();
+        total_duration += std::chrono::duration_cast<std::chrono::nanoseconds>(__finish - __start).count();
         num++;
     }
 
