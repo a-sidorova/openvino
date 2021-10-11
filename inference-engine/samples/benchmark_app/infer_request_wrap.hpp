@@ -37,7 +37,7 @@ public:
           _callbackQueue(callbackQueue) {
         _request.SetCompletionCallback([&]() {
             _endTime = Time::now();
-            _callbackQueue(_id, getExecutionTimeInMilliseconds());
+            _callbackQueue(_id, getExecutionTimeInNanoseconds());
         });
     }
 
@@ -54,7 +54,7 @@ public:
         _startTime = Time::now();
         _request.Infer();
         _endTime = Time::now();
-        _callbackQueue(_id, getExecutionTimeInMilliseconds());
+        _callbackQueue(_id, getExecutionTimeInNanoseconds());
     }
 
     std::map<std::string, InferenceEngine::InferenceEngineProfileInfo> getPerformanceCounts() {
@@ -69,9 +69,9 @@ public:
         _request.SetBlob(name, data);
     }
 
-    double getExecutionTimeInMilliseconds() const {
+    double getExecutionTimeInNanoseconds() const {
         auto execTime = std::chrono::duration_cast<ns>(_endTime - _startTime);
-        return static_cast<double>(execTime.count()) * 0.000001;
+        return static_cast<double>(execTime.count());
     }
 
 private:
@@ -110,8 +110,8 @@ public:
         _latencies.clear();
     }
 
-    double getDurationInMilliseconds() {
-        return std::chrono::duration_cast<ns>(_endTime - _startTime).count() * 0.000001;
+    double getDurationInNanoseconds() {
+        return std::chrono::duration_cast<ns>(_endTime - _startTime).count();
     }
 
     void putIdleRequest(size_t id, const double latency) {

@@ -579,7 +579,7 @@ int main(int argc, char* argv[]) {
                     {"batch size", std::to_string(batchSize)},
                     {"number of iterations", std::to_string(niter)},
                     {"number of parallel infer requests", std::to_string(nireq)},
-                    {"duration (ms)", std::to_string(getDurationInMilliseconds(duration_seconds))},
+                    {"duration (ns)", std::to_string(getDurationInNanoseconds(duration_seconds))},
                 });
             for (auto& nstreams : device_nstreams) {
                 std::stringstream ss;
@@ -633,7 +633,7 @@ int main(int argc, char* argv[]) {
         }
         ss << ", limits: ";
         if (duration_seconds > 0) {
-            ss << getDurationInMilliseconds(duration_seconds) << " ms duration";
+            ss << getDurationInNanoseconds(duration_seconds) << " ns duration";
         }
         if (niter != 0) {
             if (duration_seconds == 0) {
@@ -714,22 +714,22 @@ int main(int argc, char* argv[]) {
         inferRequestsQueue.waitAll();
 
         double latency = getMedianValue<double>(inferRequestsQueue.getLatencies(), FLAGS_latency_percentile);
-        double totalDuration = inferRequestsQueue.getDurationInMilliseconds();
+        double totalDuration = inferRequestsQueue.getDurationInNanoseconds();
         double fps =
-            (FLAGS_api == "sync") ? batchSize * 1000.0 / latency : batchSize * 1000.0 * iteration / totalDuration;
+                (FLAGS_api == "sync") ? batchSize * 1000000000.0 / latency : batchSize * 1000000000.0 * iteration / totalDuration;
 
         if (statistics) {
             statistics->addParameters(StatisticsReport::Category::EXECUTION_RESULTS,
                                       {
-                                          {"total execution time (ms)", double_to_string(totalDuration)},
+                                          {"total execution time (ns)", double_to_string(totalDuration)},
                                           {"total number of iterations", std::to_string(iteration)},
                                       });
             if (device_name.find("MULTI") == std::string::npos) {
                 std::string latency_label;
                 if (FLAGS_latency_percentile == 50) {
-                    latency_label = "latency (ms)";
+                    latency_label = "latency (ns)";
                 } else {
-                    latency_label = "latency (" + std::to_string(FLAGS_latency_percentile) + " percentile) (ms)";
+                    latency_label = "latency (" + std::to_string(FLAGS_latency_percentile) + " percentile) (ns)";
                 }
                 statistics->addParameters(StatisticsReport::Category::EXECUTION_RESULTS,
                                           {
@@ -782,7 +782,7 @@ int main(int argc, char* argv[]) {
             statistics->dump();
 
         std::cout << "Count:      " << iteration << " iterations" << std::endl;
-        std::cout << "Duration:   " << double_to_string(totalDuration) << " ms" << std::endl;
+        std::cout << "Duration:   " << double_to_string(totalDuration) << " ns" << std::endl;
         if (device_name.find("MULTI") == std::string::npos) {
             std::cout << "Latency";
             if (FLAGS_latency_percentile == 50) {
