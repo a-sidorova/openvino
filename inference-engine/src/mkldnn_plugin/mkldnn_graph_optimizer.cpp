@@ -16,6 +16,7 @@
 #include "nodes/mkldnn_mvn_node.h"
 #include <nodes/mkldnn_transpose_node.h>
 #include "nodes/mkldnn_interpolate_node.h"
+#include "nodes/mkldnn_reduce_node.h"
 #include "nodes/mkldnn_input_node.h"
 #include "nodes/mkldnn_rnn.h"
 #include "nodes/common/cpu_convert.h"
@@ -131,6 +132,10 @@ void MKLDNNGraphOptimizer::ApplyCommonGraphOptimizations(MKLDNNGraph &graph) {
 
     OV_ITT_SCOPE_NEXT(FIRST_INFERENCE, taskChain, "FuseNormalizeL2AndSimpleOperation");
     FuseNormalizeL2AndSimpleOperation(graph);
+    graph.RemoveDroppedNodes();
+
+    OV_ITT_SCOPE_NEXT(FIRST_INFERENCE, taskChain, "FuseReduceAndSimpleOperation");
+    FuseReduceAndSimpleOperation(graph);
     graph.RemoveDroppedNodes();
 
     OV_ITT_SCOPE_NEXT(FIRST_INFERENCE, taskChain, "FuseEltwiseAndSimple");
@@ -1320,6 +1325,44 @@ void MKLDNNGraphOptimizer::FuseNormalizeL2AndSimpleOperation(MKLDNNGraph &graph)
     }
 }
 
+void MKLDNNGraphOptimizer::FuseReduceAndSimpleOperation(MKLDNNGraph &graph) {
+    auto& graphNodes = graph.GetNodes();
+
+    auto isSuitableParentNode = [](MKLDNNNodePtr node) {
+        return node->getType() == Reduce && node->getChildEdges().size() == 1;
+    };
+
+    auto parent = graphNodes.begin();
+    while (parent != graphNodes.end()) {
+        auto parentNode = *parent;
+        if (!isSuitableParentNode(parentNode)) {
+            parent++;
+            continue;
+        }
+
+        auto childNode = parentNode->getChildEdgeAt(0)->getChild();
+        if (!parentNode->canFuse(childNode)) {
+            parent++;
+            continue;
+        }
+
+        childNode->fuseInto(parentNode);
+
+        if (childNode->getType() == FakeQuantize || childNode->getType() == Eltwise) {
+            auto parentEdges = childNode->parentEdges;
+            for (auto &parentEdge : parentEdges) {
+                auto p_edge = parentEdge.lock();
+                if (p_edge->getParent()->getType() == Reduce)
+                    continue;
+
+                graph.RemoveEdge(p_edge);
+            }
+        }
+
+        graph.DropNode(childNode);
+    }
+}
+
 void MKLDNNGraphOptimizer::FuseEltwiseAndSimple(MKLDNNGraph &graph) {
     auto& graphNodes = graph.GetNodes();
 
@@ -1863,7 +1906,7 @@ void MKLDNNGraphOptimizer::MergeTransposeAndReorder(MKLDNNGraph &graph) {
 void MKLDNNGraphOptimizer::reshapeRnnSeq(MKLDNNGraph &graph) {
     auto& graphNodes = graph.GetNodes();
 
-    auto isSutableParentNode = [](MKLDNNNodePtr node) {
+    auto isSuitableParentNode = [](MKLDNNNodePtr node) {
         if (node->type != RNNSeq)
             return false;
         auto rnnNode = std::dynamic_pointer_cast<MKLDNNRNN>(node);
@@ -1872,7 +1915,7 @@ void MKLDNNGraphOptimizer::reshapeRnnSeq(MKLDNNGraph &graph) {
 
     for (int i = 0; i < graphNodes.size(); i++) {
         auto& parentNode = graphNodes[i];
-        if (!isSutableParentNode(parentNode)) {
+        if (!isSuitableParentNode(parentNode)) {
             continue;
         }
 
