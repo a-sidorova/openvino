@@ -119,6 +119,8 @@
 #  include <windows.h>
 # else
 #  include <cpuid.h>
+#include <openvino/pass/serialize.hpp>
+
 # endif
 #endif
 
@@ -491,6 +493,9 @@ static void TransformationUpToCPUSpecificOpSet(std::shared_ptr<ngraph::Function>
     });
 
     postLPTPassManager.run_passes(nGraphFunc);
+
+    ov::pass::Serialize("/home/sidorova/openvino/dynamism/loop/dynamic_tests/fox_with_cond.xml",
+                        "/home/sidorova/openvino/dynamism/loop/dynamic_tests/fox_with_cond.bin").run_on_function(nGraphFunc);
 }
 
 static void Transformation(CNNNetwork& clonedNetwork, const bool _enableLPT) {
