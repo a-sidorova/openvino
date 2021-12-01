@@ -119,7 +119,6 @@
 #  include <windows.h>
 # else
 #  include <cpuid.h>
-
 # endif
 #endif
 
