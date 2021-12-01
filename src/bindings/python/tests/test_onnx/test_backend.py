@@ -29,7 +29,6 @@ from tests import (
     xfail_issue_39662,
     xfail_issue_44854,
     xfail_issue_44858,
-    xfail_issue_44956,
     xfail_issue_44965,
     xfail_issue_44968,
     xfail_issue_45180,
