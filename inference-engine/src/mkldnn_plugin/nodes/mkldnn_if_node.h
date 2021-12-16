@@ -26,6 +26,15 @@ public:
 
     void inline setExtManager(const MKLDNNExtensionManager::Ptr& extMgr) { ext_mng = extMgr; }
 
+protected:
+    void executeDynamicImpl(mkldnn::stream strm) override;
+    bool needPrepareParams() const override { return false; };
+    bool needShapeInfer() const override { return false; }
+
+private:
+    void prepareBeforeMappers(const bool isThen, const dnnl::engine& eng);
+    void prepareAfterMappers(const bool isThen, const dnnl::engine& eng);
+
     struct PortMap {
         int from; /**< Index of external/internal out data */
         int to;   /**< Index of external/internal in data */
@@ -34,15 +43,18 @@ public:
     class PortMapHelper {
     public:
         PortMapHelper(const MKLDNNMemoryPtr& from, const MKLDNNMemoryPtr& to, const mkldnn::engine& eng);
-        virtual ~PortMapHelper() = default;
-        virtual void execute(mkldnn::stream& strm);
-    protected:
-        mkldnn::reorder reorder;
-        mkldnn::memory mem_holder_src;
-        mkldnn::memory mem_holder_dst;
+        ~PortMapHelper() = default;
+        void execute(mkldnn::stream& strm);
+
+    private:
+        void redefineTo();
+
+        MKLDNNMemoryPtr srcMemPtr;
+        MKLDNNMemoryPtr dstMemPtr;
+
+        ptrdiff_t size;
     };
 
-private:
     MKLDNNExtensionManager::Ptr ext_mng;
     MKLDNNGraph subGraphThen;
     MKLDNNGraph subGraphElse;
