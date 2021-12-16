@@ -85,7 +85,6 @@ xfail_issue_45180 = xfail_test(reason="RuntimeError: Unsupported dynamic op: Red
 xfail_issue_44851 = xfail_test(reason="Expected: Unsupported dynamic op: Broadcast")
 xfail_issue_44854 = xfail_test(reason="Expected: Unsupported dynamic op: VariadicSplit")
 xfail_issue_44858 = xfail_test(reason="Expected: Unsupported dynamic op: Unsqueeze")
-xfail_issue_44956 = xfail_test(reason="Expected: Unsupported dynamic op: Loop")
 xfail_issue_44957 = xfail_test(reason="Expected: Unsupported dynamic op: NonZero")
 xfail_issue_44958 = xfail_test(reason="Expected: Unsupported dynamic op: Interpolate")
 xfail_issue_44965 = xfail_test(reason="Expected: RuntimeError: value info has no element")
