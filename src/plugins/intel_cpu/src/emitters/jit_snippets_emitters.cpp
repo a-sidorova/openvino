@@ -15,6 +15,12 @@ using namespace dnnl::impl::utils;
 
 namespace ov {
 namespace intel_cpu {
+
+inline static void transform_idxs_to_regs(const std::vector<size_t>& idxs, std::vector<Reg64>& regs) {
+    regs.resize(idxs.size());
+    std::transform(idxs.begin(), idxs.end(), regs.begin(), [](size_t idx){return Reg64(static_cast<int>(idx));});
+}
+
 jit_container_emitter::jit_container_emitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa,
                       const std::shared_ptr<ov::Node>& n) : jit_emitter(h, isa, n) {
     in_out_type_ = emitter_in_out_map::gpr_to_gpr;
@@ -160,8 +166,8 @@ void KernelEmitter::emit_impl(const std::vector<size_t>& in,
 
     Reg64 reg_indexes = Reg64(abi_param1.getIdx());
     Reg64 reg_const_params = Reg64(abi_param2.getIdx());
-    std::vector<Reg64> data_ptr_regs(gp_regs_used.size());
-    std::transform(gp_regs_used.begin(), gp_regs_used.end(), data_ptr_regs.begin(), [](size_t idx){return Reg64(static_cast<int>(idx));});
+    std::vector<Reg64> data_ptr_regs;
+    transform_idxs_to_regs(gp_regs_used, data_ptr_regs);
 
     init_data_pointers(num_inputs, num_inputs + num_outputs, reg_indexes, reg_const_params, data_ptr_regs);
     // todo: emit_impl is a const method, so we can't just push_back unused regs to the gp_regs_pool.
@@ -250,10 +256,14 @@ void TileSchedulerEmitter::emit_tiles(const Reg64& reg_inner_amount, const std::
                 h->mov(reg_inner_amount, inner_work_amount);
                 // vector_tile is executed, but work_amount is neither set nor decremented appropriately.
             } else if (vector_evaluate_once) {
-                vector_tile.first -> emit_ptr_increments(data_ptr_regs);
+                vector_tile.first->emit_ptr_increments(data_ptr_regs);
                 h->mov(reg_inner_amount, inner_work_amount - vector_size);
             }
             // else: vector_tile is executed multiple times, so work_amount is already set
+        } else {
+            if (vector_evaluate_once) {
+                vector_tile.first->emit_ptr_increments(data_ptr_regs);
+            }
         }
         process_tile(scalar_evaluate_once, scalar_tile);
     }
@@ -269,9 +279,8 @@ void TileSchedulerEmitter::emit_impl(const std::vector<size_t>& in,
     const size_t vector_size = in[2];
     const size_t num_params = num_inputs + num_outputs;
     const auto& data_ptr_reg_idxs(out);
-    std::vector<Reg64> data_ptr_regs(data_ptr_reg_idxs.size());
-    std::transform(data_ptr_reg_idxs.begin(), data_ptr_reg_idxs.end(), data_ptr_regs.begin(), [](size_t idx){return Reg64(static_cast<int>(idx));});
-
+    std::vector<Reg64> data_ptr_regs;
+    transform_idxs_to_regs(data_ptr_reg_idxs, data_ptr_regs);
     // todo: emit_impl has const input args, so we can't just pop_back necessary regs from gpr_pool.
     //  we need a more elegant approach to avoid a full copy here. Similar problem is demonstrated in KernelEmitter
     auto local_gpr_pool = gpr_pool;
@@ -322,6 +331,7 @@ TileEmitter::TileEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu
     num_inputs = tile->num_inputs;
     num_outputs = tile->num_outputs;
     io_dims = tile->io_dims;
+    io_data_size = tile->io_data_size;
     increment = tile->increment;
     if (io_dims.size() != num_inputs + num_outputs)
         IE_THROW() << "TileEmitter constructor got inconsistent arguments. Check num_inputs + num_outputs == io_dims.size()";
@@ -351,13 +361,11 @@ void TileEmitter::emit_body(const std::vector<size_t>& vec_pool, const std::vect
 }
 
 void TileEmitter::emit_ptr_increments(const std::vector<Reg64>& data_ptr_regs) const {
-    for (size_t i = 0; i < num_inputs; i++) {
+    for (size_t i = 0; i < num_inputs + num_outputs; i++) {
         // those with dims == 1 will be broadcasted, hence don't require increment
         if (io_dims[i] != 1)
-            h->add(data_ptr_regs[i], increment * sizeof(float));
+            h->add(data_ptr_regs[i], increment * io_data_size[i]);
     }
-    for (size_t i = num_inputs; i < num_inputs + num_outputs; i++)
-        h->add(data_ptr_regs[i], increment * sizeof(float));
 }
 
 void TileEmitter::emit_impl(const std::vector<size_t>& in,
@@ -366,8 +374,8 @@ void TileEmitter::emit_impl(const std::vector<size_t>& in,
                             const std::vector<size_t>& gpr_pool,
                             const ov::intel_cpu::emitter_context *emit_context) const {
     Reg64 work_amount = Reg64(static_cast<int>(in[0]));
-    std::vector<Reg64> data_ptr_regs(out.size());
-    std::transform(out.begin(), out.end(), data_ptr_regs.begin(), [](size_t idx){return Reg64(static_cast<int>(idx));});
+    std::vector<Reg64> data_ptr_regs;
+    transform_idxs_to_regs(out, data_ptr_regs);
     Label for_body;
     // Note that:
     // * Work amount must be set by TileScheduler that executes Tiles
@@ -380,7 +388,7 @@ void TileEmitter::emit_impl(const std::vector<size_t>& in,
     h->jge(for_body, CodeGenerator::T_NEAR);
 }
 
-FakeBroadcastEmitter::FakeBroadcastEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa,
+BroadcastMoveEmitter::BroadcastMoveEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa,
                                            const std::shared_ptr<ov::Node>& n) : jit_emitter(h, isa, n) {
     if (n->get_input_shape(0).empty())
         use_broadcast = true;
@@ -388,9 +396,14 @@ FakeBroadcastEmitter::FakeBroadcastEmitter(dnnl::impl::cpu::x64::jit_generator* 
         use_broadcast = true;
     else
         use_broadcast = false;
+
+    if (n->get_input_element_type(0) != n->get_output_element_type(0))
+        IE_THROW() << "BroadcastMoveEmitter supports only equal input and output types but gets: "
+            << n->get_input_element_type(0) << " and " << n->get_output_element_type(0);
+    byte_size = n->get_input_element_type(0).size();
 }
 
-void FakeBroadcastEmitter::emit_impl(const std::vector<size_t>& in,
+void BroadcastMoveEmitter::emit_impl(const std::vector<size_t>& in,
           const std::vector<size_t>& out,
           const std::vector<size_t>& pool,
           const std::vector<size_t>& gpr,
@@ -408,16 +421,23 @@ void FakeBroadcastEmitter::emit_impl(const std::vector<size_t>& in,
 }
 
 template <dnnl::impl::cpu::x64::cpu_isa_t isa>
-void FakeBroadcastEmitter::emit_isa(const std::vector<size_t> &in, const std::vector<size_t> &out) const {
+void BroadcastMoveEmitter::emit_isa(const std::vector<size_t> &in, const std::vector<size_t> &out) const {
     using Vmm = typename dnnl::impl::utils::conditional3<isa == dnnl::impl::cpu::x64::sse41,
             Xmm, isa == dnnl::impl::cpu::x64::avx2, Ymm, Zmm>::type;
     Vmm vmm_src0 = Vmm(in[0]);
+    Xmm xmm_src0 = Xmm(in[0]);
     Vmm vmm_dst  = Vmm(out[0]);
 
     if (use_broadcast) {
-        h->uni_vbroadcastss(vmm_dst, Xmm(in[0]));
+        switch (byte_size) {
+            case 4: h->uni_vbroadcastss(vmm_dst, xmm_src0); break;
+            case 2: h->vpbroadcastw(vmm_dst, xmm_src0); break;
+            case 1: h->vpbroadcastb(vmm_dst, xmm_src0); break;
+            default: assert(!"unsupported data type");
+        }
     } else {
-        h->uni_vmovups(vmm_dst, vmm_src0);
+        if (vmm_src0 != vmm_dst)
+            h->uni_vmovups(vmm_dst, vmm_src0);
     }
 }
 
@@ -456,11 +476,18 @@ void ScalarEmitter::emit_isa(const std::vector<size_t> &in, const std::vector<si
 
 MemoryEmitter::MemoryEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa,
                              const std::shared_ptr<ov::Node>& n) : jit_emitter(h, isa, n) {
+    src_prc = InferenceEngine::details::convertPrecision(n->get_input_element_type(0));
+    dst_prc = InferenceEngine::details::convertPrecision(n->get_output_element_type(0));
 }
 
 StoreEmitter::StoreEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa,
                            const std::shared_ptr<ov::Node>& n) : MemoryEmitter(h, isa, n) {
+    if (src_prc != dst_prc)
+        IE_THROW() << "StoreEmitter supports only equal input and output types but gets: " << src_prc.name() << " and " << dst_prc.name();
+
+    count = ov::as_type_ptr<ngraph::snippets::op::Store>(n)->get_count();
     in_out_type_ = emitter_in_out_map::vec_to_gpr;
+    store_emitter.reset(new jit_store_emitter(h, isa, src_prc, dst_prc, count));
 }
 
 void StoreEmitter::emit_impl(const std::vector<size_t>& in,
@@ -484,46 +511,23 @@ template <dnnl::impl::cpu::x64::cpu_isa_t isa>
 void StoreEmitter::emit_isa(const std::vector<size_t> &in, const std::vector<size_t> &out) const {
     using Vmm = typename dnnl::impl::utils::conditional3<isa == dnnl::impl::cpu::x64::sse41,
             Xmm, isa == dnnl::impl::cpu::x64::avx2, Ymm, Zmm>::type;
-    Reg64 out_reg(static_cast<int>(out[0]));
-    Vmm vmm_src0 = Vmm(in[0]);
-    h->uni_vmovups(h->ptr[out_reg], vmm_src0);
+    if (!store_emitter)
+        IE_THROW() << "Store CPU emitter isn't initialized for StoreEmitter!";
+    store_emitter->emit_code({in[0]}, {out[0]}, aux_vec_idxs, aux_gpr_idxs);
 }
 
-ScalarStoreEmitter::ScalarStoreEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa,
-                                       const std::shared_ptr<ov::Node>& n) : MemoryEmitter(h, isa, n) {
-    in_out_type_ = emitter_in_out_map::vec_to_gpr;
-}
-
-void ScalarStoreEmitter::emit_impl(const std::vector<size_t>& in,
-                                   const std::vector<size_t>& out,
-                                   const std::vector<size_t>& pool,
-                                   const std::vector<size_t>& gpr,
-                                   const ov::intel_cpu::emitter_context *emit_context) const {
-    if (host_isa_ == dnnl::impl::cpu::x64::sse41) {
-        emit_isa<dnnl::impl::cpu::x64::sse41>(in, out);
-    } else if (host_isa_ == dnnl::impl::cpu::x64::avx2) {
-        emit_isa<dnnl::impl::cpu::x64::avx2>(in, out);
-    } else if (host_isa_ == dnnl::impl::cpu::x64::avx512_core) {
-        emit_isa<dnnl::impl::cpu::x64::avx512_core>(in, out);
-    } else {
-        IE_THROW() << host_isa_;
-        assert(!"unsupported isa");
-    }
-}
-
-template <dnnl::impl::cpu::x64::cpu_isa_t isa>
-void ScalarStoreEmitter::emit_isa(const std::vector<size_t> &in, const std::vector<size_t> &out) const {
-    using Vmm = typename dnnl::impl::utils::conditional3<isa == dnnl::impl::cpu::x64::sse41,
-            Xmm, isa == dnnl::impl::cpu::x64::avx2, Ymm, Zmm>::type;
-    Reg64 out_reg(static_cast<int>(out[0]));
-    Xmm vmm_src0 = Xmm(in[0]);
-    h->uni_vmovss(h->ptr[out_reg], vmm_src0);
+void StoreEmitter::emit_data() const {
+    store_emitter->emit_data();
 }
 
 LoadEmitter::LoadEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa,
-                         const std::shared_ptr<ov::Node>& n)
-                         : MemoryEmitter(h, isa, n) {
+                         const std::shared_ptr<ov::Node>& n) : MemoryEmitter(h, isa, n) {
+    if (src_prc != dst_prc)
+        IE_THROW() << "LoadEmitter supports only equal input and output types but gets: " << src_prc.name() << " and " << dst_prc.name();
+
+    count = ov::as_type_ptr<ngraph::snippets::op::Load>(n)->get_count();
     in_out_type_ = emitter_in_out_map::gpr_to_vec;
+    load_emitter.reset(new jit_load_emitter(h, isa, src_prc, dst_prc, count));
 }
 
 void LoadEmitter::emit_impl(const std::vector<size_t>& in,
@@ -547,13 +551,20 @@ template <dnnl::impl::cpu::x64::cpu_isa_t isa>
 void LoadEmitter::emit_isa(const std::vector<size_t> &in, const std::vector<size_t> &out) const {
     using Vmm = typename dnnl::impl::utils::conditional3<isa == dnnl::impl::cpu::x64::sse41,
             Xmm, isa == dnnl::impl::cpu::x64::avx2, Ymm, Zmm>::type;
-    Reg64 in_reg(static_cast<int>(in[0]));
-    Vmm vmm_src0 = Vmm(out[0]);
-    h->uni_vmovups(vmm_src0, h->ptr[in_reg]);
+    if (!load_emitter)
+        IE_THROW() << "Load CPU emitter isn't initialized for LoadEmitter!";
+    load_emitter->emit_code({in[0]}, {out[0]}, aux_vec_idxs, aux_gpr_idxs);
+}
+
+void LoadEmitter::emit_data() const {
+    load_emitter->emit_data();
 }
 
 BroadcastLoadEmitter::BroadcastLoadEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa,
                                            const std::shared_ptr<ov::Node>& n) : MemoryEmitter(h, isa, n) {
+    if (src_prc != dst_prc)
+            IE_THROW() << "BroadcastEmitters support only equal input and output types but gets: " << src_prc.name() << " and " << dst_prc.name();
+
     in_out_type_ = emitter_in_out_map::gpr_to_vec;
 }
 
@@ -579,25 +590,33 @@ void BroadcastLoadEmitter::emit_isa(const std::vector<size_t> &in, const std::ve
     using Vmm = typename dnnl::impl::utils::conditional3<isa == dnnl::impl::cpu::x64::sse41,
             Xmm, isa == dnnl::impl::cpu::x64::avx2, Ymm, Zmm>::type;
     Reg64 in_reg(in[0]);
-    Vmm vmm_src0 = Vmm(out[0]);
+    Vmm vmm_dst = Vmm(out[0]);
 
     // In doesn't really matter if we broadcast or `movss` for vector tails so keep only one version for `BroadcastLoad`,
     // key point here is not to add post-increment, it might be fixed by some other approach in future
-    h->uni_vbroadcastss(vmm_src0, h->ptr[in_reg]);
+    switch (src_prc.size()) {
+        case 4: h->uni_vbroadcastss(vmm_dst, h->ptr[in_reg]); break;
+        case 2: h->vpbroadcastw(vmm_dst, h->ptr[in_reg]); break;
+        case 1: h->vpbroadcastb(vmm_dst, h->ptr[in_reg]); break;
+        default: assert(!"unsupported data type");
+    }
 }
 
+LoadConvertEmitter::LoadConvertEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa, const std::shared_ptr<ov::Node>& n)
+    : MemoryEmitter(h, isa, n) {
+    if (n->get_output_element_type(0) != ov::element::f32)
+        IE_THROW() << "LoadConvertEmitter supports only f32 output type but gets: " << n->get_output_element_type(0);
 
-ScalarLoadEmitter::ScalarLoadEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa,
-                                     const std::shared_ptr<ov::Node>& n)
-                                    : MemoryEmitter(h, isa, n) {
+    count = ov::as_type_ptr<ngraph::snippets::op::Load>(n)->get_count();
     in_out_type_ = emitter_in_out_map::gpr_to_vec;
+    load_emitter.reset(new jit_load_emitter(h, isa, src_prc, dst_prc, count));
 }
 
-void ScalarLoadEmitter::emit_impl(const std::vector<size_t>& in,
-                                  const std::vector<size_t>& out,
-                                  const std::vector<size_t>& pool,
-                                  const std::vector<size_t>& gpr,
-                                  const ov::intel_cpu::emitter_context *emit_context) const {
+void LoadConvertEmitter::emit_impl(const std::vector<size_t>& in,
+                                   const std::vector<size_t>& out,
+                                   const std::vector<size_t>& pool,
+                                   const std::vector<size_t>& gpr,
+                                   const ov::intel_cpu::emitter_context *emit_context) const {
     if (host_isa_ == dnnl::impl::cpu::x64::sse41) {
         emit_isa<dnnl::impl::cpu::x64::sse41>(in, out);
     } else if (host_isa_ == dnnl::impl::cpu::x64::avx2) {
@@ -611,12 +630,58 @@ void ScalarLoadEmitter::emit_impl(const std::vector<size_t>& in,
 }
 
 template <dnnl::impl::cpu::x64::cpu_isa_t isa>
-void ScalarLoadEmitter::emit_isa(const std::vector<size_t> &in, const std::vector<size_t> &out) const {
-    using Vmm = typename dnnl::impl::utils::conditional3<isa == dnnl::impl::cpu::x64::sse41,
-            Xmm, isa == dnnl::impl::cpu::x64::avx2, Ymm, Zmm>::type;
-    Reg64 in_reg(static_cast<int>(in[0]));
-    Xmm vmm_src0 = Xmm(out[0]);
-    h->uni_vmovss(vmm_src0, h->ptr[in_reg]);
+void LoadConvertEmitter::emit_isa(const std::vector<size_t> &in, const std::vector<size_t> &out) const {
+    if (!load_emitter)
+        IE_THROW() << "Load CPU emitter isn't initialized for LoadEmitter!";
+    load_emitter->emit_code({in[0]}, {out[0]}, aux_vec_idxs, aux_gpr_idxs);
 }
+
+void LoadConvertEmitter::emit_data() const {
+    load_emitter->emit_data();
+}
+
+StoreConvertEmitter::StoreConvertEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa,
+                                         const std::shared_ptr<ov::Node>& n) : MemoryEmitter(h, isa, n) {
+    if (n->get_input_element_type(0) != ov::element::f32)
+        IE_THROW() << "StoreConvertEmitter supports only f32 input type but gets: " << n->get_input_element_type(0);
+
+    count = ov::as_type_ptr<ngraph::snippets::op::Store>(n)->get_count();
+    in_out_type_ = emitter_in_out_map::vec_to_gpr;
+
+    if (ov::is_type<ov::intel_cpu::StoreConvertTruncation>(n)) {
+        store_emitter.reset(new jit_store_emitter(h, isa, src_prc, dst_prc, count, arithmetic_mode::truncation));
+    } else if (ov::is_type<ov::intel_cpu::StoreConvertSaturation>(n)) {
+        store_emitter.reset(new jit_store_emitter(h, isa, src_prc, dst_prc, count, arithmetic_mode::saturation));
+    }
+}
+
+void StoreConvertEmitter::emit_impl(const std::vector<size_t>& in,
+                                    const std::vector<size_t>& out,
+                                    const std::vector<size_t>& pool,
+                                    const std::vector<size_t>& gpr,
+                                    const ov::intel_cpu::emitter_context *emit_context) const {
+    if (host_isa_ == dnnl::impl::cpu::x64::sse41) {
+        emit_isa<dnnl::impl::cpu::x64::sse41>(in, out);
+    } else if (host_isa_ == dnnl::impl::cpu::x64::avx2) {
+        emit_isa<dnnl::impl::cpu::x64::avx2>(in, out);
+    } else if (host_isa_ == dnnl::impl::cpu::x64::avx512_core) {
+        emit_isa<dnnl::impl::cpu::x64::avx512_core>(in, out);
+    } else {
+        IE_THROW() << host_isa_;
+        assert(!"unsupported isa");
+    }
+}
+
+template <dnnl::impl::cpu::x64::cpu_isa_t isa>
+void StoreConvertEmitter::emit_isa(const std::vector<size_t> &in, const std::vector<size_t> &out) const {
+    if (!store_emitter)
+        IE_THROW() << "Store CPU emitter isn't initialized for StoreEmitter!";
+    store_emitter->emit_code({in[0]}, {out[0]}, aux_vec_idxs, aux_gpr_idxs);
+}
+
+void StoreConvertEmitter::emit_data() const {
+    store_emitter->emit_data();
+}
+
 }   // namespace intel_cpu
 }   // namespace ov
