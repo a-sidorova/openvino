@@ -551,5 +551,24 @@ private:
     size_t aux_vecs_count() const override;
 };
 
+class jit_convert_emitter : public jit_emitter {
+public:
+    jit_convert_emitter(mkldnn::impl::cpu::x64::jit_generator *host, mkldnn::impl::cpu::x64::cpu_isa_t host_isa, const std::shared_ptr<ngraph::Node>& n,
+                        InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
+
+    size_t get_inputs_num() const override;
+
+private:
+    void emit_impl(const std::vector<size_t>& in, const std::vector<size_t>& out,
+                   const std::vector<size_t>& pool, const std::vector<size_t>& gpr,
+                   const ov::intel_cpu::emitter_context *emit_context) const override;
+
+    template <mkldnn::impl::cpu::x64::cpu_isa_t isa>
+    void emit_isa(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs) const;
+
+    ov::element::Type input_type;
+    ov::element::Type output_type;
+};
+
 }   // namespace intel_cpu
 }   // namespace ov
