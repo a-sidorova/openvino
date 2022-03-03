@@ -6,6 +6,7 @@
 
 #include <cpu/x64/jit_generator.hpp>
 #include "jit_emitter.hpp"
+#include "jit_bf16_emitters.hpp"
 
 namespace ov {
 namespace intel_cpu {
@@ -566,8 +567,25 @@ private:
     template <mkldnn::impl::cpu::x64::cpu_isa_t isa>
     void emit_isa(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs) const;
 
+    void emit_data() const override;
+
+    void float2bfloat(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs) const;
+    template <mkldnn::impl::cpu::x64::cpu_isa_t isa>
+    void dword2sint8(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs) const;
+    template <mkldnn::impl::cpu::x64::cpu_isa_t isa>
+    void dword2uint8(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs) const;
+
     ov::element::Type input_type;
     ov::element::Type output_type;
+
+    const ov::element::TypeVector supported_types = {
+            ov::element::f32,
+            ov::element::bf16,
+            ov::element::i8,
+            ov::element::u8
+    };
+
+    std::shared_ptr<jit_emu_vcvtneps2bf16> emu_vcvtneps2bf16 = nullptr;
 };
 
 }   // namespace intel_cpu
