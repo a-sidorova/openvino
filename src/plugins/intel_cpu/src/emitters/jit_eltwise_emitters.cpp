@@ -1884,10 +1884,14 @@ void jit_convert_emitter::float2bfloat(const std::vector<size_t> &in_vec_idxs, c
     Ymm ymm_src = Ymm(in_vec_idxs[0]);
     Ymm ymm_dst  = Ymm(out_vec_idxs[0]);
 
-    if (mayiuse(avx512_core_bf16))
+    if (mayiuse(avx512_core_bf16)) {
         h->vcvtneps2bf16(ymm_dst, ymm_src);
-    else
+    } else {
+        if (!emu_vcvtneps2bf16)
+            IE_THROW() << "Converter from float to bf16 isn't initialized!";
+
         emu_vcvtneps2bf16->emit_code({static_cast<size_t>(ymm_src.getIdx())}, {static_cast<size_t>(ymm_dst.getIdx())});
+    }
 }
 
 template <mkldnn::impl::cpu::x64::cpu_isa_t isa>
