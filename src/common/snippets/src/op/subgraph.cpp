@@ -239,7 +239,7 @@ void snippets::op::Subgraph::convert_to_snippet_dialect(const ov::element::TypeV
         manager.get_pass_config()->
         set_callback<ngraph::snippets::pass::ReplaceStoresWithScalarStores>(skip_matching_domain);
     }
-    manager.register_pass<snippets::pass::InsertConvert>(supported_exec_types);
+    manager.register_pass<snippets::pass::InsertConvertAfterLoad>(supported_exec_types);
     manager.run_passes(m_body);
 }
 
@@ -265,7 +265,8 @@ snippets::Schedule snippets::op::Subgraph::generate(const ov::element::TypeVecto
     return generate(mngr, supported_exec_types, compile_params);
 }
 
-snippets::Schedule snippets::op::Subgraph::generate(ngraph::pass::Manager& opt, const ov::element::TypeVector& supported_exec_types, const void* compile_params) {
+snippets::Schedule snippets::op::Subgraph::generate(ngraph::pass::Manager& opt, const ov::element::TypeVector& supported_exec_types,
+                                                    const void* compile_params) {
     INTERNAL_OP_SCOPE(Subgraph);
     OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::op::generate")
     NGRAPH_CHECK(m_generator != nullptr, "generate is called while generator is not set");

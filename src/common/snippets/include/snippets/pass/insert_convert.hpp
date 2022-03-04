@@ -31,20 +31,6 @@ public:
     InsertConvertBeforeStore();
 };
 
-/**
- * @interface InsertConvertBeforeStore
- * @brief Inserts explicit convert node after Load and before Store to align precision
- * @ingroup snippets
- */
-class InsertConvert: public ngraph::pass::GraphRewrite {
-public:
-    NGRAPH_RTTI_DECLARATION;
-    InsertConvert(const ov::element::TypeVector& supported_exec_types) {
-        add_matcher<InsertConvertAfterLoad>(supported_exec_types);
-        add_matcher<InsertConvertBeforeStore>();
-    }
-};
-
 }  // namespace pass
 }  // namespace snippets
 }  // namespace ngraph
