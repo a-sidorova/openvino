@@ -417,6 +417,7 @@ void Snippet::define_schedule() {
 }
 
 void Snippet::generate() {
+    ov::element::TypeVector supported_exec_types = { ov::element::f32 };
     jit_snippets_compile_args jcp;
     jcp.output_dims = exec_domain;
     std::copy(sch_dims.begin(), sch_dims.end(), jcp.scheduler_dims);
@@ -435,7 +436,7 @@ void Snippet::generate() {
         auto b = offsets_out[i].begin();
         std::copy(b, b + harness_num_dims, &jcp.data_offsets[(inputShapes.size() + i) * harness_num_dims]);
     }
-    schedule = snippet->generate(reinterpret_cast<void*>(&jcp));
+    schedule = snippet->generate(supported_exec_types, reinterpret_cast<void*>(&jcp));
 }
 
 void Snippet::schedule_6d(const jit_snippets_call_args& call_args) const {

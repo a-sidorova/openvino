@@ -28,7 +28,7 @@ public:
  */
 class InsertConvertBeforeStore: public ngraph::pass::MatcherPass {
 public:
-    InsertConvertBeforeStore(const ov::element::TypeVector& supported_exec_types);
+    InsertConvertBeforeStore();
 };
 
 /**
@@ -41,7 +41,7 @@ public:
     NGRAPH_RTTI_DECLARATION;
     InsertConvert(const ov::element::TypeVector& supported_exec_types) {
         add_matcher<InsertConvertAfterLoad>(supported_exec_types);
-        add_matcher<InsertConvertBeforeStore>(supported_exec_types);
+        add_matcher<InsertConvertBeforeStore>();
     }
 };
 

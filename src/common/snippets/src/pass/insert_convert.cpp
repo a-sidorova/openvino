@@ -13,7 +13,7 @@
 #include <ngraph/pattern/op/or.hpp>
 
 ngraph::snippets::pass::InsertConvertAfterLoad::InsertConvertAfterLoad(const ov::element::TypeVector& supported_exec_types) {
-    MATCHER_SCOPE(InsertConvert);
+    MATCHER_SCOPE(InsertConvertAfterLoad);
 
     const auto input_pattern = ngraph::pattern::any_input();
     const auto load_pattern = ngraph::pattern::wrap_type<snippets::op::Load>({input_pattern});
@@ -22,8 +22,8 @@ ngraph::snippets::pass::InsertConvertAfterLoad::InsertConvertAfterLoad(const ov:
             std::make_shared<pattern::op::Or>(OutputVector{load_pattern, broadcast_load_pattern});
 
     ngraph::matcher_pass_callback callback = [=](pattern::Matcher& m) {
+        OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::op::InsertConvertAfterLoad")
         const auto& pattern_map = m.get_pattern_value_map();
-
         std::shared_ptr<Node> load_node = nullptr;
         if (pattern_map.count(load_pattern)) {
             const auto load = pattern_map.at(load_pattern);
@@ -70,3 +70,15 @@ ngraph::snippets::pass::InsertConvertAfterLoad::InsertConvertAfterLoad(const ov:
     this->register_matcher(m, callback);
 }
 
+
+ngraph::snippets::pass::InsertConvertBeforeStore::InsertConvertBeforeStore() {
+    MATCHER_SCOPE(InsertConvertBeforeStore);
+
+    register_matcher(std::make_shared<ngraph::pattern::Matcher>(
+            ngraph::pattern::wrap_type<snippets::op::Store>()),
+                     [this](ngraph::pattern::Matcher &m) {
+        OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::op::InsertConvertBeforeStore")
+        auto root = m.get_match_root();
+        return false;
+    });
+}

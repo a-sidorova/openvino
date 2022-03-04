@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <memory>
 #include <array>
+#include <snippets/pass/insert_convert.hpp>
 
 using namespace std;
 using namespace ngraph;
@@ -217,7 +218,7 @@ Shape snippets::op::Subgraph::canonicalize(const BlockedShapeVector& outputShape
     return exec_domain;
 }
 
-void snippets::op::Subgraph::convert_to_snippet_dialect() {
+void snippets::op::Subgraph::convert_to_snippet_dialect(const ov::element::TypeVector& supported_exec_types) {
     INTERNAL_OP_SCOPE(Subgraph);
     OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::convert_to_snippet_dialect")
     auto skip_matching_domain = [](const std::shared_ptr<const ov::Node>& n) -> bool {
@@ -238,34 +239,37 @@ void snippets::op::Subgraph::convert_to_snippet_dialect() {
         manager.get_pass_config()->
         set_callback<ngraph::snippets::pass::ReplaceStoresWithScalarStores>(skip_matching_domain);
     }
+    manager.register_pass<snippets::pass::InsertConvert>(supported_exec_types);
     manager.run_passes(m_body);
 }
 
 snippets::Schedule snippets::op::Subgraph::generate(const BlockedShapeVector& output_shapes,
                                                     const BlockedShapeVector& input_shapes,
+                                                    const ov::element::TypeVector& supported_exec_types,
                                                     const void* compile_params) {
     canonicalize(output_shapes, input_shapes);
-    return generate(compile_params);
+    return generate(supported_exec_types, compile_params);
 }
 
 snippets::Schedule snippets::op::Subgraph::generate(const BlockedShapeVector& output_shapes,
                                                     const BlockedShapeVector& input_shapes,
                                                     ngraph::pass::Manager& opt,
+                                                    const ov::element::TypeVector& supported_exec_types,
                                                     const void* compile_params) {
     canonicalize(output_shapes, input_shapes);
-    return generate(opt, compile_params);
+    return generate(opt, supported_exec_types, compile_params);
 }
 
-snippets::Schedule snippets::op::Subgraph::generate(const void* compile_params) {
+snippets::Schedule snippets::op::Subgraph::generate(const ov::element::TypeVector& supported_exec_types, const void* compile_params) {
     auto mngr = ngraph::pass::Manager();
-    return generate(mngr, compile_params);
+    return generate(mngr, supported_exec_types, compile_params);
 }
 
-snippets::Schedule snippets::op::Subgraph::generate(ngraph::pass::Manager& opt, const void* compile_params) {
+snippets::Schedule snippets::op::Subgraph::generate(ngraph::pass::Manager& opt, const ov::element::TypeVector& supported_exec_types, const void* compile_params) {
     INTERNAL_OP_SCOPE(Subgraph);
     OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::op::generate")
     NGRAPH_CHECK(m_generator != nullptr, "generate is called while generator is not set");
-    convert_to_snippet_dialect();
+    convert_to_snippet_dialect(supported_exec_types);
     opt.run_passes(m_body);
 
     // generation flow
