@@ -13,6 +13,7 @@
 #include "snippets/pass/convert_constants_to_scalars.hpp"
 #include "snippets/pass/convert_power_to_powerstatic.hpp"
 #include "snippets/pass/vector_to_scalar.hpp"
+#include "transformations/common_optimizations/nop_elimination.hpp"
 
 #include <ngraph/pass/manager.hpp>
 #include <openvino/pass/serialize.hpp>
@@ -239,7 +240,9 @@ void snippets::op::Subgraph::convert_to_snippet_dialect(const ov::element::TypeV
         manager.get_pass_config()->
         set_callback<ngraph::snippets::pass::ReplaceStoresWithScalarStores>(skip_matching_domain);
     }
-    manager.register_pass<snippets::pass::InsertConvertAfterLoad>(supported_exec_types);
+    manager.register_pass<snippets::pass::InsertConvert>(supported_exec_types);
+    manager.register_pass<snippets::pass::PrecisionPropagation>();
+    manager.register_pass<ngraph::pass::EliminateConvert>();  // should remove useless convert after insertion
     manager.run_passes(m_body);
 }
 
