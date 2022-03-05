@@ -135,5 +135,9 @@ code ov::intel_cpu::CPUTargetMachine::get_snippet() const {
     return h->jit_ker();
 }
 
+ov::element::TypeVector ov::intel_cpu::CPUTargetMachine::get_supported_types() const {
+    return ov::element::TypeVector { ov::element::f32 };
+}
+
 ov::intel_cpu::CPUGenerator::CPUGenerator(dnnl::impl::cpu::x64::cpu_isa_t isa_) : Generator(std::make_shared<CPUTargetMachine>(isa_)) {
 }
