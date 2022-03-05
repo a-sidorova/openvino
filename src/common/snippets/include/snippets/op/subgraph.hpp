@@ -90,11 +90,11 @@ public:
 
 
     snippets::Schedule generate(const BlockedShapeVector& output_shapes, const BlockedShapeVector& input_shapes,
-                                ngraph::pass::Manager& opt, const ov::element::TypeVector& supported_exec_types, const void* compile_params = nullptr);
+                                ngraph::pass::Manager& opt, const void* compile_params = nullptr);
     snippets::Schedule generate(const BlockedShapeVector& output_shapes, const BlockedShapeVector& input_shapes,
-                                const ov::element::TypeVector& supported_exec_types, const void* compile_params = nullptr);
-    snippets::Schedule generate(ngraph::pass::Manager &opt, const ov::element::TypeVector& supported_exec_types, const void* compile_params = nullptr);
-    snippets::Schedule generate(const ov::element::TypeVector& supported_exec_types, const void* compile_params = nullptr);
+                                const void* compile_params = nullptr);
+    snippets::Schedule generate(ngraph::pass::Manager &opt, const void* compile_params = nullptr);
+    snippets::Schedule generate(const void* compile_params = nullptr);
     Shape canonicalize(const BlockedShapeVector& output_shapes, const BlockedShapeVector& input_shapes);
 
     // plugin sets generator for a snippet to some specific generator.
@@ -109,7 +109,7 @@ public:
     static auto wrap_node_as_subgraph(const std::shared_ptr<ngraph::Node>& node) -> std::shared_ptr<Subgraph>;
 
 private:
-    void convert_to_snippet_dialect(const ov::element::TypeVector& supported_exec_types);
+    void convert_to_snippet_dialect();
     Shape exec_domain;
     std::shared_ptr<ov::Model> m_body;
     std::shared_ptr<ngraph::snippets::Generator> m_generator;

@@ -12,6 +12,7 @@
 #include "jit_snippets_emitters.hpp"
 #include "jit_eltwise_emitters.hpp"
 #include "jit_mkldnn_emitters.hpp"
+#include "jit_conversion_emitters.hpp"
 #include "jit_mkldnn_ext_emitters.hpp"
 
 using namespace std;

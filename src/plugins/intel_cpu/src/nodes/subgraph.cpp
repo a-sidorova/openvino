@@ -298,8 +298,7 @@ void Snippet::define_schedule() {
     }
 
     const auto config = getSelectedPrimitiveDescriptor()->getConfig();
-    const auto dataSize = config.inConfs[0].getMemDesc()->getPrecision().size();
-    auto initOffsets = [this, config, dataSize]() {
+    auto initOffsets = [this, config]() {
         // find max rank input among all outputs
         const size_t inputNum = getParentEdges().size();
         offsets_in.resize(inputNum);
@@ -307,7 +306,7 @@ void Snippet::define_schedule() {
             offsets_in[i].resize(tensorRank, 1);
             offset_calculation(offsets_in[i], dims_in[i], exec_domain);
             for (size_t j = 0; j < tensorRank; j++) {
-                offsets_in[i][j] *= dataSize;
+                offsets_in[i][j] *= config.inConfs[i].getMemDesc()->getPrecision().size();
             }
         }
 
@@ -316,7 +315,8 @@ void Snippet::define_schedule() {
         for (size_t i = 0; i < inputNum; i++) {
             const auto memPtr = getParentEdgeAt(i)->getMemoryPtr();
             srcMemPtrs[i] = memPtr;
-            start_offset_in[i] =  memPtr->GetDescWithType<BlockedMemoryDesc>()->getOffsetPadding() * dataSize;
+            start_offset_in[i] =  memPtr->GetDescWithType<BlockedMemoryDesc>()->getOffsetPadding() *
+                    config.inConfs[i].getMemDesc()->getPrecision().size();
         }
 
         const size_t outputNum = config.outConfs.size();
@@ -325,7 +325,7 @@ void Snippet::define_schedule() {
             offsets_out[i].resize(tensorRank, 1);
             offset_calculation(offsets_out[i], dims_out[i], exec_domain);
             for (size_t j = 0; j < tensorRank; j++) {
-                offsets_out[i][j] *= dataSize;
+                offsets_out[i][j] *= config.outConfs[i].getMemDesc()->getPrecision().size();
             }
         }
 
@@ -334,7 +334,8 @@ void Snippet::define_schedule() {
         for (size_t i = 0; i < outputNum; i++) {
             const auto memPtr = getChildEdgeAt(i)->getMemoryPtr();
             dstMemPtrs[i] = memPtr;
-            start_offset_out[i] = memPtr->GetDescWithType<BlockedMemoryDesc>()->getOffsetPadding() * dataSize;
+            start_offset_out[i] = memPtr->GetDescWithType<BlockedMemoryDesc>()->getOffsetPadding() *
+                    config.outConfs[i].getMemDesc()->getPrecision().size();
         }
     };
 
@@ -384,7 +385,7 @@ void Snippet::define_schedule() {
         return collapsedDims;
     };
 
-    auto initSchedulingInfo = [this, dataSize]() -> void {
+    auto initSchedulingInfo = [this, config]() -> void {
         // initialize scheduling information
         sch_offsets_in.resize(offsets_in.size(), 0);
         sch_offsets_out.resize(offsets_out.size(), 0);
@@ -399,16 +400,16 @@ void Snippet::define_schedule() {
             // update offsets for tile 2D because loaders have ptr shifts in some cases and stores have always ptrs shifts
             for (size_t i = 0; i < offsets_in.size(); i++) {
                 int64_t offset = offsets_in[i][tensorRank - 2];
-                if ((offset > dataSize) || (offset == 0 && dims_in[i].back() != 1)) {
-                    sch_offsets_in[i] = offset - exec_domain.back() * dataSize;
-                } else if (offset == dataSize) {
+                if ((offset > config.inConfs[i].getMemDesc()->getPrecision().size()) || (offset == 0 && dims_in[i].back() != 1)) {
+                    sch_offsets_in[i] = offset - exec_domain.back() * config.inConfs[i].getMemDesc()->getPrecision().size();
+                } else if (offset == config.inConfs[i].getMemDesc()->getPrecision().size()) {
                     sch_offsets_in[i] = offset;
                 }
             }
 
             for (size_t i = 0; i < offsets_out.size(); i++) {
                 int64_t offset = offsets_out[i][tensorRank - 2];
-                sch_offsets_out[i] = offset - exec_domain.back() * dataSize;
+                sch_offsets_out[i] = offset - exec_domain.back() * config.outConfs[i].getMemDesc()->getPrecision().size();
             }
         }
     };
@@ -427,7 +428,6 @@ void Snippet::define_schedule() {
 }
 
 void Snippet::generate() {
-    ov::element::TypeVector supported_exec_types = { ov::element::f32 };
     jit_snippets_compile_args jcp;
     jcp.output_dims = exec_domain;
     std::copy(sch_dims.begin(), sch_dims.end(), jcp.scheduler_dims);
@@ -446,7 +446,7 @@ void Snippet::generate() {
         auto b = offsets_out[i].begin();
         std::copy(b, b + harness_num_dims, &jcp.data_offsets[(inputShapes.size() + i) * harness_num_dims]);
     }
-    schedule = snippet->generate(supported_exec_types, reinterpret_cast<void*>(&jcp));
+    schedule = snippet->generate(reinterpret_cast<void*>(&jcp));
 }
 
 void Snippet::schedule_6d(const jit_snippets_call_args& call_args) const {
