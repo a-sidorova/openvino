@@ -490,7 +490,8 @@ private:
         if (!store_emitter)
             throw ov::Exception("Store emitter isn't initialized!");
         const size_t count = get_vec_length() / sizeof(float);
-        store_emitter->emit_code({in[0]}, {ea}, std::make_shared<store_emitter_context>(prc, prc, count), {}, {});
+        store_emitter->emit_code({in[0]}, {ea}, std::make_shared<store_emitter_context>(prc, prc, count),
+                                 aux_vec_idxs, aux_gpr_idxs);
 
         Reg64 out_reg(ea);
         h->add(out_reg, count * byte_size);
@@ -499,6 +500,9 @@ private:
     void emit_data() const override {
         store_emitter->emit_data();
     }
+
+    size_t aux_vecs_count() const override { return 1lu; }
+    size_t aux_gprs_count() const override { return 1lu; }
 
 private:
     std::unique_ptr<jit_store_emitter> store_emitter = nullptr;
@@ -533,7 +537,8 @@ private:
     void emit_isa(const std::vector<size_t> &in, const std::vector<size_t> &out) const {
         if (!store_emitter)
             throw ov::Exception("Store emitter isn't initialized!");
-        store_emitter->emit_code({in[0]}, {ea}, std::make_shared<store_emitter_context>(prc, prc, 1), {}, {});
+        store_emitter->emit_code({in[0]}, {ea}, std::make_shared<store_emitter_context>(prc, prc, 1),
+                                 aux_vec_idxs, aux_gpr_idxs);
 
         Reg64 out_reg(ea);
         h->add(out_reg, byte_size);
@@ -542,6 +547,9 @@ private:
     void emit_data() const override {
         store_emitter->emit_data();
     }
+
+    size_t aux_vecs_count() const override { return 1lu; }
+    size_t aux_gprs_count() const override { return 1lu; }
 
 private:
     std::unique_ptr<jit_store_emitter> store_emitter = nullptr;
@@ -580,7 +588,8 @@ private:
             throw ov::Exception("Load emitter isn't initialized!");
         // we always load 16 elements for avx512, 8 for avx2 and 4 for sse of any data type for data conversion using one vmm
         const size_t count = get_vec_length() / sizeof(float);
-        load_emitter->emit_code({ea}, {out[0]}, std::make_shared<load_emitter_context>(prc, prc, count), {}, {});
+        load_emitter->emit_code({ea}, {out[0]}, std::make_shared<load_emitter_context>(prc, prc, count),
+                                aux_vec_idxs, aux_gpr_idxs);
 
         if (shouldPostIncrement) {
             Reg64 in_reg(ea);
@@ -591,6 +600,8 @@ private:
     void emit_data() const override {
         load_emitter->emit_data();
     }
+
+    size_t aux_gprs_count() const override { return 2lu; }
 
 private:
     bool shouldPostIncrement;
@@ -667,7 +678,8 @@ private:
     void emit_isa(const std::vector<size_t> &in, const std::vector<size_t> &out) const {
         if (!load_emitter)
             throw ov::Exception("Load emitter isn't initialized!");
-        load_emitter->emit_code({ea}, {out[0]}, std::make_shared<load_emitter_context>(prc, prc, 1), {}, {});
+        load_emitter->emit_code({ea}, {out[0]}, std::make_shared<load_emitter_context>(prc, prc, 1),
+                                aux_vec_idxs, aux_gpr_idxs);
 
         // Doesn't work if the same pointer comes with multiple load operations
         if (shouldPostIncrement) {
@@ -679,6 +691,8 @@ private:
     void emit_data() const override {
         load_emitter->emit_data();
     }
+
+    size_t aux_gprs_count() const override { return 2lu; }
 
 private:
     bool shouldPostIncrement;

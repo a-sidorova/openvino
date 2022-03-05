@@ -61,7 +61,7 @@ void Snippet::initSupportedPrimitiveDescriptors() {
     if (!supportedPrimitiveDescriptors.empty())
         return;
 
-    const Precision supportedPrecision = Precision::FP32;
+    const std::vector<Precision> supportedPrecisions = { Precision::FP32, Precision::BF16, Precision::I8, Precision::U8 };
 
     bool dimRanksAreEqual = true;
     for (size_t i = 0; dimRanksAreEqual && i < inputShapes.size(); i++) {
@@ -126,6 +126,11 @@ void Snippet::initSupportedPrimitiveDescriptors() {
         config.dynBatchSupport = false;
         config.inConfs.resize(inputShapes.size());
         for (size_t i = 0; i < inputShapes.size(); i++) {
+            auto precision = getOriginalInputPrecisionAtPort(i);
+            if (std::all_of(supportedPrecisions.begin(), supportedPrecisions.end(),
+                            [precision](const Precision& sp) { return precision != sp; }))
+                precision = Precision::FP32;
+
             BlockedMemoryDesc::CmpMask inputMask = BLOCKED_DESC_SKIP_OFFSET_MASK;
             PortConfig portConfig;
             portConfig.inPlace((!i && canBeInPlace()) ? 0 : -1);
@@ -133,11 +138,16 @@ void Snippet::initSupportedPrimitiveDescriptors() {
             if (inputShapes[i].getDims()[0] == 1) {
                 inputMask.reset(0); // accepts any stride on batch axis
             }
-            portConfig.setMemDesc(createMemoryDesc(inputShapes[i], supportedPrecision, offset), inputMask);
+            portConfig.setMemDesc(createMemoryDesc(inputShapes[i], precision, offset), inputMask);
             config.inConfs[i] = portConfig;
         }
         config.outConfs.resize(outputShapes.size());
         for (size_t i = 0; i < outputShapes.size(); i++) {
+            auto precision = getOriginalOutputPrecisionAtPort(i);
+            if (std::all_of(supportedPrecisions.begin(), supportedPrecisions.end(),
+                            [precision](const Precision& sp) { return precision != sp; }))
+                precision = Precision::FP32;
+
             BlockedMemoryDesc::CmpMask outputMask = BLOCKED_DESC_SKIP_OFFSET_MASK;
             PortConfig portConfig;
             portConfig.inPlace(-1);
@@ -145,7 +155,7 @@ void Snippet::initSupportedPrimitiveDescriptors() {
             if (outputShapes[i].getDims()[0] == 1) {
                 outputMask.reset(0); // accepts any stride on batch axis
             }
-            portConfig.setMemDesc(createMemoryDesc(outputShapes[i], supportedPrecision, offset), outputMask);
+            portConfig.setMemDesc(createMemoryDesc(outputShapes[i], precision, offset), outputMask);
             config.outConfs[i] = portConfig;
         }
 

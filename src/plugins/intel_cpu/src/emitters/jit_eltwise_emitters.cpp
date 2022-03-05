@@ -1881,16 +1881,16 @@ void jit_convert_emitter::emit_isa(const std::vector<size_t> &in_vec_idxs, const
 }
 
 void jit_convert_emitter::float2bfloat(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs) const {
-    Ymm ymm_src = Ymm(in_vec_idxs[0]);
-    Ymm ymm_dst  = Ymm(out_vec_idxs[0]);
+    Zmm zmm_src = Zmm(in_vec_idxs[0]);
+    Zmm zmm_dst  = Zmm(out_vec_idxs[0]);
 
     if (mayiuse(avx512_core_bf16)) {
-        h->vcvtneps2bf16(ymm_dst, ymm_src);
+        h->vcvtneps2bf16(zmm_dst, zmm_src);
     } else {
         if (!emu_vcvtneps2bf16)
             IE_THROW() << "Converter from float to bf16 isn't initialized!";
 
-        emu_vcvtneps2bf16->emit_code({static_cast<size_t>(ymm_src.getIdx())}, {static_cast<size_t>(ymm_dst.getIdx())});
+        emu_vcvtneps2bf16->emit_code({static_cast<size_t>(zmm_src.getIdx())}, {static_cast<size_t>(zmm_dst.getIdx())});
     }
 }
 
@@ -1905,9 +1905,6 @@ void jit_convert_emitter::dword2sint8(const std::vector<size_t> &in_vec_idxs, co
     Xmm xmm_dst = Xmm(out_vec_idxs[0]);
 
     if (isa == mkldnn::impl::cpu::x64::avx512_common) {
-        Vmm vmm_zero  = Vmm(out_vec_idxs[0]);
-        h->vpxord(vmm_zero, vmm_zero, vmm_zero);
-        h->vmaxps(vmm_src, vmm_zero, vmm_src);
         h->vpmovsdb(xmm_dst, vmm_src);
     } else {
         h->uni_vpackssdw(vmm_src, vmm_src, vmm_src);
@@ -1928,6 +1925,9 @@ void jit_convert_emitter::dword2uint8(const std::vector<size_t> &in_vec_idxs, co
     Xmm xmm_dst = Xmm(out_vec_idxs[0]);
 
     if (isa == mkldnn::impl::cpu::x64::avx512_common) {
+        Vmm vmm_zero  = Vmm(out_vec_idxs[0]);
+        h->vpxord(vmm_zero, vmm_zero, vmm_zero);
+        h->vpmaxsd(vmm_src, vmm_src, vmm_zero);
         h->vpmovusdb(xmm_dst, vmm_src);
     } else {
         h->uni_vpackusdw(vmm_src, vmm_src, vmm_src);
