@@ -13,8 +13,8 @@
 #include <snippets/snippets_isa.hpp>
 #include <ngraph/pattern/op/or.hpp>
 
-ngraph::snippets::pass::InsertConvertAfter::InsertConvertAfter(const ov::element::TypeVector& supported_exec_types) {
-    MATCHER_SCOPE(InsertConvertAfter);
+ngraph::snippets::pass::InsertConvertAfterLoadAndScalars::InsertConvertAfterLoadAndScalars(const ov::element::TypeVector& supported_exec_types) {
+    MATCHER_SCOPE(InsertConvertAfterLoadAndScalars);
 
     const auto input_pattern = ngraph::pattern::any_input();
     auto constant_pattern = std::make_shared<pattern::op::Label>(pattern::any_input(),
@@ -27,7 +27,7 @@ ngraph::snippets::pass::InsertConvertAfter::InsertConvertAfter(const ov::element
             std::make_shared<pattern::op::Or>(OutputVector{constant_pattern, broadcast_load_pattern, load_pattern});
 
     ngraph::matcher_pass_callback callback = [=](pattern::Matcher& m) {
-        OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::op::InsertConvertAfter")
+        OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::op::InsertConvertAfterLoadAndScalars")
         const auto& pattern_map = m.get_pattern_value_map();
         std::shared_ptr<Node> node = nullptr;
         if (pattern_map.count(constant_pattern)) {
@@ -112,7 +112,7 @@ ngraph::snippets::pass::InsertConvertBeforeStore::InsertConvertBeforeStore(const
 
 ngraph::snippets::pass::PrecisionPropagation::PrecisionPropagation(const ov::element::Type default_type) : default_type(default_type) { }
 
-bool ngraph::snippets::pass::PrecisionPropagation::run_on_model(const std::shared_ptr<ngraph::Function> &m) {
+bool ngraph::snippets::pass::PrecisionPropagation::run_on_model(const std::shared_ptr<ov::Model> &m) {
     bool rewritten = false;
     for (auto& op : m->get_ops()) {
         auto node = std::dynamic_pointer_cast<ngraph::op::TypeRelaxedBase>(op);
@@ -120,7 +120,11 @@ bool ngraph::snippets::pass::PrecisionPropagation::run_on_model(const std::share
             for (int i = 0; i < op->outputs().size(); i++) {
                 node->set_overridden_output_type(default_type, i);
                 rewritten |= true;
-            }
+            }  // Convert { <type> -> u8 } can be decomposed on Round and Clamp
+        } else if (auto convert = ov::as_type_ptr<ov::op::v0::Convert>(op)) {
+            if (convert->get_destination_type() != ngraph::element::u8)
+                continue;
+            // TODO: WHAT TO DO?
         }
     }
 

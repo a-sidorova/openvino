@@ -16,9 +16,9 @@ namespace pass {
  * @brief Inserts explicit convert node after Load, BroadcastLoad and Scalars to align precision
  * @ingroup snippets
  */
-class InsertConvertAfter: public ngraph::pass::MatcherPass {
+class InsertConvertAfterLoadAndScalars: public ngraph::pass::MatcherPass {
 public:
-    InsertConvertAfter(const ov::element::TypeVector& supported_exec_types);
+    InsertConvertAfterLoadAndScalars(const ov::element::TypeVector& supported_exec_types);
 };
 
 /**
@@ -52,7 +52,7 @@ private:
 class InsertConvert: public ngraph::pass::GraphRewrite {
 public:
     InsertConvert(const ov::element::TypeVector& supported_exec_types) {
-        add_matcher<InsertConvertAfter>(supported_exec_types);
+        add_matcher<InsertConvertAfterLoadAndScalars>(supported_exec_types);
         add_matcher<InsertConvertBeforeStore>(supported_exec_types);
     }
 };

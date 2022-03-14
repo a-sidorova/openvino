@@ -245,9 +245,9 @@ void snippets::op::Subgraph::convert_to_snippet_dialect() {
     }
     manager.register_pass<snippets::pass::InsertConvert>(ov::element::TypeVector{ ov::element::f32 });
     manager.register_pass<snippets::pass::PrecisionPropagation>();
-    manager.register_pass<ngraph::pass::EliminateConvert>();  // should remove useless convert after insertion
     manager.register_pass<ngraph::pass::ConstantFolding>();  // to get correct precision for scalar
     manager.register_pass<snippets::pass::ConvertConstantsToScalars>();  // after constant folding
+    manager.register_pass<ngraph::pass::EliminateConvert>();  // should remove useless convert after insertion of converts
     manager.run_passes(m_body);
 }
 
