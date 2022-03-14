@@ -48,7 +48,7 @@ void CodegenConvert::SetUp() {
     auto relu = std::make_shared<ngraph::opset1::Relu>(pad);
     auto constant = ngraph::opset1::Constant::create(inType, ngraph::Shape{}, {10});
     auto add = std::make_shared<ngraph::opset1::Add>(relu, constant);
-    auto result = std::make_shared<ngraph::opset1::Result>(relu);
+    auto result = std::make_shared<ngraph::opset1::Result>(add);
 
     function = std::make_shared<ngraph::Function>(
         ngraph::ResultVector{result},

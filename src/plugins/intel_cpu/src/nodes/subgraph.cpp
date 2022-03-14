@@ -130,10 +130,12 @@ void Snippet::initSupportedPrimitiveDescriptors() {
             if (std::all_of(supportedPrecisions.begin(), supportedPrecisions.end(),
                             [precision](const Precision& sp) { return precision != sp; }))
                 precision = Precision::FP32;
+            const auto equalPrecisions = getOriginalOutputPrecisions().size() == 1 &&
+                    precision == getOriginalOutputPrecisionAtPort(0);
 
             BlockedMemoryDesc::CmpMask inputMask = BLOCKED_DESC_SKIP_OFFSET_MASK;
             PortConfig portConfig;
-            portConfig.inPlace((!i && canBeInPlace()) ? 0 : -1);
+            portConfig.inPlace((!i && canBeInPlace() && equalPrecisions) ? 0 : -1);
             portConfig.constant(false);
             if (inputShapes[i].getDims()[0] == 1) {
                 inputMask.reset(0); // accepts any stride on batch axis
@@ -216,6 +218,10 @@ bool Snippet::created() const {
 
 bool Snippet::canBeInPlace() const {
     if (getParentEdgesAtPort(0)[0]->getParent()->getType() == Type::Input) {
+        return false;
+    }
+
+    if (getChildEdges().size() != 1) {
         return false;
     }
 
