@@ -215,7 +215,9 @@ Shape snippets::op::Subgraph::canonicalize(const BlockedShapeVector& outputShape
         bool compatibleWithOtherOutputs = PartialShape::broadcast_merge_into(outPShape, shape_i,
                                                                ::ngraph::op::AutoBroadcastType::NUMPY);
         NODE_VALIDATION_CHECK(this, compatibleWithOtherOutputs, "Snippets output shapes must be numpy broadcastable");
-        const auto convert = std::make_shared<ov::op::v0::Convert>(body_results[i]->get_input_node_shared_ptr(0), std::get<2>(outputShapes[i]));
+
+        const auto convert = std::make_shared<ov::op::v0::Convert>(
+                body_results[i]->get_input_node_shared_ptr(0), std::get<2>(outputShapes[i]));
         body_results[i]->set_argument(0, convert);
     }
     exec_domain = outPShape.get_shape();
@@ -228,6 +230,7 @@ void snippets::op::Subgraph::convert_to_snippet_dialect() {
     auto skip_matching_domain = [](const std::shared_ptr<const ov::Node>& n) -> bool {
         return n->get_input_shape(0).back() != 1;
     };
+    const auto supported_exec_types = ov::element::TypeVector{ ov::element::f32 };
     ngraph::pass::Manager manager;
     manager.register_pass<snippets::pass::ConvertConstantsToScalars>();
     manager.register_pass<snippets::pass::ConvertPowerToPowerStatic>();
@@ -243,7 +246,7 @@ void snippets::op::Subgraph::convert_to_snippet_dialect() {
         manager.get_pass_config()->
         set_callback<ngraph::snippets::pass::ReplaceStoresWithScalarStores>(skip_matching_domain);
     }
-    manager.register_pass<snippets::pass::InsertConvert>(ov::element::TypeVector{ ov::element::f32 });
+    manager.register_pass<snippets::pass::InsertConvertAfterLoadAndScalars>(supported_exec_types);
     manager.register_pass<snippets::pass::PrecisionPropagation>();
     manager.register_pass<ngraph::pass::ConstantFolding>();  // to get correct precision for scalar
     manager.register_pass<snippets::pass::ConvertConstantsToScalars>();  // after constant folding

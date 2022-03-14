@@ -16,98 +16,53 @@
 ngraph::snippets::pass::InsertConvertAfterLoadAndScalars::InsertConvertAfterLoadAndScalars(const ov::element::TypeVector& supported_exec_types) {
     MATCHER_SCOPE(InsertConvertAfterLoadAndScalars);
 
-    const auto input_pattern = ngraph::pattern::any_input();
-    auto constant_pattern = std::make_shared<pattern::op::Label>(pattern::any_input(),
-                                                          [](std::shared_ptr<Node> n) {
-                                                              return ngraph::is_type<snippets::op::Scalar>(n);
-                                                          });
-    const auto load_pattern = ngraph::pattern::wrap_type<snippets::op::Load>({input_pattern});
-    const auto broadcast_load_pattern = ngraph::pattern::wrap_type<snippets::op::BroadcastLoad>({input_pattern});
-    const auto or_pattern =
-            std::make_shared<pattern::op::Or>(OutputVector{constant_pattern, broadcast_load_pattern, load_pattern});
-
-    ngraph::matcher_pass_callback callback = [=](pattern::Matcher& m) {
+    ngraph::graph_rewrite_callback callback = [&](ngraph::pattern::Matcher &m) {
         OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::op::InsertConvertAfterLoadAndScalars")
-        const auto& pattern_map = m.get_pattern_value_map();
-        std::shared_ptr<Node> node = nullptr;
-        if (pattern_map.count(constant_pattern)) {
-            node = pattern_map.at(constant_pattern).get_node_shared_ptr();
-        } else if (pattern_map.count(load_pattern)) {
-            node = pattern_map.at(load_pattern).get_node_shared_ptr();
-        } else if (pattern_map.count(broadcast_load_pattern)) {
-            node = pattern_map.at(broadcast_load_pattern).get_node_shared_ptr();
-        } else {
-            return false;
-        }
+        auto root = m.get_match_root();
 
         auto is_supported_type = [supported_exec_types](const ov::element::Type& type) {
             return any_of(supported_exec_types.begin(), supported_exec_types.end(),
                           [&type](const ov::element::Type& supported_type) { return supported_type == type; } );
         };
 
-        const auto new_convert = std::make_shared<ngraph::opset1::Convert>(node, supported_exec_types.front());
-        ngraph::copy_runtime_info(node, new_convert);
-
-        bool rewritten = false;
-        for (auto output : node->outputs()) {
-            for (auto consumer : output.get_target_inputs()) {
-                const auto& consumer_node = consumer.get_node()->shared_from_this();
-                // change existing convert if it has incorrect destination type
-                if (const auto& convert = ov::as_type_ptr<opset1::Convert>(consumer_node)) {
-                    const auto output_type = convert->get_output_element_type(0);
-                    if (!is_supported_type(output_type)) {
-                        replace_node(convert, new_convert);
-                        rewritten |= true;
-                    }
-                } else {
-                    const auto output_type = consumer.get_element_type();
-                    if (!is_supported_type(output_type)) {
-                        consumer.replace_source_output(new_convert);
-                        consumer_node->validate_and_infer_types();
-                        rewritten |= true;
-                    }
+        if (auto convert = ov::as_type_ptr<ov::op::v0::Convert>(root)) {
+            // we shouldn't change existing Convert before Store
+            for (auto consumer : convert->output(0).get_target_inputs()) {
+                if (ov::is_type<snippets::op::Store>(consumer.get_node()->shared_from_this())) {
+                    return false;
                 }
             }
+
+            // we shouldn't change existing Convert inside body (and after Load) with supported element type
+            if (is_supported_type(convert->get_destination_type())) {
+                return false;
+            }
+
+            const auto new_convert = std::make_shared<ov::op::v0::Convert>(convert->get_input_node_shared_ptr(0), supported_exec_types.front());
+            replace_node(root, new_convert);
+            return true;
         }
-
-        return rewritten;
-    };
-
-    auto m = std::make_shared<ngraph::pattern::Matcher>(or_pattern, matcher_name);
-    this->register_matcher(m, callback);
-}
-
-
-ngraph::snippets::pass::InsertConvertBeforeStore::InsertConvertBeforeStore(const ov::element::TypeVector& supported_exec_types) {
-    MATCHER_SCOPE(InsertConvertBeforeStore);
-
-    register_matcher(std::make_shared<ngraph::pattern::Matcher>(
-            ngraph::pattern::wrap_type<snippets::op::Store>()),
-                     [this](ngraph::pattern::Matcher &m) {
-        OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::op::InsertConvertBeforeStore")
-        auto root = m.get_match_root();
-
-        const auto output_type = root->get_element_type();
 
         bool rewritten = false;
         for (auto input : root->inputs()) {
+            if (is_supported_type(input.get_element_type())) {
+                continue;
+            }
             const auto source = input.get_source_output().get_node()->shared_from_this();
-            // change existing convert if it has incorrect destination type
-            if (const auto& convert = ov::as_type_ptr<opset1::Convert>(source)) {
-                if (convert->get_destination_type() != output_type) {
-                    const auto new_convert = std::make_shared<ngraph::opset1::Convert>(convert->get_input_node_shared_ptr(0), output_type);
-                    replace_node(convert->get_input_node_shared_ptr(0), new_convert);
-                    rewritten |= true;
-                }
-            } else {
-                const auto new_convert = std::make_shared<ngraph::opset1::Convert>(source, output_type);
+            if (ov::is_type<snippets::op::Load>(source) ||
+                ov::is_type<snippets::op::BroadcastLoad>(source) ||
+                ov::is_type<snippets::op::Scalar>(source)) {
+                const auto new_convert = std::make_shared<ngraph::opset1::Convert>(source,
+                                                                                   supported_exec_types.front());
                 input.replace_source_output(new_convert);
                 rewritten |= true;
             }
         }
 
         return rewritten;
-    });
+    };
+
+    register_matcher(std::make_shared<ngraph::pattern::Matcher>(pattern::any_input(), matcher_name), callback);
 }
 
 ngraph::snippets::pass::PrecisionPropagation::PrecisionPropagation(const ov::element::Type default_type) : default_type(default_type) { }
@@ -121,10 +76,6 @@ bool ngraph::snippets::pass::PrecisionPropagation::run_on_model(const std::share
                 node->set_overridden_output_type(default_type, i);
                 rewritten |= true;
             }  // Convert { <type> -> u8 } can be decomposed on Round and Clamp
-        } else if (auto convert = ov::as_type_ptr<ov::op::v0::Convert>(op)) {
-            if (convert->get_destination_type() != ngraph::element::u8)
-                continue;
-            // TODO: WHAT TO DO?
         }
     }
 
