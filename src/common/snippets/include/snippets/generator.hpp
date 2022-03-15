@@ -42,8 +42,8 @@ public:
     virtual size_t get_lanes() const = 0;
 
     /**
-    * @brief gets number of lanes supported by target's vector ISA
-    * @return number of lanes
+    * @brief gets vector of supported element types for execution
+    * @return vector of element types
     */
     virtual element::TypeVector get_supported_exec_types() const = 0;
 
@@ -125,7 +125,7 @@ public:
     code generate(std::shared_ptr<ov::Model>& m, const void* compile_params = nullptr) const;
 
     /**
-     * @brief get target machine
+     * @brief gets target machine
      * @return pointer to target machine
      */
     std::shared_ptr<TargetMachine> get_target_machine() const { return target; }
