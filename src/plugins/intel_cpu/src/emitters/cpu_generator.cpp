@@ -127,6 +127,10 @@ size_t ov::intel_cpu::CPUTargetMachine::get_lanes() const {
     }
 }
 
+ov::element::TypeVector ov::intel_cpu::CPUTargetMachine::get_supported_exec_types() const {
+    return { ov::element::f32 };
+}
+
 bool ov::intel_cpu::CPUTargetMachine::is_supported() const {
     return dnnl::impl::cpu::x64::mayiuse(isa);
 }
