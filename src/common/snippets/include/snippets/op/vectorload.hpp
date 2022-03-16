@@ -20,7 +20,7 @@ class VectorLoad : public Load {
 public:
     OPENVINO_OP("VectorLoad", "SnippetsOpset", ngraph::snippets::op::Load);
 
-    VectorLoad(const Output<Node>& x, const size_t lanes);
+    VectorLoad(const Output<Node>& x, const size_t lanes = 0lu);
     VectorLoad() = default;
 
     std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& new_args) const override {

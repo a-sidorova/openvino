@@ -19,7 +19,7 @@ class Store : public ngraph::op::Op {
 public:
     OPENVINO_OP("Store", "SnippetsOpset");
 
-    Store(const Output<Node>& x, const size_t lanes);
+    Store(const Output<Node>& x, const size_t lanes = 0lu);
     Store() = default;
 
     size_t get_lanes() const { return m_lanes; }

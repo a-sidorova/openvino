@@ -23,7 +23,7 @@ class Load : public ngraph::op::Op {
 public:
     OPENVINO_OP("Load", "SnippetsOpset");
 
-    Load(const Output<Node>& x, const size_t lanes);
+    Load(const Output<Node>& x, const size_t lanes = 0lu);
     Load() = default;
 
     size_t get_lanes() const { return m_lanes; }
@@ -39,7 +39,7 @@ public:
     OPENVINO_SUPPRESS_DEPRECATED_END
 
 protected:
-    size_t m_lanes = 1lu;
+    size_t m_lanes = 0lu;
 };
 
 } // namespace op
