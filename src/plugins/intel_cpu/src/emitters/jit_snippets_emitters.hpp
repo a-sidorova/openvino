@@ -324,11 +324,8 @@ public:
         else
             use_broadcast = false;
 
-        auto input_type = n->get_input_element_type(0);
-        auto output_type = n->get_output_element_type(0);
-        assert(input_type == output_type);
-
-        byte_size = input_type.size();
+        assert(n->get_input_element_type(0) == n->get_output_element_type(0));
+        byte_size = n->get_input_element_type(0).size();
     }
     size_t get_inputs_num() const override {return 1;}
 
@@ -432,11 +429,9 @@ class MemoryEmitter : public jit_emitter  {
 public:
     MemoryEmitter(mkldnn::impl::cpu::x64::jit_generator* h, mkldnn::impl::cpu::x64::cpu_isa_t isa, const std::shared_ptr<ov::Node>& n)
     : jit_emitter(h, isa, n), ea(getEA(n)) {
-        auto src_type = n->get_input_element_type(0);
-        auto dst_type = n->get_output_element_type(0);
-        assert(src_type == dst_type);
+        assert(n->get_input_element_type(0) == n->get_output_element_type(0));
 
-        prc = InferenceEngine::details::convertPrecision(src_type);
+        prc = InferenceEngine::details::convertPrecision(n->get_input_element_type(0));
         byte_size = prc.size();
     }
 

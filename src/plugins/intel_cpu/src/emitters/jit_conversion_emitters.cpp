@@ -139,7 +139,6 @@ void jit_convert_emitter::dword2sint8(const std::vector<size_t> &in_vec_idxs, co
     Xmm xmm_src = Xmm(in_vec_idxs[0]);
     Ymm ymm_src = Ymm(in_vec_idxs[0]);
 
-    Vmm vmm_dst = Vmm(out_vec_idxs[0]);
     Xmm xmm_dst = Xmm(out_vec_idxs[0]);
 
     if (isa == mkldnn::impl::cpu::x64::avx512_common) {
@@ -159,7 +158,6 @@ void jit_convert_emitter::dword2uint8(const std::vector<size_t> &in_vec_idxs, co
     Xmm xmm_src = Xmm(in_vec_idxs[0]);
     Ymm ymm_src = Ymm(in_vec_idxs[0]);
 
-    Vmm vmm_dst = Vmm(out_vec_idxs[0]);
     Xmm xmm_dst = Xmm(out_vec_idxs[0]);
 
     if (isa == mkldnn::impl::cpu::x64::avx512_common) {
