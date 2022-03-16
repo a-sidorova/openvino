@@ -35,7 +35,7 @@ public:
     OPENVINO_SUPPRESS_DEPRECATED_END
 
 protected:
-    size_t m_lanes = 1lu;
+    size_t m_lanes = 0lu;
 };
 
 } // namespace op
