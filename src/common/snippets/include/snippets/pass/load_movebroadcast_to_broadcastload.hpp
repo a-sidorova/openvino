@@ -19,7 +19,7 @@ namespace pass {
  */
 class LoadMoveBroadcastToBroadcastLoad: public ngraph::pass::MatcherPass {
 public:
-    LoadMoveBroadcastToBroadcastLoad(const size_t lanes);
+    LoadMoveBroadcastToBroadcastLoad(const size_t lanes = 0lu);
 };
 
 }  // namespace pass
