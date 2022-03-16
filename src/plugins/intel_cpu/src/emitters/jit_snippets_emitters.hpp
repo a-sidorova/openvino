@@ -465,6 +465,7 @@ public:
     StoreEmitter(mkldnn::impl::cpu::x64::jit_generator* h, mkldnn::impl::cpu::x64::cpu_isa_t isa, const std::shared_ptr<ov::Node>& n)
     : MemoryEmitter(h, isa, n) {
         store_emitter.reset(new jit_store_emitter(h, isa));
+        lanes = ov::as_type_ptr<ngraph::snippets::op::Store>(n)->get_lanes();
     }
 
 private:
@@ -489,12 +490,12 @@ private:
     void emit_isa(const std::vector<size_t> &in, const std::vector<size_t> &out) const {
         if (!store_emitter)
             throw ov::Exception("Store emitter isn't initialized!");
-        const size_t count = get_vec_length() / sizeof(float);
-        store_emitter->emit_code({in[0]}, {ea}, std::make_shared<store_emitter_context>(prc, prc, count),
+
+        store_emitter->emit_code({in[0]}, {ea}, std::make_shared<store_emitter_context>(prc, prc, lanes),
                                  aux_vec_idxs, aux_gpr_idxs);
 
         Reg64 out_reg(ea);
-        h->add(out_reg, count * byte_size);
+        h->add(out_reg, lanes * byte_size);
     }
 
     void emit_data() const override {
@@ -505,6 +506,7 @@ private:
     size_t aux_gprs_count() const override { return 1lu; }
 
 private:
+    size_t lanes;
     std::unique_ptr<jit_store_emitter> store_emitter = nullptr;
 };
 
@@ -560,6 +562,7 @@ public:
     LoadEmitter(mkldnn::impl::cpu::x64::jit_generator* h, mkldnn::impl::cpu::x64::cpu_isa_t isa, const std::shared_ptr<ov::Node>& n)
     : MemoryEmitter(h, isa, n), shouldPostIncrement(*n->get_input_shape(0).rbegin() != 1) {
         load_emitter.reset(new jit_load_emitter(h, isa));
+        lanes = ov::as_type_ptr<ngraph::snippets::op::Load>(n)->get_lanes();
     }
 
     size_t get_inputs_num() const override {return 0;}
@@ -586,14 +589,13 @@ private:
     void emit_isa(const std::vector<size_t> &in, const std::vector<size_t> &out) const {
         if (!load_emitter)
             throw ov::Exception("Load emitter isn't initialized!");
-        // we always load 16 elements for avx512, 8 for avx2 and 4 for sse of any data type for data conversion using one vmm
-        const size_t count = get_vec_length() / sizeof(float);
-        load_emitter->emit_code({ea}, {out[0]}, std::make_shared<load_emitter_context>(prc, prc, count),
+
+        load_emitter->emit_code({ea}, {out[0]}, std::make_shared<load_emitter_context>(prc, prc, lanes),
                                 aux_vec_idxs, aux_gpr_idxs);
 
         if (shouldPostIncrement) {
             Reg64 in_reg(ea);
-            h->add(in_reg, count * byte_size);
+            h->add(in_reg, lanes * byte_size);
         }
     }
 
@@ -605,6 +607,7 @@ private:
 
 private:
     bool shouldPostIncrement;
+    size_t lanes;
     std::unique_ptr<jit_load_emitter> load_emitter = nullptr;
 };
 

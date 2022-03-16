@@ -16,7 +16,8 @@ ngraph::snippets::pass::PrecisionPropagation::PrecisionPropagation(const ov::ele
 bool ngraph::snippets::pass::PrecisionPropagation::run_on_model(const std::shared_ptr<ov::Model> &m) {
     bool rewritten = false;
     for (auto& op : m->get_ops()) {
-        // if there is convert with unsupported dst type we should insert new convert after that
+        // if there is convert with unsupported dst type we should insert new convert with needed dst type after that
+        // for correct math calculations
         if (auto convert = ov::as_type_ptr<ngraph::op::v0::Convert>(op)) {
             if (convert->get_destination_type() != default_type) {
                auto re_convert = std::make_shared<ov::op::v0::Convert>(op, default_type);

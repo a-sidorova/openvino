@@ -259,6 +259,8 @@ void snippets::op::Subgraph::convert_to_snippet_dialect() {
         return n->get_input_shape(0).back() != 1;
     };
 
+    const size_t lanes = m_generator->get_target_machine()->get_lanes();
+
     ngraph::pass::Manager manager;
 
     manager.register_pass<snippets::pass::PrecisionPropagation>();
@@ -267,10 +269,10 @@ void snippets::op::Subgraph::convert_to_snippet_dialect() {
 
     manager.register_pass<snippets::pass::ConvertConstantsToScalars>();
     manager.register_pass<snippets::pass::ConvertPowerToPowerStatic>();
-    manager.register_pass<snippets::pass::InsertLoad>();
-    manager.register_pass<snippets::pass::InsertStore>();
+    manager.register_pass<snippets::pass::InsertLoad>(lanes);
+    manager.register_pass<snippets::pass::InsertStore>(lanes);
     manager.register_pass<snippets::pass::InsertMoveBroadcast>();
-    manager.register_pass<snippets::pass::LoadMoveBroadcastToBroadcastLoad>();
+    manager.register_pass<snippets::pass::LoadMoveBroadcastToBroadcastLoad>(lanes);
     manager.register_pass<snippets::pass::ReplaceLoadsWithScalarLoads>();
     manager.register_pass<snippets::pass::ReplaceStoresWithScalarStores>();
     if (exec_domain.back() != 1) {
