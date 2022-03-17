@@ -13,6 +13,7 @@
 #include "snippets/pass/convert_constants_to_scalars.hpp"
 #include "snippets/pass/convert_power_to_powerstatic.hpp"
 #include "snippets/pass/vector_to_scalar.hpp"
+#include "snippets/pass/fuse_load_store_and_convert.hpp"
 #include "transformations/common_optimizations/nop_elimination.hpp"
 #include <ngraph/pass/constant_folding.hpp>
 
@@ -272,7 +273,9 @@ void snippets::op::Subgraph::convert_to_snippet_dialect() {
     manager.register_pass<snippets::pass::InsertLoad>(lanes);
     manager.register_pass<snippets::pass::InsertStore>(lanes);
     manager.register_pass<snippets::pass::InsertMoveBroadcast>();
-    manager.register_pass<snippets::pass::LoadMoveBroadcastToBroadcastLoad>(lanes);
+    manager.register_pass<snippets::pass::LoadMoveBroadcastToBroadcastLoad>();
+    manager.register_pass<snippets::pass::FuseLoadConvert>();
+    manager.register_pass<snippets::pass::FuseStoreConvert>();
     manager.register_pass<snippets::pass::ReplaceLoadsWithScalarLoads>();
     manager.register_pass<snippets::pass::ReplaceStoresWithScalarStores>();
     if (exec_domain.back() != 1) {
