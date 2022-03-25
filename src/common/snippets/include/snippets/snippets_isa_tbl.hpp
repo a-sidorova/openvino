@@ -15,10 +15,14 @@ NGRAPH_OP(ScalarLoad, ngraph::snippets::op)
 NGRAPH_OP(VectorLoad, ngraph::snippets::op)
 NGRAPH_OP(BlockedLoad, ngraph::snippets::op)
 NGRAPH_OP(BroadcastLoad, ngraph::snippets::op)
+NGRAPH_OP(LoadConvert, ngraph::snippets::op)
+NGRAPH_OP(ScalarLoadConvert, ngraph::snippets::op)
 
 NGRAPH_OP(Store, ngraph::snippets::op)
 NGRAPH_OP(ScalarStore, ngraph::snippets::op)
 NGRAPH_OP(VectorStore, ngraph::snippets::op)
+NGRAPH_OP(StoreConvert, ngraph::snippets::op)
+NGRAPH_OP(ScalarStoreConvert, ngraph::snippets::op)
 
 NGRAPH_OP(BroadcastMove, ngraph::snippets::op)
 NGRAPH_OP(Scalar, ngraph::snippets::op)
@@ -32,6 +36,7 @@ NGRAPH_OP(Parameter, ngraph::op::v0)
 NGRAPH_OP(BlockedParameter, ngraph::snippets::op)
 NGRAPH_OP(Result, ngraph::op::v0)
 NGRAPH_OP(Broadcast, ngraph::op::v1)
+NGRAPH_OP(Convert, ngraph::op::v0)
 
 // unary
 NGRAPH_OP(Abs, ngraph::op::v0)
