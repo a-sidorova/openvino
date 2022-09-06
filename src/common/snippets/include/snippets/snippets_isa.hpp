@@ -15,6 +15,8 @@
 #include "op/load.hpp"
 #include "op/nop.hpp"
 #include "op/scalar.hpp"
+#include "op/scalarload.hpp"
+#include "op/scalarstore.hpp"
 #include "op/powerstatic.hpp"
 #include "op/store.hpp"
 #include "op/tile.hpp"

@@ -22,7 +22,6 @@
 
 #include <snippets/op/subgraph.hpp>
 #include "emitters/cpu_generator.hpp"
-#include "snippets_transformations/fuse_load_store_and_convert.hpp"
 
 using namespace InferenceEngine;
 using namespace dnnl::impl::utils;
@@ -213,18 +212,6 @@ void Snippet::execute(dnnl::stream strm) {
 
 bool Snippet::created() const {
     return getType() == Type::Subgraph;
-}
-
-InferenceEngine::Precision Snippet::getRuntimePrecision() const {
-    std::vector<InferenceEngine::Precision> inputPrecisions;
-    for (size_t i = 0; i < getParentEdges().size(); i++) {
-        auto parentEdge = getParentEdgeAt(i);
-        if (parentEdge && parentEdge->getStatus() == Edge::Status::Validated && !parentEdge->getParent()->isConstant()) {
-            inputPrecisions.emplace_back(DnnlExtensionUtils::DataTypeToIEPrecision((parentEdge->getMemoryPtr()->GetDataType())));
-        }
-    }
-
-    return getMaxPrecision(inputPrecisions);
 }
 
 bool Snippet::canBeInPlace() const {

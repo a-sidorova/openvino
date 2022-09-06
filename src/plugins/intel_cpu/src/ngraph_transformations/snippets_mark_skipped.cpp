@@ -254,44 +254,18 @@ bool isSuitableChildForFusingMatMul(const std::shared_ptr<const Node> &node, Nod
     }
     if (num_non_const_inputs != 1)
         return false;
-
     // FuseMatMulAndSimpleOperation or FuseFullyConnectedAndSimpleOperation
     // Invoke SupportsFusingWithConvolution_Simple directly instead of isSuitableChildForFusingSimple to
     // eliminate getNumNonConstInputs() check
-    int fusingAxis = can_be_converted_to_FC ? (matmul_shape.size() == 3 ? 2 : 1) : matmul_shape.size() - 1;
-
+    int fusingAxis;
+    if (can_be_converted_to_FC)
+        fusingAxis = matmul_shape.size() == 3 ? 2 : 1;
+    else
+        fusingAxis = matmul_shape.size() - 1;
     if (SupportsFusingWithConvolution_Simple(node, fusingAxis)) {
         updatedChainType = NodeFusingType::FusedWithMisc;
         return true;
     }
-
-    // canFuse() from MatMul for case with rank > 2
-    // Algorithm::EltwisePowerStatic is ignored
-    if (!can_be_converted_to_FC &&
-        node->get_output_shape(0).size() > 2) {
-        if (ov::is_type<ov::op::v1::Add>(node) ||
-            ov::is_type<ov::op::v1::Multiply>(node) ||
-            ov::is_type<ov::op::v1::Subtract>(node) ||
-            ov::is_type<ov::op::v1::Divide>(node) ||
-            ov::is_type<ov::op::v0::PRelu>(node)) {
-            const auto const1 = ov::is_type<ov::op::v0::Constant>(node->get_input_node_shared_ptr(0));
-            const auto const2 = ov::is_type<ov::op::v0::Constant>(node->get_input_node_shared_ptr(1));
-            int constPort = -1;
-            if (const2) {
-                constPort = 1;
-            } else if (const1) {
-                constPort = 0;
-            }
-
-            if (constPort != -1) {
-                auto const_shape = node->get_input_shape(constPort);
-                if (ov::shape_size(const_shape) != 1) {
-                    return false;
-                }
-            }
-        }
-    }
-
     //    FullyConnectedBiasFusion
     if (!(can_be_converted_to_FC && ov::is_type<ngraph::opset1::Add>(node) &&
         bias_shape.back() == matmul_shape.back() &&

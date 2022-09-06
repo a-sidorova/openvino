@@ -12,27 +12,27 @@ namespace snippets {
 namespace pass {
 
 /**
- * @interface SetScalarCountForLoad
+ * @interface ReplaceLoadsWithScalarLoads
  * @brief Set count `1` for Load to represent as ScalarLoad
  * The pass is used to change element count to loading to "1" to load scalar value
  * Used for tail generation
  * @ingroup snippets
  */
-class SetScalarCountForLoad: public ngraph::pass::MatcherPass {
+class ReplaceLoadsWithScalarLoads: public ngraph::pass::MatcherPass {
 public:
-    SetScalarCountForLoad();
+    ReplaceLoadsWithScalarLoads();
 };
 
 /**
- * @interface SetScalarCountForStore
+ * @interface ReplaceStoresWithScalarStores
  * @brief Set count `1` for Store to represent as ScalarStore
  * The pass is used to change element count to stroring to "1" to store scalar valuw
  * Used for tail generation
  * @ingroup snippets
  */
-class SetScalarCountForStore: public ngraph::pass::MatcherPass {
+class ReplaceStoresWithScalarStores: public ngraph::pass::MatcherPass {
 public:
-    SetScalarCountForStore();
+    ReplaceStoresWithScalarStores();
 };
 
 } // namespace pass

@@ -315,12 +315,12 @@ void snippets::op::Subgraph::convert_to_snippet_dialect() {
     //                        Result
     // Note: Load* should be replaced with ScalarLoad in this example to avoid invalid read in vector Tile.
     if (!exec_domain.empty() && exec_domain.back() != 1) {
-        manager.register_pass<snippets::pass::SetScalarCountForLoad>();
-        manager.register_pass<snippets::pass::SetScalarCountForStore>();
+        manager.register_pass<snippets::pass::ReplaceLoadsWithScalarLoads>();
+        manager.register_pass<snippets::pass::ReplaceStoresWithScalarStores>();
         manager.get_pass_config()->
-        set_callback<ngraph::snippets::pass::SetScalarCountForLoad>(skip_matching_domain);
+        set_callback<ngraph::snippets::pass::ReplaceLoadsWithScalarLoads>(skip_matching_domain);
         manager.get_pass_config()->
-        set_callback<ngraph::snippets::pass::SetScalarCountForStore>(skip_matching_domain);
+        set_callback<ngraph::snippets::pass::ReplaceStoresWithScalarStores>(skip_matching_domain);
     }
     manager.run_passes(m_body);
 }

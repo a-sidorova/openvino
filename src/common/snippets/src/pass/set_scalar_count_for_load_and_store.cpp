@@ -7,43 +7,40 @@
 #include "snippets/pass/set_scalar_count_for_load_and_store.hpp"
 #include "snippets/snippets_isa.hpp"
 
+#include <ngraph/opsets/opset1.hpp>
 #include <ngraph/rt_info.hpp>
 #include <ngraph/pattern/op/wrap_type.hpp>
 
-ngraph::snippets::pass::SetScalarCountForLoad::SetScalarCountForLoad() {
-    MATCHER_SCOPE(SetScalarCountForLoad);
+ngraph::snippets::pass::ReplaceLoadsWithScalarLoads::ReplaceLoadsWithScalarLoads() {
+    MATCHER_SCOPE(ReplaceLoadsWithScalarLoads);
     register_matcher(std::make_shared<ngraph::pattern::Matcher>(
         ngraph::pattern::wrap_type<ngraph::snippets::op::Load>(), matcher_name),
             [this](ngraph::pattern::Matcher &m) {
-            OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::op::SetScalarCountForLoad_callback")
+            OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::op::ReplaceLoadsWithScalarLoads_callback")
             auto root = m.get_match_root();
             if (transformation_callback(root))
                 return false;
-
-            const auto load = ov::as_type_ptr<ngraph::snippets::op::Load>(root);
-            if (!load)
-                return false;
-
-            load->set_count(1lu);
+            auto load = std::make_shared<ngraph::snippets::op::ScalarLoad> (root->input_value(0));
+            load->set_friendly_name(root->get_friendly_name());
+            ngraph::copy_runtime_info(root, load);
+            ngraph::replace_node(root, load);
             return true;
         });
 }
 
-ngraph::snippets::pass::SetScalarCountForStore::SetScalarCountForStore() {
-    MATCHER_SCOPE(SetScalarCountForStore);
+ngraph::snippets::pass::ReplaceStoresWithScalarStores::ReplaceStoresWithScalarStores() {
+    MATCHER_SCOPE(ReplaceStoresWithScalarStores);
     register_matcher(std::make_shared<ngraph::pattern::Matcher>(
         ngraph::pattern::wrap_type<ngraph::snippets::op::Store>(), matcher_name),
             [this](ngraph::pattern::Matcher &m) {
-            OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::op::SetScalarCountForStore_callback")
+            OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::op::ReplaceStoresWithScalarStores_callback")
             auto root = m.get_match_root();
             if (transformation_callback(root))
                 return false;
-
-            const auto store = ov::as_type_ptr<ngraph::snippets::op::Store>(root);
-            if (!store)
-                return false;
-
-            store->set_count(1lu);
+            auto store = std::make_shared<ngraph::snippets::op::ScalarStore> (root->input_value(0));
+            store->set_friendly_name(root->get_friendly_name());
+            ngraph::copy_runtime_info(root, store);
+            ngraph::replace_node(root, store);
             return true;
         });
 }
