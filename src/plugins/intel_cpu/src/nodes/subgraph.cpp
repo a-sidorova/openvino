@@ -232,10 +232,6 @@ bool Snippet::canBeInPlace() const {
         return false;
     }
 
-    if (getChildEdges().size() != 1) {
-        return false;
-    }
-
     for (auto& parentEdge : getParentEdges()) {
         auto parent = parentEdge.lock()->getParent();
         if (parent->getChildEdges().size() != 1)
@@ -318,7 +314,8 @@ void Snippet::define_schedule() {
     }
 
     const auto config = getSelectedPrimitiveDescriptor()->getConfig();
-    auto initOffsets = [this, config]() {
+    const auto dataSize = config.inConfs[0].getMemDesc()->getPrecision().size();
+    auto initOffsets = [this, config, dataSize]() {
         // find max rank input among all outputs
         const size_t inputNum = getParentEdges().size();
         offsets_in.resize(inputNum);
@@ -326,7 +323,7 @@ void Snippet::define_schedule() {
             offsets_in[i].resize(tensorRank, 1);
             offset_calculation(offsets_in[i], dims_in[i], exec_domain);
             for (size_t j = 0; j < tensorRank; j++) {
-                offsets_in[i][j] *= config.inConfs[i].getMemDesc()->getPrecision().size();
+                offsets_in[i][j] *= dataSize;
             }
         }
 
@@ -336,7 +333,7 @@ void Snippet::define_schedule() {
             const auto memPtr = getParentEdgeAt(i)->getMemoryPtr();
             srcMemPtrs[i] = memPtr;
             start_offset_in[i] =  memPtr->GetDescWithType<BlockedMemoryDesc>()->getOffsetPadding() *
-                    config.inConfs[i].getMemDesc()->getPrecision().size();
+                    dataSize;
         }
 
         const size_t outputNum = config.outConfs.size();
@@ -345,7 +342,7 @@ void Snippet::define_schedule() {
             offsets_out[i].resize(tensorRank, 1);
             offset_calculation(offsets_out[i], dims_out[i], exec_domain);
             for (size_t j = 0; j < tensorRank; j++) {
-                offsets_out[i][j] *= config.outConfs[i].getMemDesc()->getPrecision().size();
+                offsets_out[i][j] *= dataSize;
             }
         }
 
@@ -355,7 +352,7 @@ void Snippet::define_schedule() {
             const auto memPtr = getChildEdgeAt(i)->getMemoryPtr();
             dstMemPtrs[i] = memPtr;
             start_offset_out[i] = memPtr->GetDescWithType<BlockedMemoryDesc>()->getOffsetPadding() *
-                    config.outConfs[i].getMemDesc()->getPrecision().size();
+                    dataSize;
         }
     };
 
@@ -405,7 +402,7 @@ void Snippet::define_schedule() {
         return collapsedDims;
     };
 
-    auto initSchedulingInfo = [this, config]() -> void {
+    auto initSchedulingInfo = [this, config, dataSize]() -> void {
         // initialize scheduling information
         sch_offsets_in.resize(offsets_in.size(), 0);
         sch_offsets_out.resize(offsets_out.size(), 0);
@@ -421,32 +418,30 @@ void Snippet::define_schedule() {
             const int64_t vector_size = snippet->get_generator()->get_target_machine()->get_lanes();
             for (size_t i = 0; i < offsets_in.size(); i++) {
                 const int64_t offset = offsets_in[i][tensorRank - 2];
-                const int64_t data_size = config.inConfs[i].getMemDesc()->getPrecision().size();
-                if (offset == data_size || offset == vector_size * data_size) {
+                if (offset == dataSize || offset == vector_size * dataSize) {
                     sch_offsets_in[i] = offset;
-                } else if ((offset > data_size) || (offset == 0 && dims_in[i].back() != 1 && dims_in[i].back() != vector_size)) {
-                    sch_offsets_in[i] = offset - exec_domain.back() * data_size;
+                } else if ((offset > dataSize) || (offset == 0 && dims_in[i].back() != 1 && dims_in[i].back() != vector_size)) {
+                    sch_offsets_in[i] = offset - exec_domain.back() * dataSize;
 
                     // If scalar tile executes one time, ptr doesn't move on 1 value
                     // so we should absolutelly decrease offset
                     if (exec_domain.back() % vector_size == 1) {
-                        sch_offsets_in[i] += data_size;
+                        sch_offsets_in[i] += dataSize;
                     }
                 }
             }
 
             for (size_t i = 0; i < offsets_out.size(); i++) {
                 const int64_t offset = offsets_out[i][tensorRank - 2];
-                const size_t data_size = config.outConfs[i].getMemDesc()->getPrecision().size();
-                if (offset == data_size || offset == vector_size * data_size) {
+                if (offset == dataSize || offset == vector_size * dataSize) {
                     sch_offsets_out[i] = offset;
-                } else if ((offset > data_size) || (offset == 0 && dims_out[i].back() != 1 && dims_out[i].back() != vector_size)) {
-                    sch_offsets_out[i] = offset - exec_domain.back() * data_size;
+                } else if ((offset > dataSize) || (offset == 0 && dims_out[i].back() != 1 && dims_out[i].back() != vector_size)) {
+                    sch_offsets_out[i] = offset - exec_domain.back() * dataSize;
 
                     // If scalar tile executes one time, ptr doesn't move on 1 value
                     // so we should absolutelly decrease offset
                     if (exec_domain.back() % vector_size == 1) {
-                        sch_offsets_out[i] += data_size;
+                        sch_offsets_out[i] += dataSize;
                     }
                 }
             }
@@ -486,27 +481,7 @@ void Snippet::generate() {
         std::copy(b, b + harness_num_dims, &jcp.data_offsets[(inputShapes.size() + i) * harness_num_dims]);
     }
 
-    ov::pass::Manager optManager;
-    optManager.register_pass<ov::intel_cpu::pass::FuseLoadConvert>();
-    optManager.register_pass<ov::intel_cpu::pass::FuseStoreConvert>();
-
-    // LoadConvert uses Load emitter that support conversion from any type to only f32
-    optManager.get_pass_config()->set_callback<ov::intel_cpu::pass::FuseLoadConvert>(
-            [](const std::shared_ptr<const ov::Node>& n) -> bool {
-                if (const auto& convert = std::dynamic_pointer_cast<const ov::op::v0::Convert>(n))
-                    return convert->get_destination_type() != ov::element::f32;
-                return true;
-            });
-
-    // StoreConvert uses Store emitter that support conversion from only f32 to any types
-    optManager.get_pass_config()->set_callback<ov::intel_cpu::pass::FuseStoreConvert>(
-            [](const std::shared_ptr<const ov::Node>& n) -> bool {
-                if (const auto& convert = std::dynamic_pointer_cast<const ov::op::v0::Convert>(n))
-                    return convert->get_input_element_type(0) != ov::element::f32;
-                return true;
-            });
-
-    schedule = snippet->generate(optManager, reinterpret_cast<void*>(&jcp));
+    schedule = snippet->generate(reinterpret_cast<void*>(&jcp));
 }
 
 void Snippet::schedule_6d(const jit_snippets_call_args& call_args) const {

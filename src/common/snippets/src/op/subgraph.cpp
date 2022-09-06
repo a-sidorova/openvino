@@ -242,7 +242,7 @@ Shape snippets::op::Subgraph::canonicalize(const BlockedShapeVector& outputShape
 
     // We should insert Converts after Parameters and Constant and before Results
     // to align precision inside Subgraph body that is supported by Plugin
-    align_precision(outputShapes, inputShapes, exec_type);
+    //align_precision(outputShapes, inputShapes, exec_type);
 
     exec_domain = outPShape.get_shape();
     return exec_domain;
