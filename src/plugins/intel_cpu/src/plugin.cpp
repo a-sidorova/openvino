@@ -654,6 +654,7 @@ static void TransformationUpToCPUSpecificOpSet(std::shared_ptr<ngraph::Function>
                     const bool is_disabled_tokenization = !_tokenizeSpecOpsSnippets &&
                                                           (ov::is_type<const ov::op::v1::Softmax>(n) ||
                                                            ov::is_type<const ov::op::v8::Softmax>(n) ||
+                                                           ov::is_type<const ov::op::v0::MatMul>(n) ||
                                                            ov::is_type<const ov::op::v1::Transpose>(n));
                     const auto& inputs = n->inputs();
                     // todo: clarify whether we can evaluate snippets on const paths
@@ -685,6 +686,7 @@ static void TransformationUpToCPUSpecificOpSet(std::shared_ptr<ngraph::Function>
         });
     postSnippetsManager.register_pass<ngraph::pass::ConstantFolding>();
     postSnippetsManager.run_passes(nGraphFunc);
+    ov::pass::Serialize("snsdebug_tokenized.xml", "snsdebug_tokenized.bin").run_on_model(nGraphFunc);
 }
 
 static bool streamsSet(const std::map<std::string, std::string>& config) {

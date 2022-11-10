@@ -23,6 +23,10 @@ inline auto is_scalar_constant(const std::shared_ptr<ngraph::Node>& source_outpu
     return ngraph::is_type<ngraph::opset1::Constant>(source_output_node) && ngraph::shape_size(source_output_node->get_shape()) == 1;
 }
 
+std::vector<size_t> get_port_layout(const Output<Node>& out);
+std::vector<size_t> get_port_layout(const std::shared_ptr<descriptor::Tensor>& tensor);
+ov::PartialShape get_port_planar_shape(const Output<Node>& out);
+
 } // namespace utils
 } // namespace snippets
 } // namespace ngraph

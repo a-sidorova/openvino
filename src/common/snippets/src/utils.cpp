@@ -6,8 +6,11 @@
 
 #include "snippets/pass/fq_decomposition.hpp"
 
+namespace ngraph {
+namespace snippets {
+namespace utils {
 
-auto ngraph::snippets::utils::get_non_scalar_constant_count_for_fq(const std::shared_ptr<ngraph::opset1::FakeQuantize>& fq) -> size_t {
+auto get_non_scalar_constant_count_for_fq(const std::shared_ptr<opset1::FakeQuantize>& fq) -> size_t {
     std::vector<float> out_scales;
     std::vector<float> cl, ch, isc, ish, osc, osh;
     const bool status = ngraph::snippets::pass::FakeQuantizeDecomposition::getScalesAndShifts(fq, cl, ch, isc, ish, osc, osh);
@@ -55,3 +58,46 @@ auto ngraph::snippets::utils::get_non_scalar_constant_count_for_fq(const std::sh
         return 1;
     return 0;
 }
+
+std::vector<size_t> get_port_layout(const std::shared_ptr<descriptor::Tensor>& tensor) {
+    if (!tensor)
+        return {};
+    const auto& rank = tensor->get_partial_shape().rank();
+    // Strictly speaking, is not a hard limitation but makes no sense, since layout can't be defined in this case
+    if (rank.is_dynamic())
+        throw ngraph_error("It's illegal to call get_port_layout for outputs with dynamic rank");
+    auto &rt = tensor->get_rt_info();
+    const auto rinfo = rt.find("Layout");
+    if (rinfo != rt.end()) {
+        std::vector<size_t> custom_layout(rinfo->second.as<std::vector<size_t>>());
+        // Note that it can be smaller though, for example tensor shape can be prepended with 1 for scheduling purposes
+        if (custom_layout.size() > rank.get_length())
+            throw ngraph_error("Layout rank can't be larger than tensor rank");
+        if (std::any_of(custom_layout.begin(), custom_layout.end(), [=](size_t x) {return x >= rank.get_length();}))
+            throw ngraph_error("Invalid layout detected: all layout indexes must be smaller than the tensor rank");
+        return custom_layout;
+    } else {
+        return {};
+    }
+}
+std::vector<size_t> get_port_layout(const Output<Node>& out) {
+    return get_port_layout(out.get_tensor_ptr());
+}
+
+ov::PartialShape get_port_planar_shape(const Output<Node>& out) {
+    std::vector<size_t> layout = get_port_layout(out);
+    const auto& tensor = out.get_tensor_ptr();
+    auto tensor_shape = tensor->get_partial_shape();
+    if (!layout.empty()) {
+        std::vector<Dimension> reordered_shape(layout.size());
+        // Note: layout[i] are guaranteed to fall inside original_shape by utils::get_port_layout(in)
+        for (int i = 0; i < layout.size(); i++)
+            reordered_shape[i] = tensor_shape[layout[i]];
+        tensor_shape = std::move(ov::PartialShape(reordered_shape));
+    }
+    return tensor_shape;
+}
+
+} // namespace utils
+} // namespace snippets
+} // namespace ngraph

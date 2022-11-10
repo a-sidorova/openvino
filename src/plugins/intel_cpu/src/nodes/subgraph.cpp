@@ -309,7 +309,7 @@ ov::PartialShape Snippet::canonicalizeBody() {
         output_blocked_shapes.push_back(blockedShape);
     }
 
-    const auto canonicalShape = snippet->canonicalize(output_blocked_shapes, input_blocked_shapes);
+    const auto& canonicalShape = snippet->canonicalize(output_blocked_shapes, input_blocked_shapes);
     return canonicalShape;
 }
 void Snippet::createPrimitive() {
@@ -552,6 +552,10 @@ void Snippet::generate(const jit_snippets_compile_args* jcp) {
 void Snippet::schedule_6d(const jit_snippets_call_args& call_args) const {
     const auto& dom = exec_domain;
     // < N, C, H, W > < 1, 1, N, C*H*W>
+    std::cerr << "DOM: ";
+    for (auto d : dom)
+        std::cerr << d << " ";
+    std::cerr << "\n";
     parallel_for5d(dom[0], dom[1], dom[2], dom[3], dom[4],
         [&](int64_t d0, int64_t d1, int64_t d2, int64_t d3, int64_t d4) {
             int64_t indexes[] = {d0, d1, d2, d3, d4};
