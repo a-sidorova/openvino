@@ -11,6 +11,8 @@
 #include "snippets_isa.hpp"
 #include "emitter.hpp"
 
+#include "snippets/op/subgraph.hpp"
+
 namespace ngraph {
 namespace snippets {
 namespace utils {
