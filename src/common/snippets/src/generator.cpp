@@ -121,16 +121,18 @@ ngraph::snippets::code ngraph::snippets::Generator::generate(std::shared_ptr<ov:
                 std::transform(tail_loop.begin(), tail_loop.end(), tail_loop.begin(),
                                [tail_size](const std::shared_ptr<Node>& n){
                                    const auto& memory_access = std::dynamic_pointer_cast<ngraph::snippets::op::MemoryAccess>(n);
+                                   const auto& brgemm = std::dynamic_pointer_cast<ngraph::snippets::op::Brgemm>(n);
                                    if (memory_access && memory_access->get_count() != 1) {
                                        memory_access->set_count(tail_size);
+                                   } else if (brgemm) {
+                                       brgemm->set_count(tail_size);
                                    }
                                    return n;
                                });
                 tail_loop_end = ov::as_type_ptr<op::LoopEnd>(*tail_loop.rbegin());
                 tail_loop_end->set_finalization_offsets(tail_finalization_offsets);
-                tail_loop_end->set_increment(tail_size);
                 // ptr increments were set to the old increment, need to update them in accordance with the new one
-                tail_loop_end->update_ptr_increments(static_cast<int64_t>(tail_size));
+                tail_loop_end->update_increments(static_cast<int64_t>(tail_size));
                 tail_loop_end->set_work_amount(tail_size);
                 tail_loop_end->has_outer_loop = vector_loop_end->has_outer_loop;
                 // tail loop is always executed once
