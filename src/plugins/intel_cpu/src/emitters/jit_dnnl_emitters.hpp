@@ -22,6 +22,8 @@ public:
                    const std::vector<size_t> &pool_vec_idxs, const std::vector<size_t> &pool_gpr_idxs,
                    const emitter_context *emit_context = nullptr) const override {};
 
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
+
 protected:
     jit_dnnl_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa,
                        dnnl_alg_kind_t algKind, float inpAlpha, float inpBeta,
