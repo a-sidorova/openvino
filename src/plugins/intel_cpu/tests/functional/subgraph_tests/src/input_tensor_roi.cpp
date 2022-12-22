@@ -115,6 +115,7 @@ TEST_P(InputTensorROI, SetInputTensorROI) {
 static InputTensorROI::ParamType InputTensorROIParams[] = {
     { ov::PartialShape{ 1, 2, 2, 2 }, element::f32, "NCHW" },
     { ov::PartialShape{ 1, 2, ov::Dimension::dynamic(), ov::Dimension::dynamic() }, element::f32, "NCHW" },
+    // TODO: uncomment later: just to test CI
     { ov::PartialShape{ 1, 2, 2, 2 }, element::u8, "NCHW" },
     { ov::PartialShape{ 1, 2, ov::Dimension::dynamic(), ov::Dimension::dynamic() }, element::u8, "NCHW" },
 };

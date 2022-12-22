@@ -54,7 +54,7 @@ class FakeQuantizeDecomposition : public ngraph::pass::MatcherPass {
 public:
     FakeQuantizeDecomposition();
 
-    static bool isAllScalarConstant(const std::shared_ptr<const ngraph::Node>& node);
+    static bool checkConstants(const std::shared_ptr<const ngraph::Node>& node);
     static bool getScalesAndShifts(const std::shared_ptr<const ngraph::op::v0::FakeQuantize>& fq_node,
                                    std::vector<float>& cl,
                                    std::vector<float>& ch,

@@ -97,6 +97,7 @@
 // Snippets
 #include "snippets/pass/tokenization.hpp"
 #include "snippets/pass/common_optimizations.hpp"
+#include "snippets/pass/fq_decomposition.hpp"
 
 // Misc
 #include "nodes/mvn.h"
@@ -611,7 +612,9 @@ void Transformations::MainSnippets(void) {
                                                            ov::is_type<const ov::op::v0::MatMul>(n) ||
                                                            ov::is_type<const ov::op::v1::Transpose>(n) ||
                                                            ov::is_type<const ov::op::v1::Broadcast>(n) ||
-                                                           ov::is_type<const ov::op::v3::Broadcast>(n));
+                                                           ov::is_type<const ov::op::v3::Broadcast>(n) ||
+                                                           (ov::is_type<const ngraph::op::FakeQuantize>(n) &&
+                                                           !ngraph::snippets::pass::FakeQuantizeDecomposition::checkConstants(n)));
                     const auto& inputs = n->inputs();
                     // todo: clarify whether we can evaluate snippets on const paths
                     const bool has_only_const_inputs = std::all_of(inputs.begin(), inputs.end(),

@@ -13,11 +13,10 @@ class jit_add_emitter : public jit_emitter {
 public:
     jit_add_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa,
                     InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
-    jit_add_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa, const std::shared_ptr<ov::Node>& n,
-                    InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
+    jit_add_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa, const std::shared_ptr<ov::Node>& n);
 
     size_t get_inputs_num() const override;
-    static std::set<InferenceEngine::Precision> get_supported_precisions();
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -32,11 +31,10 @@ class jit_mul_add_emitter : public jit_emitter {
 public:
     jit_mul_add_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa,
                         InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
-    jit_mul_add_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa, const std::shared_ptr<ov::Node>& n,
-                        InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
+    jit_mul_add_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa, const std::shared_ptr<ov::Node>& n);
 
     size_t get_inputs_num() const override;
-    static std::set<InferenceEngine::Precision> get_supported_precisions();
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -54,11 +52,10 @@ class jit_subtract_emitter : public jit_emitter {
 public:
     jit_subtract_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa,
                          InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
-    jit_subtract_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa, const std::shared_ptr<ov::Node>& n,
-                         InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
+    jit_subtract_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa, const std::shared_ptr<ov::Node>& n);
 
     size_t get_inputs_num() const override;
-    static std::set<InferenceEngine::Precision> get_supported_precisions();
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -74,11 +71,10 @@ class jit_multiply_emitter : public jit_emitter {
 public:
     jit_multiply_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa,
                          InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
-    jit_multiply_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa, const std::shared_ptr<ov::Node>& n,
-                         InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
+    jit_multiply_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa, const std::shared_ptr<ov::Node>& n);
 
     size_t get_inputs_num() const override;
-    static std::set<InferenceEngine::Precision> get_supported_precisions();
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -98,7 +94,7 @@ public:
                        InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
-    static std::set<InferenceEngine::Precision> get_supported_precisions();
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -118,6 +114,7 @@ public:
                       InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -136,6 +133,7 @@ public:
                       InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -154,6 +152,7 @@ public:
                           InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -174,6 +173,7 @@ public:
                     InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -190,11 +190,10 @@ class jit_maximum_emitter : public jit_emitter {
 public:
     jit_maximum_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa,
                         InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
-    jit_maximum_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa, const std::shared_ptr<ov::Node>& n,
-                        InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
+    jit_maximum_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa, const std::shared_ptr<ov::Node>& n);
 
     size_t get_inputs_num() const override;
-    static std::set<InferenceEngine::Precision> get_supported_precisions();
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -210,11 +209,10 @@ class jit_minimum_emitter : public jit_emitter {
 public:
     jit_minimum_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa,
                         InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
-    jit_minimum_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa, const std::shared_ptr<ov::Node>& n,
-                        InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
+    jit_minimum_emitter(dnnl::impl::cpu::x64::jit_generator *host, dnnl::impl::cpu::x64::cpu_isa_t host_isa, const std::shared_ptr<ov::Node>& n);
 
     size_t get_inputs_num() const override;
-    static std::set<InferenceEngine::Precision> get_supported_precisions();
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -235,7 +233,7 @@ public:
                                    InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
-    static std::set<InferenceEngine::Precision> get_supported_precisions();
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -255,6 +253,7 @@ public:
                               InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -274,6 +273,7 @@ public:
                       InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -296,6 +296,7 @@ public:
                           InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -318,6 +319,7 @@ public:
                         InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -340,6 +342,7 @@ public:
                               InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -362,6 +365,7 @@ public:
                      InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -385,6 +389,7 @@ public:
                            InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -407,6 +412,7 @@ public:
                             InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -429,6 +435,7 @@ public:
                            InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -451,6 +458,7 @@ public:
                             InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -472,6 +480,7 @@ public:
                             InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -494,6 +503,8 @@ public:
                              InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
+
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -519,6 +530,7 @@ public:
                       InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -539,6 +551,7 @@ public:
                     InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -555,6 +568,7 @@ public:
                     InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t>& in, const std::vector<size_t>& out,
@@ -574,6 +588,7 @@ public:
                     InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(
@@ -598,6 +613,7 @@ public:
                           InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t> &in_vec_idxs, const std::vector<size_t> &out_vec_idxs,
@@ -622,6 +638,9 @@ public:
     }
 
     size_t get_inputs_num() const override { return 1; };
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr) {
+        return {{element::f32}};
+    }
 
 protected:
     size_t aux_gprs_count() const override { return (entry_map_.empty() ? 0 : 1) + 1; }
@@ -649,6 +668,9 @@ public:
     }
 
     size_t get_inputs_num() const override { return 1; };
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr) {
+        return {{element::f32}};
+    }
 
 protected:
     size_t aux_gprs_count() const override { return (entry_map_.empty() ? 0 : 1) + 1; }
@@ -678,6 +700,9 @@ public:
     }
 
     size_t get_inputs_num() const override { return 1; }
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr) {
+        return {{element::f32}};
+    }
 
 protected:
     size_t aux_gprs_count() const override { return (entry_map_.empty() ? 0 : 1) + 1; }
@@ -700,6 +725,7 @@ public:
                        InferenceEngine::Precision exec_prc = InferenceEngine::Precision::FP32);
 
     size_t get_inputs_num() const override;
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
     size_t aux_vecs_count() const override;
 
 private:
