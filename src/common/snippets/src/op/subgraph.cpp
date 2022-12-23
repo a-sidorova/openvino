@@ -389,6 +389,9 @@ void snippets::op::Subgraph::align_element_types(const BlockedShapeVector& outpu
     if (config.m_is_needed_to_align_precision) {
         manager.register_pass<snippets::pass::AlignElementType>(execution_element_type);
         manager.register_pass<ngraph::pass::ConstantFolding>();
+        // TODO [100041] : In some cases AlignElementType pass can insert extra Convert because
+        //                 the pass doesn't know real precisions in real time.
+        //                 We call EliminateConverts pass to remove them
         manager.register_pass<ngraph::pass::EliminateConvert>();
     }
     manager.run_passes(m_body);
