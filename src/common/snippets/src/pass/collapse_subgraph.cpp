@@ -519,7 +519,7 @@ TokenizeSnippets::TokenizeSnippets() {
                 if (ov::is_type<ngraph::opset1::Constant>(input_node) &&
                     (ngraph::shape_size(input_value.get_shape()) == 1 ||
                      ov::is_type<ov::op::v0::FakeQuantize>(node) ||
-                     utils::constant_input_should_be_inside_body(node))) {
+                     op::Subgraph::constant_input_should_be_inside_body(node))) {
                     internal_inputs.push_back(input_node->output(0));
                 } else {
                     external_inputs.push_back(input_value);

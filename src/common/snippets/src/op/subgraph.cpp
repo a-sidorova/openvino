@@ -159,7 +159,7 @@ auto snippets::op::Subgraph::wrap_node_as_subgraph(const std::shared_ptr<ov::Nod
         if (ov::is_type<ngraph::opset1::Constant>(input.get_node_shared_ptr()) &&
             (ngraph::shape_size(input.get_shape()) == 1 ||
              ov::is_type<ov::op::v0::FakeQuantize>(node) ||
-             utils::constant_input_should_be_inside_body(node))) {
+             constant_input_should_be_inside_body(node))) {
             body_inputs.push_back(input);
         } else {
             auto parameter = std::make_shared<ngraph::opset1::Parameter>(input.get_element_type(), input.get_partial_shape());
@@ -226,6 +226,13 @@ void snippets::op::Subgraph::fill_empty_output_names(const Output<Node>& target_
         out_tensor->set_names(replacement_output_node.get_names());
     }
     NGRAPH_SUPPRESS_DEPRECATED_END
+}
+
+auto snippets::op::Subgraph::constant_input_should_be_inside_body(const std::shared_ptr<ov::Node>& node) -> bool {
+    return ov::is_type<ov::op::v1::Transpose>(node) ||
+           ov::is_type<ov::op::v1::Broadcast>(node) ||
+           ov::is_type<ov::op::v3::Broadcast>(node) ||
+           ov::is_type<ov::op::v1::Reshape>(node);
 }
 
 ///
@@ -499,20 +506,6 @@ snippets::Schedule snippets::op::Subgraph::generate(ngraph::pass::Manager& opt, 
 
     convert_to_snippet_dialect();
     opt.run_passes(m_body);
-
-    // check that body doesn't have constants or non-decomposed ops for scheduling
-    std::vector<std::shared_ptr<opset1::Constant>> constants;
-    for (auto op : m_body->get_ordered_ops()) {
-        if ((ov::is_type<opset1::Constant>(op) && ov::shape_size(op->get_shape()) != 1 && op->get_shape() != Shape()) ||
-             ov::is_type<ov::op::v1::Softmax>(op) ||
-             ov::is_type<ov::op::v8::Softmax>(op) ||
-             ov::is_type<ov::op::v1::Transpose>(op) ||
-             ov::is_type<ov::op::v1::Broadcast>(op) ||
-             ov::is_type<ov::op::v3::Broadcast>(op) ||
-             ov::is_type<ov::op::v1::Reshape>(op)) {
-            throw ngraph::ngraph_error("External op detected: " + std::string(op->get_type_name()) + ". Snippet is illigal for scheduling");
-        }
-    }
 
     snippets::pass::AssignRegisters().run_on_model(m_body);
 

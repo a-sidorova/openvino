@@ -36,7 +36,7 @@ void ConvertConstantsToParameters(const std::shared_ptr<ngraph::snippets::op::Su
             continue;
 
         const auto child = constant->get_output_target_inputs(0).begin()->get_node()->shared_from_this();
-        if (utils::constant_input_should_be_inside_body(child))
+        if (op::Subgraph::constant_input_should_be_inside_body(child))
             continue;
 
         auto parameter = std::make_shared<opset1::Parameter>(constant->get_element_type(), constant->output(0).get_partial_shape());
