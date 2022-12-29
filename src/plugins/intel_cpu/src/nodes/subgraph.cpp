@@ -25,6 +25,7 @@
 #include "utils/cpu_utils.hpp"
 #include "snippets_transformations/fuse_load_store_and_convert.hpp"
 #include "snippets_transformations/mul_add_to_fma.hpp"
+#include "snippets_transformations/brgemm_to_brgemm_cpu.hpp"
 #include "ngraph_transformations/convert_to_swish_cpu.hpp"
 
 using namespace InferenceEngine;
@@ -504,6 +505,7 @@ void Snippet::generate(const jit_snippets_compile_args* jcp) {
     pre_dialect.register_pass<ConvertToSwishCPU>();
 
     ov::pass::Manager post_dialect;
+    post_dialect.register_pass<ov::intel_cpu::pass::BrgemmToBrgemmCPU>();
 
     ov::pass::Manager post_precision;
     post_precision.register_pass<ov::intel_cpu::pass::FuseLoadConvert>();
