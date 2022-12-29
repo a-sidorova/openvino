@@ -18,7 +18,6 @@ void TokenizeMHASnippetsTests::run() {
     std::string name;
     manager.register_pass<ngraph::snippets::pass::EnumerateNodes>();
     manager.register_pass<ngraph::snippets::pass::TokenizeMHASnippets>();
-    manager.register_pass<ngraph::snippets::pass::MatMulTranspose>();
 }
 
 TEST_F(TokenizeMHASnippetsTests, smoke_Snippets_MHA) {

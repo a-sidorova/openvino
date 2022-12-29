@@ -613,7 +613,7 @@ static void TransformationUpToCPUSpecificOpSet(std::shared_ptr<ngraph::Function>
     postLPTPassManager.register_pass<ngraph::pass::ConstantFolding>();
 
     // Snippets may brake MHA patterns so the fusion has to performed before
-    //postLPTPassManager.register_pass<MHAFusion>();
+    postLPTPassManager.register_pass<MHAFusion>();
     postLPTPassManager.register_pass<FuseFQtoInteraction>();
     postLPTPassManager.get_pass_config()->set_callback<MHAFloatFusion, MHAFloatFusion2,
                                                        MHAQuantFusion, MHAQuantFusion2>([_enableBF16](const std::shared_ptr<const ov::Node>& n) -> bool {
@@ -636,6 +636,12 @@ static void TransformationUpToCPUSpecificOpSet(std::shared_ptr<ngraph::Function>
 
     // Execute before snippets. Otherwise FQ will be converted to Subgraph
     postLPTPassManager.register_pass<ConvertFqRnnToQuantizedRnn>();
+
+    // Float MHA is supported by snippets now
+    auto postLPTPassConfig = postLPTPassManager.get_pass_config();
+    postLPTPassConfig->disable<MHAFloatFusion>();
+    postLPTPassConfig->disable<MHAFloatFusion2>();
+
     postLPTPassManager.run_passes(nGraphFunc);
 
     if (_snippetsMode != Config::SnippetsMode::Disable && dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx2)) {

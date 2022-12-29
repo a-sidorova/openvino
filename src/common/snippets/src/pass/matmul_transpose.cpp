@@ -35,11 +35,21 @@ ngraph::snippets::pass::MatMulTranspose::MatMulTranspose() {
             return false;
         auto parent1 = matmul0->get_input_node_shared_ptr(1);
         auto transpose1 = ngraph::as_type_ptr<ngraph::opset1::Transpose>(parent1);
-        // TODO: Add support of nodes between Transpose and MatMul
-        // while (!transpose1 && !ov::is_type<ngraph::opset1::Parameter>(parent1)) {
-        //     parent1 = parent1->get_input_node_shared_ptr(0);
-        //     transpose1 = ngraph::as_type_ptr<ngraph::opset1::Transpose>(parent1);
-        // }
+        while (!transpose1 && !ov::is_type<ngraph::opset1::Parameter>(parent1)) {
+            // We can set supported order and transposed_b(false) only if ops have scalar shapes to avoid shape mismatching
+            const auto parent_count = parent1->inputs().size();
+            bool are_weights_scalar = true;
+            if (parent_count > 1) {
+                for (size_t i = 1; i < parent_count; ++i) {
+                    are_weights_scalar = are_weights_scalar && ngraph::shape_size(parent1->get_input_shape(i)) == 1;
+                }
+            }
+            if (!are_weights_scalar)
+                break;
+
+            parent1 = parent1->get_input_node_shared_ptr(0);
+            transpose1 = ngraph::as_type_ptr<ngraph::opset1::Transpose>(parent1);
+        }
         if (!transpose1)
             return false;
 

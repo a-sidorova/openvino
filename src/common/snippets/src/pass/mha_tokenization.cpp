@@ -129,7 +129,7 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
         // we should calculate potential number of non-scalar Constants that will be moved up from body.
         // TODO: Need update this variable when FQ will be supported
         size_t hidden_virtual_ports_count = 0;
-        // Default value is 1 because MHA pattern requires always Buffer op
+        // Default value is True because MHA pattern always requires Buffer op
         bool need_buffer = true;
         std::string fused_names;
         ngraph::NodeVector ordered_ops;
@@ -227,6 +227,7 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
 
         // First input branch of MatMul0 should be executed before second input branch of MatMul0
         const auto shift = transpose0 ? 1 : 0;
+        bool are_weights_scalar = true;
         auto parent = matmul0->get_input_node_shared_ptr(1);
         while (is_supported_op(parent)) {
             // All supported ops have only one output port
@@ -234,6 +235,12 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
             if (parent->get_output_target_inputs(0).size() != 1 || !is_supported_tensor(parent->get_output_tensor(0)))
                 break;
 
+            const auto parent_count = parent->inputs().size();
+            if (parent_count > 1) {
+                for (size_t i = 1; i < parent_count; ++i) {
+                    are_weights_scalar = are_weights_scalar && ngraph::shape_size(parent->get_input_shape(i)) == 1;
+                }
+            }
             ordered_ops.insert(ordered_ops.begin() + shift, parent);
             // We think that sequence of ops goes through input port 0
             // But can be Select here? If it can be, parent shouldn't be on input port 0. Need another way?
@@ -241,9 +248,18 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
         }
 
         auto transpose1 = ngraph::as_type_ptr<ngraph::opset1::Transpose>(parent);
-        if ((matmul0->get_transpose_b() && is_valid_transpose(transpose1, {0, 2, 1, 3})) ||
-            (!matmul0->get_transpose_b() && is_valid_transpose(transpose1, {0, 2, 3, 1}))) {
+        if (!matmul0->get_transpose_b() && is_valid_transpose(transpose1, {0, 2, 3, 1})) {
             ordered_ops.insert(ordered_ops.begin() + shift, transpose1);
+        } else if (matmul0->get_transpose_b() && is_valid_transpose(transpose1, {0, 2, 1, 3})) {
+            // We can support several ops between MatMul0 with transposed_b and Transpose1 with 0213 order
+            // only if these ops have scalar shapes on other inputs.
+            // There is transformation MatMulTranspose that set supported order and transposed_b(false).
+            // We can allow to call this pass only if ops have scalar shapes to avoid shape mismatching
+            if (are_weights_scalar) {
+                ordered_ops.insert(ordered_ops.begin() + shift, transpose1);
+            } else {
+                return false;
+            }
         }
 
         const auto transpose2 = ngraph::as_type_ptr<ngraph::opset1::Transpose>(matmul1->get_input_node_shared_ptr(1));

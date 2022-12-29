@@ -37,11 +37,16 @@ protected:
 };
 
 // TODO: Write Graph
-class MHAMatMul0TransposeFunction : public MHAFunction {
+// MHA pattern with transposed_b for MatMul0 and unsupported order for Transpose1
+class MHAMatMul0TransposeFunction : public SnippetsFunctionBase {
 public:
-    explicit MHAMatMul0TransposeFunction(const std::vector<PartialShape>& inputShapes) : MHAFunction(inputShapes) {}
+    explicit MHAMatMul0TransposeFunction(const std::vector<PartialShape>& inputShapes)
+            : SnippetsFunctionBase(inputShapes) {
+        NGRAPH_CHECK(input_shapes.size() == 4, "Got invalid number of input shapes");
+    }
 protected:
     std::shared_ptr<ov::Model> initOriginal() const override;
+    std::shared_ptr<ov::Model> initReference() const override;
 };
 
 // TODO: Write Graph
