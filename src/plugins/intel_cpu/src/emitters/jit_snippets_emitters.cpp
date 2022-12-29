@@ -947,10 +947,9 @@ void BrgemmEmitter::emit_brgemm_kernel_call(const brgemm_kernel_t *brgKernel, in
 #ifdef _WIN32
     num_args_passed_on_stack = 3;
     h->sub(h->rsp, gpr_size * num_args_passed_on_stack);
-    h->sub(h->rsp, gpr_size);
     h->mov(h->qword[h->rsp], reinterpret_cast<uint64_t>(scratch));
-    h->mov(h->qword[h->rsp + gpr_size], reinterpret_cast<uintptr_t>(batch));
-    h->mov(h->qword[h->rsp + 2 * gpr_size], Xmm(2));
+    h->mov(h->qword[h->rsp + gpr_size], Xmm(2));
+    h->mov(h->qword[h->rsp + 2 * gpr_size], reinterpret_cast<uintptr_t>(batch));
     if (out0_kernel_offset) h->add(h->qword[h->rsp + 2 * gpr_size], out0_kernel_offset);
 #else
     h->mov(abi_param5, reinterpret_cast<uintptr_t>(batch));
