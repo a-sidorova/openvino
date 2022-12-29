@@ -20,11 +20,12 @@ namespace op {
  */
 class Load : public MemoryAccess {
 public:
-    OPENVINO_OP("Load", "SnippetsOpset");
+    OPENVINO_OP("Load", "SnippetsOpset", MemoryAccess);
 
     Load(const Output<Node>& x, const size_t count = 1lu, const size_t offset = 0lu);
     Load() = default;
 
+    void validate_and_infer_types() override;
     std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& new_args) const override;
 };
 
@@ -37,7 +38,7 @@ public:
  */
 class LoadReshape : public Load {
 public:
-    OPENVINO_OP("LoadReshape", "SnippetsOpset");
+    OPENVINO_OP("LoadReshape", "SnippetsOpset", Load);
     LoadReshape(const Output<Node>& x, size_t count = 1lu, const size_t offset = 0lu, std::vector<size_t> order = {});
     bool visit_attributes(AttributeVisitor& visitor) override;
     std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& new_args) const override;

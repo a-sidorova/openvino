@@ -107,8 +107,8 @@ std::shared_ptr<ov::Model> EltwiseThreeInputsLoweredFunction::initLowered() cons
 }
 
 std::shared_ptr<ov::Model> Transpose0213MatMulLoweredFunction::initLowered() const {
-    ParameterVector data{std::make_shared<op::v0::Parameter>(precision, input_shapes[0]),
-                         std::make_shared<op::v0::Parameter>(precision, input_shapes[1])};
+    ParameterVector data{std::make_shared<op::v0::Parameter>(precisions[0], input_shapes[0]),
+                         std::make_shared<op::v0::Parameter>(precisions[1], input_shapes[1])};
     std::vector<size_t> layout{0, 2, 1, 3};
     // Note: validity of transpose_position values is checked in Transpose0213MatMulSinhFunction constructor
     if (transpose_position <= 1) {

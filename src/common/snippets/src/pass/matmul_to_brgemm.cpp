@@ -29,7 +29,8 @@ MatMulToBrgemm::MatMulToBrgemm() {
         if (matmul->get_transpose_a() || matmul->get_transpose_b())
             return false;
 
-        auto brgemm = std::make_shared<op::Brgemm>(matmul->get_input_source_output(0), matmul->get_input_source_output(1));
+        auto brgemm = std::make_shared<op::Brgemm>(matmul->get_input_source_output(0), matmul->get_input_source_output(1),
+                                                   matmul->get_transpose_a(), matmul->get_transpose_b());
         brgemm->set_friendly_name(matmul->get_friendly_name());
         ngraph::copy_runtime_info(matmul, brgemm);
         ngraph::replace_node(matmul, brgemm);

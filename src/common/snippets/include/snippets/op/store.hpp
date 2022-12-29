@@ -20,11 +20,12 @@ namespace op {
  */
 class Store : public MemoryAccess {
 public:
-    OPENVINO_OP("Store", "SnippetsOpset");
+    OPENVINO_OP("Store", "SnippetsOpset", MemoryAccess);
 
     Store(const Output<Node>& x, const size_t count = 1lu, const size_t offset = 0lu);
     Store() = default;
 
+    void validate_and_infer_types() override;
     std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& new_args) const override;
 };
 

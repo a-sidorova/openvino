@@ -217,6 +217,9 @@ bool InsertLoops::run_on_model(const std::shared_ptr<ov::Model> &model) {
     if (m_master_shape.is_dynamic())
         throw ngraph_error("InsertLoops doesn't support dynamic shapes yet");
 
+    ov::pass::Serialize("/home/a-sidorova/projects/mha_matmul/openvino/graphs/loops.xml",
+                        "/home/a-sidorova/projects/mha_matmul/openvino/graphs/loops.bin").run_on_model(model);
+
     const auto inner_work_amount = utils::get_inner_dim(m_master_shape).get_length();
     const auto outer_work_amount = m_loop_depth == 2 ? utils::get_outer_dim(m_master_shape).get_length() : 1;
 
@@ -276,6 +279,9 @@ bool InsertLoops::run_on_model(const std::shared_ptr<ov::Model> &model) {
             insert_loops_explicitly(ops, m_vector_size);
         }
     }
+
+    ov::pass::Serialize("/home/a-sidorova/projects/mha_matmul/openvino/graphs/loops_after.xml",
+                        "/home/a-sidorova/projects/mha_matmul/openvino/graphs/loops_after.bin").run_on_model(model);
 
     return true;
 }
