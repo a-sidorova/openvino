@@ -442,14 +442,16 @@ void snippets::op::Subgraph::initialize_buffer_scratchpad_size() {
         {
             auto parent = buffer->get_input_node_shared_ptr(0);
             auto idx = buffer->input(0).get_source_output().get_index();
+            // There may be graph with several LoopBegin and LoopEnd between Store/Brgemm and Buffer,
+            // so we should iterate through LoopBase
             while (std::dynamic_pointer_cast<snippets::op::LoopBase>(parent)) {
                 const auto source_output = parent->input_value(idx);
                 parent = source_output.get_node_shared_ptr();
                 idx = source_output.get_index();
             }
-            if (auto store = std::dynamic_pointer_cast<snippets::op::Store>(parent)) {
+            if (auto store = ov::as_type_ptr<snippets::op::Store>(parent)) {
                 store->set_offset(offset);
-            } else if (const auto brgemm = std::dynamic_pointer_cast<snippets::op::Brgemm>(parent)) {
+            } else if (const auto brgemm = ov::as_type_ptr<snippets::op::Brgemm>(parent)) {
                 // Brgemm encapsulates work with loading and storing of data
                 brgemm->set_offset_c(offset);
             } else {
@@ -462,18 +464,21 @@ void snippets::op::Subgraph::initialize_buffer_scratchpad_size() {
             std::function<void(const Input<Node>&)> propagate_down;
             propagate_down = [&](const Input<Node>& target_input) {
                 const auto child = target_input.get_node()->shared_from_this();
+                // There may be graph with several LoopBegin and LoopEnd between Load/Brgemm and Buffer,
+                // so we should iterate through LoopBase
+                // Example: Softmax decomposition with ReduceMax
                 if (std::dynamic_pointer_cast<snippets::op::LoopBase>(child)) {
                     const auto index = target_input.get_index();
                     for (const auto loop_target_output : child->output(index).get_target_inputs()) {
                         propagate_down(loop_target_output);
                     }
-                } else if (const auto load = std::dynamic_pointer_cast<snippets::op::Load>(child)) {
+                } else if (const auto load = ov::as_type_ptr<snippets::op::Load>(child)) {
                     load->set_offset(offset);
-                } else if (const auto brgemm = std::dynamic_pointer_cast<snippets::op::Brgemm>(child)) {
+                } else if (const auto brgemm = ov::as_type_ptr<snippets::op::Brgemm>(child)) {
                     // Brgemm encapsulates work with loading and storing of data
                     if (target_input.get_index() == 0) {
                         brgemm->set_offset_a(offset);
-                    } else {
+                    } else if (target_input.get_index() == 1) {
                         brgemm->set_offset_b(offset);
                     }
                 } else {
@@ -488,15 +493,13 @@ void snippets::op::Subgraph::initialize_buffer_scratchpad_size() {
     };
     m_buffer_scratchpad = 0;
     size_t offset = 0;
-    bool is_first_allocation = true;
     const auto ops = m_body->get_ordered_ops();
     for (const auto& op : ops) {
         if (const auto buffer = ov::as_type_ptr<ngraph::snippets::op::Buffer>(op)) {
             const auto buffer_size = buffer->get_byte_size();
             // We need to allocate memory for first buffer at least
-            if (is_first_allocation) {
+            if (m_buffer_scratchpad == 0) {
                 m_buffer_scratchpad += buffer_size;
-                is_first_allocation = false;
                 continue;
             }
 

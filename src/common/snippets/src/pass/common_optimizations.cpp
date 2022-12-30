@@ -11,7 +11,7 @@
 #include "transformations/utils/utils.hpp"
 #include "snippets/pass/fq_decomposition.hpp"
 #include "snippets/pass/softmax_reshape_elimination.hpp"
-#include "snippets/pass/matmul_transpose.hpp"
+#include "snippets/pass/explicit_transpose_matmul_inputs.hpp"
 #include "snippets/op/subgraph.hpp"
 #include "snippets/utils.hpp"
 #include "snippets/itt.hpp"
@@ -73,7 +73,7 @@ CommonOptimizations::CommonOptimizations() {
         // Then if Subgraph contains FakeQuantize we enable specific transformation for quantized subgraphs.
         ngraph::pass::Manager manager;
         manager.register_pass<ngraph::snippets::pass::TransformConvertToConvertTruncation>();
-        manager.register_pass<ngraph::snippets::pass::MatMulTranspose>();
+        manager.register_pass<ngraph::snippets::pass::ExplicitTransposeMatMulInputs>();
         if (is_quantized) {
             manager.register_pass<ngraph::snippets::pass::CommonFakeQuantizeDecomposition>();
         }

@@ -7,7 +7,7 @@
 #include <subgraph_mha.hpp>
 #include "snippets/pass/collapse_subgraph.hpp"
 #include "snippets/pass/mha_tokenization.hpp"
-#include "snippets/pass/matmul_transpose.hpp"
+#include "snippets/pass/explicit_transpose_matmul_inputs.hpp"
 
 namespace ov {
 namespace test {

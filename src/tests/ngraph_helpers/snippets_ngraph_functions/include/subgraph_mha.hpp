@@ -5,33 +5,24 @@
 #pragma once
 
 #include "ngraph/ngraph.hpp"
-#include "./snippets_helpers.hpp"
+#include "snippets_helpers.hpp"
 
 
 namespace ov {
 namespace test {
 namespace snippets {
 
+
 // TODO: Write Graph
 class MHAFunction : public SnippetsFunctionBase {
 public:
-    explicit MHAFunction(const std::vector<PartialShape>& inputShapes) : SnippetsFunctionBase(inputShapes) {
-        NGRAPH_CHECK(input_shapes.size() == 4, "Got invalid number of input shapes");
-    }
-protected:
-    std::shared_ptr<ov::Model> initOriginal() const override;
-    std::shared_ptr<ov::Model> initReference() const override;
-};
-
-// TODO: Write Graph
-class MHASinhFunction : public SnippetsFunctionBase {
-public:
-    explicit MHASinhFunction(const std::vector<PartialShape>& inputShapes, bool with_mul = true)
+    explicit MHAFunction(const std::vector<PartialShape>& inputShapes, bool with_mul = true)
         : SnippetsFunctionBase(inputShapes), with_mul(with_mul) {
         NGRAPH_CHECK(input_shapes.size() == 4, "Got invalid number of input shapes");
     }
 protected:
     std::shared_ptr<ov::Model> initOriginal() const override;
+    std::shared_ptr<ov::Model> initReference() const override;
 
     bool with_mul = true;
 };
@@ -51,9 +42,9 @@ protected:
 
 // TODO: Write Graph
 // MHA pattern with Select op
-class MHASelectSinhFunction : public SnippetsFunctionBase {
+class MHASelectFunction : public SnippetsFunctionBase {
 public:
-    explicit MHASelectSinhFunction(const std::vector<PartialShape>& inputShapes) : SnippetsFunctionBase(inputShapes) {
+    explicit MHASelectFunction(const std::vector<PartialShape>& inputShapes) : SnippetsFunctionBase(inputShapes) {
         NGRAPH_CHECK(input_shapes.size() == 6, "Got invalid number of input shapes");
     }
 protected:
@@ -62,9 +53,9 @@ protected:
 
 // TODO: Write Graph
 // MHA pattern without Transpose ops on inputs and without Add after MatMul0
-class MHAWOTransposeOnInputsSinhFunction : public SnippetsFunctionBase {
+class MHAWOTransposeOnInputsFunction : public SnippetsFunctionBase {
 public:
-    explicit MHAWOTransposeOnInputsSinhFunction(const std::vector<PartialShape>& inputShapes) : SnippetsFunctionBase(inputShapes) {
+    explicit MHAWOTransposeOnInputsFunction(const std::vector<PartialShape>& inputShapes) : SnippetsFunctionBase(inputShapes) {
         NGRAPH_CHECK(input_shapes.size() == 3, "Got invalid number of input shapes");
     }
 protected:

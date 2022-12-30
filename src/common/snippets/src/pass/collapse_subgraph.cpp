@@ -167,7 +167,7 @@ auto has_supported_in_out(const std::shared_ptr<const Node> &n) -> bool {
         // Todo: int32 isn't supported in general because i32 emitters are required for bit-exact i32 calculations in some cases
         //  So i32 is supported exclusively for transposes and broadcast
         return t.get_partial_shape().is_static() &&
-               (ngraph::snippets::pass::TokenizeSnippets::supported_element_types.count(t.get_element_type()) != 0 ||
+               (TokenizeSnippets::supported_element_types.count(t.get_element_type()) != 0 ||
                 (t.get_element_type() == ngraph::element::i32 &&
                         (ov::is_type<const opset1::Transpose>(n) ||
                          ov::is_type<const opset1::Broadcast>(n))));

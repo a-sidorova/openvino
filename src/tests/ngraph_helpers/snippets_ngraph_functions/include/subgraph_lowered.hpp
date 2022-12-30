@@ -53,10 +53,10 @@ private:
     std::vector<Shape> broadcast_shapes;
 };
 
-class Transpose0213MatMulSinhLoweredFunction : public Transpose0213MatMulSinhFunction {
+class Transpose0213MatMulLoweredFunction : public Transpose0213MatMulFunction {
 public:
-    explicit Transpose0213MatMulSinhLoweredFunction(const std::vector<PartialShape>& inputShapes, size_t position = 0) :
-            Transpose0213MatMulSinhFunction(inputShapes, position, false) {
+    explicit Transpose0213MatMulLoweredFunction(const std::vector<PartialShape>& inputShapes, size_t position = 0) :
+            Transpose0213MatMulFunction(inputShapes, position) {
     }
 protected:
     std::shared_ptr<ov::Model> initLowered() const override;

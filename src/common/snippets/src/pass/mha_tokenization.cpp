@@ -253,7 +253,7 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
         } else if (matmul0->get_transpose_b() && is_valid_transpose(transpose1, {0, 2, 1, 3})) {
             // We can support several ops between MatMul0 with transposed_b and Transpose1 with 0213 order
             // only if these ops have scalar shapes on other inputs.
-            // There is transformation MatMulTranspose that set supported order and transposed_b(false).
+            // There is transformation ExplicitTransposeMatMulInputs that set supported order and transposed_b(false).
             // We can allow to call this pass only if ops have scalar shapes to avoid shape mismatching
             if (are_weights_scalar) {
                 ordered_ops.insert(ordered_ops.begin() + shift, transpose1);

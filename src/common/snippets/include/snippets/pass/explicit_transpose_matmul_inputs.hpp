@@ -12,7 +12,7 @@ namespace snippets {
 namespace pass {
 
 /**
- * @interface MatMulTranspose
+ * @interface ExplicitTransposeMatMulInputs
  * @brief At the moment Snippets supports Transpose only with order {0, 2, 3, 1},
  *        so if there is pattern in graph:
  *         in0     Transpose{0, 2, 1, 3}
@@ -22,9 +22,9 @@ namespace pass {
  *        change Transpose order to {0, 2, 3, 1} which is supported by Snippets
  * @ingroup snippets
  */
-class MatMulTranspose: public ngraph::pass::MatcherPass {
+class ExplicitTransposeMatMulInputs: public ngraph::pass::MatcherPass {
 public:
-    MatMulTranspose();
+    ExplicitTransposeMatMulInputs();
 };
 
 }  // namespace pass

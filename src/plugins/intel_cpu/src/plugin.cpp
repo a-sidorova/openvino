@@ -639,8 +639,10 @@ static void TransformationUpToCPUSpecificOpSet(std::shared_ptr<ngraph::Function>
 
     // Float MHA is supported by snippets now
     auto postLPTPassConfig = postLPTPassManager.get_pass_config();
-    postLPTPassConfig->disable<MHAFloatFusion>();
-    postLPTPassConfig->disable<MHAFloatFusion2>();
+    if (!_enableBF16) {
+        postLPTPassConfig->disable<MHAFloatFusion>();
+        postLPTPassConfig->disable<MHAFloatFusion2>();
+    }
 
     postLPTPassManager.run_passes(nGraphFunc);
 
