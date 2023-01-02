@@ -337,7 +337,7 @@ ov::PartialShape snippets::op::Subgraph::canonicalize(const BlockedShapeVector& 
     const auto& result_parent = body_results[0]->get_input_node_shared_ptr(0);
     if (body_results.size() == 1 &&
         ov::is_type<opset1::Transpose>(result_parent) &&
-        ov::is_type<snippets::op::Brgemm>(result_parent->get_input_node_shared_ptr(0))) {
+        ov::is_type<opset1::MatMul>(result_parent->get_input_node_shared_ptr(0))) {
         outPShape = result_parent->get_input_partial_shape(0);
     } else {
         for (size_t i = 0; i < body_results.size(); i++) {
