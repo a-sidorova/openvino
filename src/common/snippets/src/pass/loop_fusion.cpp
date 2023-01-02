@@ -25,8 +25,19 @@ auto can_be_merged(const std::shared_ptr<ngraph::snippets::op::LoopEnd>& loop_en
         loop_end_down->get_increment() != loop_end_up->get_increment())
         return false;
 
-    // If between Loops there are common dependencies (for example, reducing operations),
-    // we cannot merge these Loops
+    // If between Loops there are common dependencies (for example, reducing operations), we cannot merge these Loops
+    // Example, when there is HorizonMax op between Loops:
+    //                    Data
+    //  VectorBuffer    LoopBegin
+    //         \          Load |  \
+    //           Maximum       |  /
+    //              /    LoopEnd
+    //       HorizonMax     |
+    //             \   LoopBegin
+    //              \     Load \
+    //               Subtract   |
+    //                Store    /
+    //               LoopEnd
     auto up_dependent_ptrs = loop_end_up->get_control_dependents();
     ov::NodeVector up_dependents(up_dependent_ptrs.size(), nullptr);
     std::transform(up_dependent_ptrs.begin(), up_dependent_ptrs.end(), up_dependents.begin(), [](ngraph::Node* node) { return node->shared_from_this(); });
@@ -42,36 +53,121 @@ auto can_be_merged(const std::shared_ptr<ngraph::snippets::op::LoopEnd>& loop_en
     return common_nodes.size() == 0;
 }
 
+auto get_buffer_and_loop_end(const std::shared_ptr<ngraph::snippets::op::LoopBegin>& loop_begin_down,
+                             std::shared_ptr<ngraph::snippets::op::LoopEnd>& loop_end_up,
+                             std::shared_ptr<ngraph::snippets::op::Buffer>& buffer) -> bool {
+    size_t fusion_input_num = 0;
+    for (const auto& parent : loop_begin_down->input_values()) {
+        const auto parent_shared = parent.get_node_shared_ptr();
+        if (ov::is_type<ov::op::v0::Constant>(parent_shared) ||
+            ov::is_type<ov::op::v0::Parameter>(parent_shared) ||
+            ov::is_type<ngraph::snippets::op::LoopBegin>(parent_shared))
+            continue;
+
+        // We can fuse Loops even LoopBegin has several the same inputs (the common Buffer/LoopEnd)
+        if (buffer && buffer == parent_shared || !buffer && loop_end_up && loop_end_up == parent_shared)
+            continue;
+
+        loop_end_up = ngraph::as_type_ptr<ngraph::snippets::op::LoopEnd>(parent_shared);
+        buffer = ov::as_type_ptr<ngraph::snippets::op::Buffer>(parent_shared);
+        if (buffer) {
+            if (buffer->output(0).get_target_inputs().size() == 0 ||
+                buffer->get_input_size() != 1 ||
+                buffer->get_input_source_output(0).get_target_inputs().size() != 1)
+                return false;
+
+            loop_end_up = ngraph::as_type_ptr<ngraph::snippets::op::LoopEnd>(buffer->get_input_node_shared_ptr(0));
+        }
+        if (loop_end_up)
+            fusion_input_num++;
+    }
+
+    return fusion_input_num == 1;
+}
+
+auto collect_loop_inputs(const std::shared_ptr<ngraph::snippets::op::LoopBegin>& loop_begin,
+                         const std::shared_ptr<ngraph::snippets::op::Buffer>& buffer,
+                         std::vector<Edge>& new_loop_inputs,
+                         std::vector<int64_t>& new_ptr_increments,
+                         std::vector<int64_t>& new_finalization_offsets) -> void {
+    const auto loop_end = loop_begin->get_loop_end();
+    const auto ptr_increments = loop_end->get_ptr_increments();
+    const auto finalization_offsets = loop_end->get_finalization_offsets();
+    for (size_t i = 0; i < loop_begin->get_input_size(); i++) {
+        const auto input = loop_begin->input(i);
+        // Skip target Buffer
+        if (input.get_source_output().get_node_shared_ptr() != buffer) {
+            const auto edge = Edge{ input.get_source_output(),
+                                    loop_begin->output(input.get_index()).get_target_inputs() };
+            new_loop_inputs.push_back(edge);
+            new_ptr_increments.push_back(ptr_increments[i]);
+            new_finalization_offsets.push_back(finalization_offsets[i]);
+            // Remove LoopBegin from Parent as target input
+            input.get_source_output().remove_target_input(input);
+        }
+    }
+}
+
+auto collect_loop_outputs(const std::shared_ptr<ngraph::snippets::op::LoopEnd>& loop_end,
+                          const std::shared_ptr<ngraph::snippets::op::Buffer>& buffer,
+                          std::vector<Edge>& new_loop_outputs,
+                          std::vector<int64_t>& new_ptr_increments,
+                          std::vector<int64_t>& new_finalization_offsets,
+                          const bool reduce_max_case) -> bool {
+    const auto loop_begin = loop_end->get_loop_begin();
+    const auto ptr_increments = loop_end->get_ptr_increments();
+    const auto finalization_offsets = loop_end->get_finalization_offsets();
+    bool is_current_reduce_max_case = false;
+    for (size_t i = 0; i < loop_end->get_output_size(); i++) {
+        // ReduceMax case. When Loop cannot have empty output as ngraph op,
+        // we should have fake edge through all Loops (LoopBegin->LoopEnd) which connect src and dst data.
+        // If we merge these this Loop and Loop Before, we should remove this fake edge
+        // because now we have real data for storing
+        auto new_input_node = loop_end->get_input_node_shared_ptr(i);
+        if (ov::is_type<ngraph::snippets::op::LoopBegin>(new_input_node)) {
+            // We set temporary boolean variable because this value is for the next LoopEnd (upper), not for the current LoopEnd
+            is_current_reduce_max_case = true;
+            // Remove LoopEnd from Parent as target input
+            loop_end->input_value(i).remove_target_input(loop_end->input(i));
+        } else {
+            const auto output = loop_end->output(i);
+            // Skip target Buffer
+            InputSet target_inputs;
+            for (const auto& input : output.get_target_inputs()) {
+                if (input.get_node()->shared_from_this() != buffer || reduce_max_case) {
+                    target_inputs.insert(input);
+                }
+            }
+
+            if (target_inputs.size()) {
+                const auto edge = Edge{loop_end->input_value(output.get_index()), target_inputs};
+                new_loop_outputs.push_back(edge);
+                new_ptr_increments.push_back(ptr_increments[loop_begin->get_input_size() + i]);
+                new_finalization_offsets.push_back(finalization_offsets[loop_begin->get_input_size() + i]);
+                // Remove LoopEnd from Parent as target input
+                loop_end->input_value(i).remove_target_input(loop_end->input(i));
+            }
+        }
+    }
+
+    return is_current_reduce_max_case;
+}
+
 } // namespace
 
 
-bool ngraph::snippets::pass::LoopFusion::Merge(const std::shared_ptr<op::Buffer>& buffer) {
-    if (!buffer ||
-         buffer->output(0).get_target_inputs().size() == 0 ||
-         buffer->get_input_size() == 0 ||
-         buffer->get_input_source_output(0).get_target_inputs().size() != 1)
+bool ngraph::snippets::pass::LoopFusion::Merge(const std::shared_ptr<op::LoopBegin>& loop_begin_down) {
+    if (!loop_begin_down) {
         return false;
-
-    const auto buffer_input = buffer->get_input_node_shared_ptr(0);
-    const auto buffer_output = buffer->output(0).get_target_inputs().begin()->get_node()->shared_from_this();
-
-    // If after merging there are Load and Store, we should remove them
-    if (const auto store = std::dynamic_pointer_cast<op::Store>(buffer_input)) {
-        store->output(0).replace(store->input_value(0));
-    }
-    if (const auto load = std::dynamic_pointer_cast<op::Load>(buffer_output)) {
-        load->output(0).replace(load->input_value(0));
     }
 
-    const auto loop_end_up = ngraph::as_type_ptr<op::LoopEnd>(buffer_input);
-    const auto loop_begin_down = ngraph::as_type_ptr<op::LoopBegin>(buffer_output);
-
-    // Remove Buffer if there are no Loops and MatMul
-    if (!loop_end_up && !loop_begin_down) {
-        buffer->output(0).replace(buffer->input_value(0));
-        return true;
+    std::shared_ptr<ngraph::snippets::op::LoopEnd> loop_end_up = nullptr;
+    std::shared_ptr<ngraph::snippets::op::Buffer> buffer = nullptr;
+    // Initialize the corresponding upper LoopEnd and Buffer
+    if (!get_buffer_and_loop_end(loop_begin_down, loop_end_up, buffer)) {
+        return false;
     }
-
+    // Check for conditions of fusion
     if (!can_be_merged(loop_end_up, loop_begin_down)) {
         return false;
     }
@@ -86,88 +182,36 @@ bool ngraph::snippets::pass::LoopFusion::Merge(const std::shared_ptr<op::Buffer>
     const auto finalization_offsets_up = loop_end_up->get_finalization_offsets();
     const auto finalization_offsets_down = loop_end_down->get_finalization_offsets();
     std::vector<int64_t> new_ptr_increments, new_finalization_offsets;
+    new_ptr_increments.reserve(new_io_count);
+    new_finalization_offsets.reserve(new_io_count);
+
     // Collect new loop inputs
     std::vector<Edge> loop_inputs;
     loop_inputs.reserve(new_input_count);
     new_ptr_increments.reserve(new_io_count);
     new_finalization_offsets.reserve(new_io_count);
-    for (size_t i = 0; i < loop_begin_up->get_input_size(); i++) {
-        const auto input = loop_begin_up->input(i);
-        const auto edge = Edge{ input.get_source_output(), loop_begin_up->output(input.get_index()).get_target_inputs() };
-        loop_inputs.push_back(edge);
-        new_ptr_increments.push_back(ptr_increments_up[i]);
-        new_finalization_offsets.push_back(finalization_offsets_up[i]);
-        // Remove LoopBegin from Parent as target input
-        input.get_source_output().remove_target_input(input);
-    }
-    for (size_t i = 0; i < loop_begin_down->get_input_size(); i++) {
-        const auto input = loop_begin_down->input(i);
-        // Skip target Buffer
-        if (input.get_source_output().get_node_shared_ptr() != buffer) {
-            const auto edge = Edge{ input.get_source_output(),
-                                    loop_begin_down->output(input.get_index()).get_target_inputs() };
-            loop_inputs.push_back(edge);
-            new_ptr_increments.push_back(ptr_increments_down[i]);
-            new_finalization_offsets.push_back(finalization_offsets_down[i]);
-            // Remove LoopBegin from Parent as target input
-            input.get_source_output().remove_target_input(input);
-        }
-    }
+    collect_loop_inputs(loop_begin_up, buffer, loop_inputs, new_ptr_increments, new_finalization_offsets);
+    collect_loop_inputs(loop_begin_down, buffer, loop_inputs, new_ptr_increments, new_finalization_offsets);
 
     // Collect new Loop outputs
     std::vector<Edge> loop_outputs;
     loop_outputs.reserve(new_output_count);
-    bool reduce_max_case = false;
-    for (size_t i = 0; i < loop_end_down->get_output_size(); i++) {
-        auto new_input_output = loop_end_down->input_value(i);
-        // ReduceMax case. When Loop cannot have empty output as ngraph op,
-        // we should have fake edge through all Loops (LoopBegin->LoopEnd) which connect src and dst data.
-        // If we merge these this Loop and Loop Before, we should remove this fake edge
-        // because now we have real data for storing
-        auto new_input_node = new_input_output.get_node_shared_ptr();
-        if (ov::is_type<op::LoopBegin>(new_input_node)) {
-            reduce_max_case = true;
-        } else {
-            const auto edge = Edge{ new_input_output, loop_end_down->output(i).get_target_inputs() };
-            loop_outputs.push_back(edge);
-            new_ptr_increments.push_back(ptr_increments_down[loop_begin_down->get_input_size() + i]);
-            new_finalization_offsets.push_back(finalization_offsets_down[loop_begin_down->get_input_size() + i]);
-        }
-        // Remove LoopEnd from Parent as target input
-        loop_end_down->input_value(i).remove_target_input(loop_end_down->input(i));
-    }
-
+    // We can fuse Loop with maximum accumulator pattern only with Smth input
+    // So firstly, we analyze LoopEnd down (it's possible maximum accumulator pattern), set `reduce_max_case` variable
+    // if it's really maximum accumulator pattern, and then analyze LoopEnd up using `reduce_max_case` variable
+    const bool reduce_max_case = collect_loop_outputs(loop_end_down, buffer, loop_outputs, new_ptr_increments, new_finalization_offsets, false);
+    collect_loop_outputs(loop_end_up, buffer, loop_outputs, new_ptr_increments, new_finalization_offsets, reduce_max_case);
     if (reduce_max_case) {
         const auto target_inputs = loop_begin_down->output(0).get_target_inputs();
         NGRAPH_CHECK(target_inputs.size(), "LoopBegin in ReduceMax should have only one consumer (Load) for out port 0");
-        const auto load = std::dynamic_pointer_cast<op::Load>(target_inputs.begin()->get_node()->shared_from_this());
+        const auto load = ov::as_type_ptr<op::Load>(target_inputs.begin()->get_node()->shared_from_this());
         NGRAPH_CHECK(load != nullptr, "LoopBegin in ReduceMax should have only one consumer for out port 0 - Load");
 
-        const auto store = std::dynamic_pointer_cast<op::Store>(loop_end_up->get_input_node_shared_ptr(0));
+        const auto store = ov::as_type_ptr<op::Store>(loop_end_up->get_input_node_shared_ptr(0));
         NGRAPH_CHECK(store != nullptr, "Before LoopEnd should be Store emitter");
 
         // Connect vector emitters before Store and after Load
         load->output(0).replace(store->get_input_source_output(0));
-    }
-
-    for (size_t i = 0; i < loop_end_up->get_output_size(); i++) {
-        const auto output = loop_end_up->output(i);
-        // Skip target Buffer
-        InputSet target_inputs;
-        for (const auto& input : output.get_target_inputs()) {
-            if (input.get_node()->shared_from_this() != buffer || reduce_max_case) {
-                target_inputs.insert(input);
-            }
-        }
-
-        if (target_inputs.size()) {
-            const auto edge = Edge{loop_end_up->input(output.get_index()).get_source_output(), target_inputs};
-            loop_outputs.push_back(edge);
-            new_ptr_increments.push_back(ptr_increments_up[loop_begin_up->get_input_size() + i]);
-            new_finalization_offsets.push_back(finalization_offsets_up[loop_begin_up->get_input_size() + i]);
-            // Remove LoopEnd from Parent as target input
-            loop_end_up->input_value(i).remove_target_input(loop_end_up->input(i));
-        }
     }
 
     const auto new_increment = loop_end_up->get_increment();
@@ -243,24 +287,45 @@ bool ngraph::snippets::pass::LoopFusion::Merge(const std::shared_ptr<op::Buffer>
     new_loop_end->add_node_control_dependencies(loop_end_up);
     new_loop_end->add_node_control_dependencies(loop_end_down);
 
+    // If there was Buffer between Loops, after Loop fusion
+    // we should remove the Buffer node and MemoryAccess nodes if it's needed
+    if (buffer) {
+        const auto buffer_input = buffer->get_input_node_shared_ptr(0);
+        const auto buffer_output = buffer->output(0).get_target_inputs().begin()->get_node()->shared_from_this();
+
+        // If after merging there are Load and Store, we should remove them
+        if (const auto store = ov::as_type_ptr<op::Store>(buffer_input)) {
+            store->output(0).replace(store->input_value(0));
+        }
+        if (const auto load = ov::as_type_ptr<op::Load>(buffer_output)) {
+            load->output(0).replace(load->input_value(0));
+        }
+
+        // Remove Buffer if there are no Loops and MatMul after Loop fusion
+        // because only these operations can have Buffer node on inputs and outputs.
+        // So if there aren't, it means that Buffer is extra, and we can remove it
+        if (!ov::is_type<op::LoopBegin>(buffer_output) && !ov::is_type<op::LoopEnd>(buffer_input) &&
+            !ov::is_type<op::Brgemm>(buffer_output) && !ov::is_type<op::Brgemm>(buffer_input)) {
+            buffer->output(0).replace(buffer->input_value(0));
+        }
+    }
+
     return true;
 }
 
 ngraph::snippets::pass::LoopFusion::LoopFusion() {
-    MATCHER_SCOPE(ResetBufferState);
+    MATCHER_SCOPE(LoopFusion);
 
-    auto m_loop_end = ngraph::pattern::wrap_type<op::LoopEnd>();
-    auto m_buffer = ngraph::pattern::wrap_type<op::Buffer>({m_loop_end});
+    auto m_loop_begin = ngraph::pattern::wrap_type<op::LoopBegin>();
 
-    register_matcher(std::make_shared<ngraph::pattern::Matcher>(m_buffer, matcher_name),
-        [=](ngraph::pattern::Matcher &m) {
+    auto callback = [=](ngraph::pattern::Matcher &m) {
         OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::op::LoopFusion")
-        bool rewritten = false;
         auto& pattern_to_output = m.get_pattern_value_map();
-        const auto buffer = ngraph::as_type_ptr<op::Buffer>(pattern_to_output.at(m_buffer).get_node_shared_ptr());
-        while (Merge(buffer)) {
-            rewritten = true;
-        }
-        return rewritten;
-    });
+        const auto loop_begin = ngraph::as_type_ptr<op::LoopBegin>(pattern_to_output.at(m_loop_begin).get_node_shared_ptr());
+        const auto status = Merge(loop_begin);
+        return status;
+    };
+
+    auto matcher = std::make_shared<ngraph::pattern::Matcher>(m_loop_begin, matcher_name);
+    register_matcher(matcher, callback);
 }

@@ -21,7 +21,7 @@ public:
     LoopFusion();
 
 private:
-    bool Merge(const std::shared_ptr<op::Buffer>& buffer);
+    bool Merge(const std::shared_ptr<op::LoopBegin>& buffer);
 };
 
 }  // namespace pass

@@ -3,21 +3,18 @@
 //
 
 #include <snippets/itt.hpp>
-#include "snippets/remarks.hpp"
 
 #include "snippets/pass/mha_tokenization.hpp"
 #include "snippets/pass/collapse_subgraph.hpp"
 #include "snippets/op/subgraph.hpp"
-#include "snippets/snippets_isa.hpp"
-#include "snippets/utils.hpp"
 
 #include <ngraph/opsets/opset8.hpp>
 #include <ngraph/rt_info.hpp>
 #include <ngraph/pattern/op/wrap_type.hpp>
-#include <ngraph/pattern/op/or.hpp>
 #include <ngraph/validation_util.hpp>
 
 
+namespace {
 auto is_supported_tensor(const ngraph::descriptor::Tensor& t) -> bool {
     // TODO: Add support of all supported by common tokenization element types
     //       return ngraph::snippets::pass::TokenizeSnippets::supported_element_types.count(input.get_element_type()) != 0;
@@ -93,7 +90,21 @@ auto tokenize_broadcast(const std::shared_ptr<ov::Node>& interm_op, ov::NodeVect
     }
 }
 
-auto collapse_intermediate_supported_ops(std::shared_ptr<ov::Node>& interm_op, ngraph::NodeVector& ordered_ops) -> bool {
+auto tokenize_reshape_around_softmax(std::shared_ptr<ov::Node>& interm_op,
+                                     std::shared_ptr<ngraph::opset1::Reshape>& reshape,
+                                     ngraph::NodeVector& ordered_ops) -> bool {
+    reshape = ngraph::as_type_ptr<ngraph::opset1::Reshape>(interm_op);
+    if (reshape) {
+        const auto shape = reshape->get_input_shape(0);
+        if (shape.back() != reshape->get_output_shape(0).back() || reshape->get_output_target_inputs(0).size() != 1)
+            return false;
+        ordered_ops.push_back(reshape);
+        interm_op = reshape->get_output_target_inputs(0).begin()->get_node()->shared_from_this();
+    }
+    return true;
+};
+
+auto update_intermediate_supported_ops(std::shared_ptr<ov::Node>& interm_op, ngraph::NodeVector& ordered_ops) -> bool {
     // TODO: Add Reshape, FQ support
     while (is_supported_op(interm_op)) {
         // All supported intermediate ops have only one output port
@@ -111,6 +122,7 @@ auto collapse_intermediate_supported_ops(std::shared_ptr<ov::Node>& interm_op, n
     }
     return true;
 };
+}  // namespace
 
 ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
     MATCHER_SCOPE(TokenizeMHASnippets);
@@ -154,23 +166,20 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
             !is_supported_tensor(matmul0->get_input_tensor(0)) || !is_supported_tensor(matmul0->get_input_tensor(1)))
             return false;
 
+        if (transformation_callback(matmul0)) {
+            return false;
+        }
+
         ordered_ops.push_back(matmul0);
 
         auto interm_op = matmul0->get_output_target_inputs(0).begin()->get_node()->shared_from_this();
-        // Collapse operations which are between MatMul0 and Softmax
-        auto status = collapse_intermediate_supported_ops(interm_op, ordered_ops);
-        if (!status)
+        // Add supported operations which are between MatMul0 and Softmax to ordered_ops
+        if (!update_intermediate_supported_ops(interm_op, ordered_ops))
             return false;
 
-        ngraph::Shape in_shape, out_shape;
-        const auto reshape0 = ngraph::as_type_ptr<ngraph::opset1::Reshape>(interm_op);
-        if (reshape0) {
-            in_shape = reshape0->get_input_shape(0);
-            if (in_shape.back() != reshape0->get_output_shape(0).back() || reshape0->get_output_target_inputs(0).size() != 1)
-                return false;
-            ordered_ops.push_back(reshape0);
-            interm_op = reshape0->get_output_target_inputs(0).begin()->get_node()->shared_from_this();
-        }
+        std::shared_ptr<ngraph::opset1::Reshape> reshape0 = nullptr;
+        if (!tokenize_reshape_around_softmax(interm_op, reshape0, ordered_ops))
+            return false;
 
         int64_t axis = 0;
         const auto rank = interm_op->get_input_partial_shape(0).rank();
@@ -187,21 +196,16 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
         ordered_ops.push_back(interm_op);
 
         interm_op = interm_op->get_output_target_inputs(0).begin()->get_node()->shared_from_this();
-        const auto reshape1 = ngraph::as_type_ptr<ngraph::opset1::Reshape>(interm_op);
-        if (reshape1) {
-            out_shape = reshape1->get_output_shape(0);
-            if (reshape1->get_input_shape(0).back() != out_shape.back() || reshape1->get_output_target_inputs(0).size() != 1)
-                return false;
-            ordered_ops.push_back(interm_op);
-            interm_op = reshape1->get_output_target_inputs(0).begin()->get_node()->shared_from_this();
-        }
-
-        if (((reshape0 == nullptr) != (reshape1 == nullptr)) || (in_shape != out_shape))
+        std::shared_ptr<ngraph::opset1::Reshape> reshape1 = nullptr;
+        if (!tokenize_reshape_around_softmax(interm_op, reshape1, ordered_ops))
             return false;
 
-        // Collapse operations which are between Softmax and MatMul1
-        status = collapse_intermediate_supported_ops(interm_op, ordered_ops);
-        if (!status)
+        if (((reshape0 == nullptr) != (reshape1 == nullptr)) ||
+             (reshape0 && reshape1 && (reshape0->get_input_shape(0) != reshape1->get_output_shape(0))))
+            return false;
+
+        // Add supported operations which are between Softmax and MatMul1 to ordered_ops
+        if (!update_intermediate_supported_ops(interm_op, ordered_ops))
             return false;
 
         const auto matmul1 = ngraph::as_type_ptr<ngraph::opset1::MatMul>(interm_op);
@@ -212,9 +216,44 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
         /***********************/
 
         /***** Transposes *****/
-        /* There are may be Transpose and Reshape ops on inputs and outputs of MHA-pattern skeleton
+        /* There may be Transpose and Reshape ops on inputs and outputs of MHA-pattern skeleton
          * We can add them into Subgraph body
          */
+
+        // First input branch of MatMul0 should be executed before second input branch of MatMul0,
+        // so firstly we insert Transpose1 on the beginning of ordered_ops and then Transpose1
+        bool are_weights_scalar = true;
+        auto parent = matmul0->get_input_node_shared_ptr(1);
+        while (is_supported_op(parent)) {
+            // All supported ops have only one output port
+            // To verify output element type is enough because all supported ops have the same output element type as input type
+            if (parent->get_output_target_inputs(0).size() != 1 || !is_supported_tensor(parent->get_output_tensor(0)))
+                break;
+
+            const auto parent_count = parent->inputs().size();
+            for (size_t i = 1; i < parent_count; ++i) {
+                are_weights_scalar = are_weights_scalar && ngraph::shape_size(parent->get_input_shape(i)) == 1;
+            }
+            ordered_ops.insert(ordered_ops.begin(), parent);
+            // We think that sequence of ops goes through input port 0
+            // But can be Select here? If it can be, parent shouldn't be on input port 0. Need another way?
+            parent = parent->get_input_node_shared_ptr(0);
+        }
+
+        auto transpose1 = ngraph::as_type_ptr<ngraph::opset1::Transpose>(parent);
+        if (!matmul0->get_transpose_b() && is_valid_transpose(transpose1, {0, 2, 3, 1})) {
+            ordered_ops.insert(ordered_ops.begin(), transpose1);
+        } else if (matmul0->get_transpose_b() && is_valid_transpose(transpose1, {0, 2, 1, 3})) {
+            // We can support several ops between MatMul0 with transposed_b and Transpose1 with 0213 order
+            // only if these ops have scalar shapes on other inputs.
+            // There is transformation ExplicitTransposeMatMulInputs that set supported order and transposed_b(false).
+            // We can allow to call this pass only if ops have scalar shapes to avoid shape mismatching
+            if (are_weights_scalar) {
+                ordered_ops.insert(ordered_ops.begin(), transpose1);
+            } else {
+                return false;
+            }
+        }
 
         // TODO: Add Reshape Support for all Transposes
         //       Add 3D support for all Transposes
@@ -225,43 +264,6 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
             return false;
         }
 
-        // First input branch of MatMul0 should be executed before second input branch of MatMul0
-        const auto shift = transpose0 ? 1 : 0;
-        bool are_weights_scalar = true;
-        auto parent = matmul0->get_input_node_shared_ptr(1);
-        while (is_supported_op(parent)) {
-            // All supported ops have only one output port
-            // To verify output element type is enough because all supported ops have the same output element type as input type
-            if (parent->get_output_target_inputs(0).size() != 1 || !is_supported_tensor(parent->get_output_tensor(0)))
-                break;
-
-            const auto parent_count = parent->inputs().size();
-            if (parent_count > 1) {
-                for (size_t i = 1; i < parent_count; ++i) {
-                    are_weights_scalar = are_weights_scalar && ngraph::shape_size(parent->get_input_shape(i)) == 1;
-                }
-            }
-            ordered_ops.insert(ordered_ops.begin() + shift, parent);
-            // We think that sequence of ops goes through input port 0
-            // But can be Select here? If it can be, parent shouldn't be on input port 0. Need another way?
-            parent = parent->get_input_node_shared_ptr(0);
-        }
-
-        auto transpose1 = ngraph::as_type_ptr<ngraph::opset1::Transpose>(parent);
-        if (!matmul0->get_transpose_b() && is_valid_transpose(transpose1, {0, 2, 3, 1})) {
-            ordered_ops.insert(ordered_ops.begin() + shift, transpose1);
-        } else if (matmul0->get_transpose_b() && is_valid_transpose(transpose1, {0, 2, 1, 3})) {
-            // We can support several ops between MatMul0 with transposed_b and Transpose1 with 0213 order
-            // only if these ops have scalar shapes on other inputs.
-            // There is transformation ExplicitTransposeMatMulInputs that set supported order and transposed_b(false).
-            // We can allow to call this pass only if ops have scalar shapes to avoid shape mismatching
-            if (are_weights_scalar) {
-                ordered_ops.insert(ordered_ops.begin() + shift, transpose1);
-            } else {
-                return false;
-            }
-        }
-
         const auto transpose2 = ngraph::as_type_ptr<ngraph::opset1::Transpose>(matmul1->get_input_node_shared_ptr(1));
         if (is_valid_transpose(transpose2, {0, 2, 1, 3})) {
             ordered_ops.push_back(transpose2);
@@ -270,7 +272,7 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
 
         auto child = matmul1->get_output_target_inputs(0).begin()->get_node()->shared_from_this();
         // TODO: Add support Eltwises between MatMul1 and Transpose
-        // status = collapse_intermediate_supported_ops(child, ordered_ops);
+        // status = update_intermediate_supported_ops(child, ordered_ops);
         // if (!status) {
         //     ordered_ops.push_back(child);
         // }
@@ -278,10 +280,6 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
         auto transpose3 = ngraph::as_type_ptr<ngraph::opset1::Transpose>(child);
         if (is_valid_transpose(transpose3, {0, 2, 1, 3})) {
             ordered_ops.push_back(transpose3);
-        }
-
-        if (transformation_callback(matmul0)) {
-            return false;
         }
 
         /**********************/
@@ -344,10 +342,10 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
         }
 
         const auto last_node = ordered_ops.back();
-        for (const auto output : last_node->outputs()) {
+        for (const auto& output : last_node->outputs()) {
             subgraph_result_inputs.push_back(output.get_target_inputs());
         }
-        for (auto output : last_node->outputs()) {
+        for (const auto& output : last_node->outputs()) {
             body_results.push_back(std::make_shared<ngraph::opset1::Result>(last_node->output(output.get_index())));
         }
 
@@ -367,7 +365,7 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
         subgraph->set_friendly_name(last_node->get_friendly_name());
 
         for (size_t i = 0; i < subgraph->get_output_size(); ++i) {
-            for (auto target_input : subgraph_result_inputs[i]) {
+            for (const auto& target_input : subgraph_result_inputs[i]) {
                 target_input.replace_source_output(subgraph->output(i));
             }
         }
