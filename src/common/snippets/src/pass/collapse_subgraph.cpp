@@ -290,7 +290,7 @@ TokenizeSnippets::TokenizeSnippets() {
             auto subgraph = op::Subgraph::wrap_node_as_subgraph(node);
             subgraph->get_rt_info()["originalLayersNames"] = getFusedNames(node) + node->get_friendly_name();
             ngraph::replace_node(node, subgraph);
-            op::Subgraph::update_out_tensor_name(subgraph);
+            op::update_out_tensor_name(subgraph);
         };
 
         auto abort_with_strategy = [&](const std::string& message_reset,
@@ -617,7 +617,7 @@ TokenizeSnippets::TokenizeSnippets() {
                 target_input.replace_source_output(subgraph->output(i));
             }
         }
-        op::Subgraph::update_out_tensor_name(subgraph);
+        op::update_out_tensor_name(subgraph);
 
         subgraph->validate_and_infer_types();
 

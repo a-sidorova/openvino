@@ -203,7 +203,7 @@ bool ngraph::snippets::pass::LoopFusion::Merge(const std::shared_ptr<op::LoopBeg
     collect_loop_outputs(loop_end_up, buffer, loop_outputs, new_ptr_increments, new_finalization_offsets, reduce_max_case);
     if (reduce_max_case) {
         const auto target_inputs = loop_begin_down->output(0).get_target_inputs();
-        NGRAPH_CHECK(target_inputs.size(), "LoopBegin in ReduceMax should have only one consumer (Load) for out port 0");
+        NGRAPH_CHECK(target_inputs.size() == 1, "LoopBegin in ReduceMax should have only one consumer (Load) for out port 0");
         const auto load = ov::as_type_ptr<op::Load>(target_inputs.begin()->get_node()->shared_from_this());
         NGRAPH_CHECK(load != nullptr, "LoopBegin in ReduceMax should have only one consumer for out port 0 - Load");
 

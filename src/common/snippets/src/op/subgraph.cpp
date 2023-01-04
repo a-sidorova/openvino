@@ -235,22 +235,6 @@ auto snippets::op::Subgraph::constant_input_should_be_inside_body(const std::sha
            ov::is_type<ov::op::v1::Reshape>(node);
 }
 
-auto snippets::op::Subgraph::update_out_tensor_name(const std::shared_ptr<ngraph::snippets::op::Subgraph>& subgraph) -> void {
-    bool not_set = true;
-    for (unsigned int i = 0; i < subgraph->get_output_size() && not_set; i++) {
-        for (const auto &in : subgraph->get_output_target_inputs(i)) {
-            if (ov::is_type<ov::op::v0::Result>(in.get_node())) {
-                const auto& body_result = subgraph->get_body()->get_output_op(i);
-                const auto& body_result_input = body_result->get_input_source_output(0);
-                ngraph::snippets::op::Subgraph::fill_empty_output_names(
-                        subgraph->output(i), body_result_input);
-                not_set = false;
-                break;
-            }
-        }
-    }
-}
-
 ///
 /// \brief  Canonization transforms original subgraph and to canonical form suitable for code generation. In particular,
 ///         it handles supported layout conversions, broadcasts inputs and outputs to a single rank and layout. Canonicalization
@@ -444,7 +428,7 @@ void snippets::op::Subgraph::initialize_buffer_scratchpad_size() {
             auto idx = buffer->input(0).get_source_output().get_index();
             // There may be graph with several LoopBegin and LoopEnd between Store/Brgemm and Buffer,
             // so we should iterate through LoopBase
-            while (std::dynamic_pointer_cast<snippets::op::LoopBase>(parent)) {
+            while (ov::is_type<snippets::op::LoopBase>(parent)) {
                 const auto source_output = parent->input_value(idx);
                 parent = source_output.get_node_shared_ptr();
                 idx = source_output.get_index();
@@ -467,7 +451,7 @@ void snippets::op::Subgraph::initialize_buffer_scratchpad_size() {
                 // There may be graph with several LoopBegin and LoopEnd between Load/Brgemm and Buffer,
                 // so we should iterate through LoopBase
                 // Example: Softmax decomposition with ReduceMax
-                if (std::dynamic_pointer_cast<snippets::op::LoopBase>(child)) {
+                if (ov::is_type<snippets::op::LoopBase>(child)) {
                     const auto index = target_input.get_index();
                     for (const auto loop_target_output : child->output(index).get_target_inputs()) {
                         propagate_down(loop_target_output);

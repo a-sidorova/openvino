@@ -8,12 +8,39 @@
 #include "snippets_helpers.hpp"
 
 
+/* The file contains graphs with different MHA-patterns:
+ * Skeleton on MHA-pattern is:
+ *              \     /
+ *              MatMul0
+ *                 |
+ * Eltwise/Select/Reshape/FakeQuantize
+ *                 |
+ *              Softmax
+ *                 |
+ * Eltwise/Select/Reshape/FakeQuantize
+ *                  \      /
+ *                   MatMul1
+ */
+
 namespace ov {
 namespace test {
 namespace snippets {
 
-
-// TODO: Write Graph
+/* Graph:
+ *       Transpose1[0,2,3,1]  Constant
+ *                     \       /
+ * Transpose0[0,2,1,3] Multiply [with_mul = true]
+ *              \     /
+ *              MatMul0
+ *                 \   /
+ *                  Add
+ *                Reshape0
+ *                Softmax
+ *                Reshape1  Transpose2[0,2,1,3]
+ *                    \      /
+ *                     MatMul1
+ *                   Transpose3[0,2,1,3]
+ */
 class MHAFunction : public SnippetsFunctionBase {
 public:
     explicit MHAFunction(const std::vector<PartialShape>& inputShapes, bool with_mul = true)
@@ -27,8 +54,21 @@ protected:
     bool with_mul = true;
 };
 
-// TODO: Write Graph
-// MHA pattern with transposed_b for MatMul0 and unsupported order for Transpose1
+/* Graph:
+ *       Transpose1[0,2,1,3]  Constant
+ *                     \       /
+ * Transpose0[0,2,1,3] Multiply
+ *              \     /
+ *              MatMul0 [transposed_b = true]
+ *                 \   /
+ *                  Add
+ *                Reshape0
+ *                Softmax
+ *                Reshape1  Transpose2[0,2,1,3]
+ *                    \      /
+ *                     MatMul1
+ *                   Transpose3[0,2,1,3]
+ */
 class MHAMatMul0TransposeFunction : public SnippetsFunctionBase {
 public:
     explicit MHAMatMul0TransposeFunction(const std::vector<PartialShape>& inputShapes)
@@ -40,8 +80,21 @@ protected:
     std::shared_ptr<ov::Model> initReference() const override;
 };
 
-// TODO: Write Graph
-// MHA pattern with Select op
+/* Graph:
+ *             Transpose1[0,2,3,1]  Constant
+ *                           \       /
+ *       Transpose0[0,2,1,3] Multiply
+ *     \               \     /
+ * Broadcast  Scalar   MatMul0
+ *       \      |      /
+ *           Select
+ *          Reshape0
+ *          Softmax
+ *          Reshape1  Transpose2[0,2,1,3]
+ *              \      /
+ *               MatMul1
+ *             Transpose3[0,2,1,3]
+ */
 class MHASelectFunction : public SnippetsFunctionBase {
 public:
     explicit MHASelectFunction(const std::vector<PartialShape>& inputShapes) : SnippetsFunctionBase(inputShapes) {
@@ -51,8 +104,19 @@ protected:
     std::shared_ptr<ov::Model> initOriginal() const override;
 };
 
-// TODO: Write Graph
-// MHA pattern without Transpose ops on inputs and without Add after MatMul0
+/* Graph:
+ *             Constant
+ *        \      /
+ *        Multiply
+ *    \     /
+ *    MatMul0
+ *       |
+ *    Softmax
+ *        \      /
+ *         MatMul1
+ *           |
+ *       Transpose3[0,2,1,3]
+ */
 class MHAWOTransposeOnInputsFunction : public SnippetsFunctionBase {
 public:
     explicit MHAWOTransposeOnInputsFunction(const std::vector<PartialShape>& inputShapes) : SnippetsFunctionBase(inputShapes) {

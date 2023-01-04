@@ -369,7 +369,7 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
                 target_input.replace_source_output(subgraph->output(i));
             }
         }
-        op::Subgraph::update_out_tensor_name(subgraph);
+        op::update_out_tensor_name(subgraph);
 
         subgraph->validate_and_infer_types();
 

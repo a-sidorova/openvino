@@ -43,10 +43,8 @@ ngraph::snippets::pass::ExplicitTransposeMatMulInputs::ExplicitTransposeMatMulIn
                 // We can set supported order and transposed_b(false) only if ops have scalar shapes to avoid shape mismatching
                 const auto parent_count = parent1->inputs().size();
                 bool are_weights_scalar = true;
-                if (parent_count > 1) {
-                    for (size_t j = 1; j < parent_count; ++j) {
-                        are_weights_scalar = are_weights_scalar && ngraph::shape_size(parent1->get_input_shape(j)) == 1;
-                    }
+                for (size_t j = 1; j < parent_count; ++j) {
+                    are_weights_scalar = are_weights_scalar && ngraph::shape_size(parent1->get_input_shape(j)) == 1;
                 }
                 if (!are_weights_scalar)
                     break;

@@ -659,9 +659,6 @@ static void TransformationUpToCPUSpecificOpSet(std::shared_ptr<ngraph::Function>
                         if (!dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core))
                             return true;
                         const auto pshape = n->get_output_partial_shape(0);
-                        // Need to add support of non 4D tensors
-                        if (pshape.is_dynamic() || pshape.size() != 4)
-                            return true;
                         const auto shape = pshape.get_shape();
                         const auto parallel_work_amount =
                                 std::accumulate(shape.rbegin() + 2, shape.rend(), 1, std::multiplies<size_t>());
@@ -670,11 +667,14 @@ static void TransformationUpToCPUSpecificOpSet(std::shared_ptr<ngraph::Function>
                         // Heuristic values:
                         //    parallelism work amount - not enough work amount for parallelism
                         //    kernel work amount - large shape for kernel execution, not cache-local
+                        // TODO: The heuristics will be removed after
+                        //       - loop blocking support on code generation level
+                        //       - parallelism support on JIT level
                         const auto needed_num_of_threads = 12lu;
-                        const auto needed_cache_size = dnnl::utils::get_cache_size(2, true);
+                        const auto l2_cache_size = dnnl::utils::get_cache_size(2, true);
                         const auto is_unsupported_parallel_work_amount = IMPLICATION(parallel_get_num_threads() / 2 > parallel_work_amount,
                                                                                      parallel_work_amount < needed_num_of_threads);
-                        const auto is_unsupported_kernel_work_amount = kernel_buffer_size > needed_cache_size;
+                        const auto is_unsupported_kernel_work_amount = kernel_buffer_size > l2_cache_size;
                         return is_unsupported_parallel_work_amount || is_unsupported_kernel_work_amount;
                     });
         }

@@ -125,9 +125,6 @@ public:
     // should have explicit Constants even if they're non-scalar (Reshape, Transpose, Broadcast)
     // This check returns True if Constant op which is input of this op should be inside Subgraph body
     static auto constant_input_should_be_inside_body(const std::shared_ptr<ov::Node>& node) -> bool;
-    // Need to update tensor name manually, since intel_cpu::Graph::Replicate() looks at input.get_tensor().get_name();
-    // If subgraph->get_output_size() == 1, then the name will be restored correctly from the node name
-    static auto update_out_tensor_name(const std::shared_ptr<ngraph::snippets::op::Subgraph>& subgraph) -> void;
 
 private:
     void align_element_types(const BlockedShapeVector& outputShapes, const BlockedShapeVector& inputShapes);
@@ -195,6 +192,24 @@ static inline auto build_subgraph(const std::shared_ptr<ngraph::Node>& node, con
     subgraph->set_friendly_name(name.empty() ? node->get_friendly_name() : name);
     return subgraph;
 };
+
+// Need to update tensor name manually, since intel_cpu::Graph::Replicate() looks at input.get_tensor().get_name();
+// If subgraph->get_output_size() == 1, then the name will be restored correctly from the node name
+auto inline update_out_tensor_name(const std::shared_ptr<ngraph::snippets::op::Subgraph>& subgraph) -> void {
+    bool not_set = true;
+    for (unsigned int i = 0; i < subgraph->get_output_size() && not_set; i++) {
+        for (const auto &in : subgraph->get_output_target_inputs(i)) {
+            if (ov::is_type<ov::op::v0::Result>(in.get_node())) {
+                const auto& body_result = subgraph->get_body()->get_output_op(i);
+                const auto& body_result_input = body_result->get_input_source_output(0);
+                ngraph::snippets::op::Subgraph::fill_empty_output_names(
+                        subgraph->output(i), body_result_input);
+                not_set = false;
+                break;
+            }
+        }
+    }
+}
 
 }  // namespace op
 }  // namespace snippets
