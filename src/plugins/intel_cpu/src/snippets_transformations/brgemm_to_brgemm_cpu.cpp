@@ -70,8 +70,8 @@ pass::BrgemmToBrgemmCPU::BrgemmToBrgemmCPU() {
             if (with_amx || with_comp) {
                 std::shared_ptr<ngraph::snippets::op::Buffer> scratch = nullptr;
                 if (with_amx) {
-                    const auto scratch_size = std::make_shared<ov::op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector<int32_t>{4 * 1024});
-                    scratch = std::make_shared<ngraph::snippets::op::AllocationBuffer>(scratch_size, ov::element::i32);
+                    const auto scratch_size = std::make_shared<ov::op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector<int32_t>{32 * 1024});
+                    scratch = std::make_shared<ngraph::snippets::op::AllocationBuffer>(scratch_size, ov::element::u8);
                 } else if (with_comp) {
                     scratch = std::make_shared<ngraph::snippets::op::IntermediateBuffer>(brgemmRepackIn1->output(1));
                 }

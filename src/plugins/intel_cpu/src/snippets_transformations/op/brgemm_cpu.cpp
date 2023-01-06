@@ -7,7 +7,6 @@
 #include "ngraph/runtime/host_tensor.hpp"
 #include "openvino/core/rt_info.hpp"
 #include "snippets/utils.hpp"
-#include "matmul_shape_inference.hpp"
 #include "utils/general_utils.h"
 
 
@@ -85,8 +84,8 @@ void BrgemmCPU::validate_and_infer_types() {
             NGRAPH_CHECK(expected_shape == shape.get_shape() && expected_type == type,
                          "BRGEMM Scratch with compensations must have shape {rnd_up(N, N_blk)} and FP32 element type");
         } else {
-            NGRAPH_CHECK(ngraph::shape_size(shape.get_shape()) == 4 * 1024 && type == element::i32,
-                         "BRGEMM Scratch for space workplace must be static, have F32 element type and 1024 shape size");
+            NGRAPH_CHECK(ngraph::shape_size(shape.get_shape()) == 32 * 1024 && type == element::u8,
+                         "BRGEMM Scratch for space workplace must be static, have U8 element type and 32x1024 shape size");
         }
     }
 }

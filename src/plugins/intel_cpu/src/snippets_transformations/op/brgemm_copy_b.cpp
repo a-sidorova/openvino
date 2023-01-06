@@ -47,7 +47,6 @@ void intel_cpu::BrgemmCopyB::validate_and_infer_types() {
         if (m_with_comp) {
             set_output_type(1, ov::element::f32, ov::PartialShape{ov::Dimension::dynamic()});
         }
-
         return;
     }
 

@@ -941,8 +941,35 @@ void BrgemmEmitter::emit_brgemm_kernel_call(const brgemm_kernel_t *brg_kernel, c
                                             const brgemm_batch_element_t *batch, Reg64 addr_C,
                                             const size_t in0_kernel_offset, const size_t in1_kernel_offset,
                                             const size_t in2_kernel_offset, const size_t out0_kernel_offset) const {
-    if (ctx.is_with_amx)
-        amx_tile_configure(ctx.palette);
+    if (ctx.is_with_amx) {
+        size_t gpr_size = 8;
+        Xbyak::Operand gprs_to_save[] = {h->r8, h->r9, h->r10, h->r11, h->rax,
+                                         h->rcx, h->rdx, h->rdi, h->rsi, h->rbp, h->rbx};
+        size_t n_gprs_to_save = sizeof(gprs_to_save) / sizeof(gprs_to_save[0]);
+
+        h->sub(h->rsp, n_gprs_to_save * gpr_size);
+        for (size_t i = 0; i < n_gprs_to_save; ++i)
+            h->mov(h->ptr[h->rsp + i * gpr_size], gprs_to_save[i]);
+
+        // save function address in gpr to pass in call instruction
+        const auto& overload = static_cast<status_t(*)(const char*)>(amx_tile_configure);
+        h->mov(h->rbp, reinterpret_cast<uintptr_t>(overload));
+        h->mov(abi_param1, reinterpret_cast<uintptr_t>(ctx.palette));
+
+        // align stack on 16-byte as ABI requires
+        // note that RBX must not be changed by the callee
+        h->mov(h->rbx, h->rsp);
+        h->and_(h->rbx, 0xf);
+        h->sub(h->rsp, h->rbx);
+
+        h->call(h->rbp);
+
+        h->add(h->rsp, h->rbx);
+        // restore gpr registers
+        for (int i = n_gprs_to_save - 1; i >= 0; --i)
+            h->mov(gprs_to_save[i], h->ptr[h->rsp + i * gpr_size]);
+        h->add(h->rsp, n_gprs_to_save * gpr_size);
+    }
 
     size_t gpr_size = 8;
     Xbyak::Operand gprs_to_save[] = {h->r8, h->r9, h->r10, h->r11, h->rax,
@@ -1123,7 +1150,7 @@ BrgemmCopyBEmitter::BrgemmCopyBEmitter(dnnl::impl::cpu::x64::jit_generator* h, d
 
     const auto dt_in0 = static_cast<dnnl_data_type_t>(DnnlExtensionUtils::IEPrecisionToDataType(InferenceEngine::details::convertPrecision(brgemm_prc_in0)));
     const auto dt_in1 = static_cast<dnnl_data_type_t>(DnnlExtensionUtils::IEPrecisionToDataType(InferenceEngine::details::convertPrecision(brgemm_prc_in1)));
-    init_brgemm_copy(kernel, leading_dimension, N_blk, N_tail, LDB, (K_tail == 0 ? K : K_tail), use_amx, dt_in0, dt_in1);
+    init_brgemm_copy(kernel, leading_dimension, N_blk, N_tail, LDB, K - K_tail, use_amx, dt_in0, dt_in1);
 }
 
 void BrgemmCopyBEmitter::init_brgemm_copy(std::unique_ptr<matmul::jit_brgemm_matmul_copy_b_t>& kernel,
