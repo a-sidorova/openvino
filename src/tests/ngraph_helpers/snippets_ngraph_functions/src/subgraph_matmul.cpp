@@ -16,7 +16,7 @@ std::shared_ptr<ov::Model> MatMulFunction::initOriginal() const {
     auto data0 = std::make_shared<op::v0::Parameter>(precisions[0], input_shapes[0]);
     auto data1 = std::make_shared<op::v0::Parameter>(precisions[1], input_shapes[1]);
     std::shared_ptr<Node> matmul;
-    if (precisions[1] == ov::element::i8) {
+    if (precisions[1] != ov::element::f32) {
         matmul = std::make_shared<op::TypeRelaxed<op::v0::MatMul>>(
                 std::vector<element::Type>{element::f32, element::f32},
                 std::vector<element::Type>{ element::f32 },
@@ -33,7 +33,7 @@ std::shared_ptr<ov::Model> MatMulFunction::initReference() const {
     auto indata0 = std::make_shared<op::v0::Parameter>(precisions[0], data0->get_output_partial_shape(0));
     auto indata1 = std::make_shared<op::v0::Parameter>(precisions[1], data1->get_output_partial_shape(0));
     std::shared_ptr<Node> matmul;
-    if (precisions[1] == ov::element::i8) {
+    if (precisions[1] != ov::element::f32) {
         matmul = std::make_shared<op::TypeRelaxed<op::v0::MatMul>>(
                 std::vector<element::Type>{element::f32, element::f32},
                 std::vector<element::Type>{ element::f32 },
@@ -79,7 +79,7 @@ std::shared_ptr<ov::Model> MatMulBiasFunction::initOriginal() const {
     auto data1 = std::make_shared<op::v0::Parameter>(precision, input_shapes[1]);
     auto data2 = std::make_shared<op::v0::Parameter>(precision, input_shapes[2]);
     std::shared_ptr<Node> matmul;
-    if (precisions[1] == ov::element::i8) {
+    if (precisions[1] != ov::element::f32) {
         matmul = std::make_shared<op::TypeRelaxed<op::v0::MatMul>>(
                 std::vector<element::Type>{element::f32, element::f32},
                 std::vector<element::Type>{ element::f32 },
@@ -99,7 +99,7 @@ std::shared_ptr<ov::Model> Transpose0213MatMulFunction::initOriginal() const {
     switch (transpose_position) {
         case 0: {
             auto transpose = std::make_shared<op::v1::Transpose>(data0, const_order);
-            if (precisions[1] == ov::element::i8) {
+            if (precisions[1] != ov::element::f32) {
                 result = std::make_shared<op::TypeRelaxed<op::v0::MatMul>>(
                          std::vector<element::Type>{element::f32, element::f32},
                          std::vector<element::Type>{ element::f32 },
@@ -111,7 +111,7 @@ std::shared_ptr<ov::Model> Transpose0213MatMulFunction::initOriginal() const {
             break;
         } case 1: {
             auto transpose = std::make_shared<op::v1::Transpose>(data1, const_order);
-            if (precisions[1] == ov::element::i8) {
+            if (precisions[1] != ov::element::f32) {
                 result = std::make_shared<op::TypeRelaxed<op::v0::MatMul>>(
                          std::vector<element::Type>{element::f32, element::f32},
                          std::vector<element::Type>{ element::f32 },
@@ -123,7 +123,7 @@ std::shared_ptr<ov::Model> Transpose0213MatMulFunction::initOriginal() const {
             break;
         } case 2: {
             std::shared_ptr<ov::Node> matmul;
-            if (precisions[1] == ov::element::i8) {
+            if (precisions[1] != ov::element::f32) {
                 matmul = std::make_shared<op::TypeRelaxed<op::v0::MatMul>>(
                          std::vector<element::Type>{element::f32, element::f32},
                          std::vector<element::Type>{ element::f32 },
