@@ -65,12 +65,17 @@ pass::BrgemmToBrgemmCPU::BrgemmToBrgemmCPU() {
         } else {
             const auto layoutIn1 = ngraph::snippets::utils::get_node_output_layout(brgemm->input_value(1).get_node_shared_ptr());
             const auto brgemmRepackIn1 = std::make_shared<BrgemmCopyB>(brgemm->input_value(1), element_type_a, with_comp, offset_b);
-            const auto buffer = std::make_shared<ngraph::snippets::op::Buffer>(brgemmRepackIn1->output(0));
-            const auto scratch = with_amx ? std::make_shared<ngraph::snippets::op::Buffer>(ov::Shape{4 * 1024}, ov::element::i32) :
-                                 with_comp ? std::make_shared<ngraph::snippets::op::Buffer>(brgemmRepackIn1->output(1)) :
-                                         nullptr;
+            const auto buffer = std::make_shared<ngraph::snippets::op::IntermediateBuffer>(brgemmRepackIn1->output(0));
 
             if (with_amx || with_comp) {
+                std::shared_ptr<ngraph::snippets::op::Buffer> scratch = nullptr;
+                if (with_amx) {
+                    const auto scratch_size = std::make_shared<ov::op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector<int32_t>{4 * 1024});
+                    scratch = std::make_shared<ngraph::snippets::op::AllocationBuffer>(scratch_size, ov::element::i32);
+                } else if (with_comp) {
+                    scratch = std::make_shared<ngraph::snippets::op::IntermediateBuffer>(brgemmRepackIn1->output(1));
+                }
+
                 brgemm_cpu = std::make_shared<BrgemmCPU>(brgemm->input_value(0), buffer, scratch,
                                                          brgemm->transposed_a(), brgemm->transposed_b(), with_comp,
                                                          offset_a, offset_b, offset_c);

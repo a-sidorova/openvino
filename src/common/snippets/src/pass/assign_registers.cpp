@@ -38,10 +38,12 @@ bool ngraph::snippets::pass::AssignRegisters::run_on_model(const std::shared_ptr
             // here we use the fact that Result input & output tensors are identical by construction
             manually_assigned_gprs[op->output(0).get_tensor_ptr()] =
                     static_cast<Reg>(f->get_result_index(result) + num_parameters);
-        } else if (const auto& buffer = ov::as_type_ptr<op::Buffer>(op)) {
+        } else if (ov::is_type<op::Buffer>(op)) {
             // All buffers have one common data pointer
-            manually_assigned_gprs[op->input(0).get_tensor_ptr()] =
-                    static_cast<Reg>(num_results + num_parameters);
+            if (ov::is_type<op::IntermediateBuffer>(op)) {
+                manually_assigned_gprs[op->input(0).get_tensor_ptr()] =
+                        static_cast<Reg>(num_results + num_parameters);
+            }
             manually_assigned_gprs[op->output(0).get_tensor_ptr()] =
                     static_cast<Reg>(num_results + num_parameters);
         } else if (ov::is_type<op::HorizonMax>(op) || ov::is_type<op::HorizonSum>(op)) {

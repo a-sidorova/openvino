@@ -35,6 +35,10 @@ void set_output_layout(const ov::Output<Node>& port, const std::vector<size_t>& 
 inline ov::Dimension get_inner_dim(const ov::PartialShape &shape) { return *(shape.rbegin()); }
 inline ov::Dimension get_outer_dim(const ov::PartialShape &shape) { return *(shape.rbegin() + 1); }
 
+inline auto normalize_rank(int32_t allocation_rank, const size_t shape_rank) -> int32_t {
+    return allocation_rank < 0 ? allocation_rank + shape_rank + 1 : allocation_rank;
+}
+
 template <typename T, typename P>
 constexpr bool one_of(T val, P item) { return val == item; }
 

@@ -113,7 +113,7 @@ std::shared_ptr<Node> BrgemmCPU::clone_with_new_inputs(const OutputVector& new_a
 }
 
 std::shared_ptr<BrgemmCopyB> BrgemmCPU::get_brgemm_copy() const {
-    if (const auto buffer = ov::as_type_ptr<ngraph::snippets::op::Buffer>(get_input_node_shared_ptr(1))) {
+    if (const auto buffer = ov::as_type_ptr<ngraph::snippets::op::IntermediateBuffer>(get_input_node_shared_ptr(1))) {
         return ov::as_type_ptr<BrgemmCopyB>(buffer->get_input_node_shared_ptr(0));
     }
     return nullptr;

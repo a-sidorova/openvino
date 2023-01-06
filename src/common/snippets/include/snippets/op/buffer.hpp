@@ -13,6 +13,7 @@ namespace op {
 /**
  * @interface Buffer
  * @brief The operation is for intermediate data storage
+ * TODO
  *        - m_allocation_rank - rank of shape for memory allocation: shape[shape_rank - normalize(m_allocation_rank) : shape_rank].
  *                 It's needed to allocate needed memory size that depends on Tile rank, for example.
  *                 Default value is -1 (full shape)
@@ -30,24 +31,58 @@ public:
     OPENVINO_OP("Buffer", "SnippetsOpset");
     BWDCMP_RTTI_DECLARATION;
 
-    Buffer(const Output<Node>& x, const int32_t allocation_rank = -1);
-    Buffer(const ov::Shape shape, const ov::element::Type element_type, int32_t allocation_rank = -1);
-    Buffer() = default;
-
-    int32_t get_allocation_rank() const { return m_allocation_rank; }
-    void set_allocation_rank(int32_t rank) { m_allocation_rank = rank; }
-
     size_t get_byte_size() const;
+    virtual ov::PartialShape get_allocation_shape() const = 0;
+
+protected:
+    Buffer() = default;
+};
+
+/**
+ * @interface AllocationBuffer
+ * @brief The operation is for allocation new empty memory
+ * TODO
+ * @ingroup snippets
+ */
+class AllocationBuffer : public Buffer {
+public:
+    OPENVINO_OP("AllocationBuffer", "SnippetsOpset", Buffer);
+    BWDCMP_RTTI_DECLARATION;
+
+    AllocationBuffer(const ov::Output<ov::Node>& shape, const ov::element::Type element_type);
+
+    ov::PartialShape get_allocation_shape() const override;
 
     bool visit_attributes(AttributeVisitor& visitor) override;
     std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& new_args) const override;
     void validate_and_infer_types() override;
 
-private:
-    int32_t m_allocation_rank = -1;
-    ov::Shape m_static_shape;
+protected:
     ov::element::Type m_element_type;
-    bool m_is_single = false;
+};
+
+/**
+ * @interface IntermediateBuffer
+ * @brief The operation is for intermediate data storage
+ * TODO
+ * @ingroup snippets
+ */
+class IntermediateBuffer : public Buffer {
+public:
+    OPENVINO_OP("IntermediateBuffer", "SnippetsOpset", Buffer);
+    BWDCMP_RTTI_DECLARATION;
+
+    IntermediateBuffer(const ov::Output<ov::Node>& x);
+    IntermediateBuffer(const ov::Output<ov::Node>& x, const ov::Output<ov::Node>& shape);
+
+    ov::PartialShape get_allocation_shape() const override;
+
+    bool visit_attributes(AttributeVisitor& visitor) override { return true; }
+    std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& new_args) const override;
+    void validate_and_infer_types() override;
+
+    static std::shared_ptr<ov::Node> create_shape_constant(const ov::PartialShape& shape, size_t allocation_rank);
+    static std::shared_ptr<ov::Node> create_shape_constant(const ov::PartialShape& shape);
 };
 
 } // namespace op
