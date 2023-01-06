@@ -12,14 +12,16 @@ namespace snippets {
 
 
 namespace {
-static inline std::vector<std::vector<element::Type>> precisions() {
+static inline std::vector<std::vector<element::Type>> precisions(bool only_fp32 = true) {
     std::vector<std::vector<element::Type>> prc = {
             {element::f32, element::f32},
-            {element::i8, element::i8},
-            {element::u8, element::i8}
     };
-    if (InferenceEngine::with_cpu_x86_bfloat16() || InferenceEngine::with_cpu_x86_avx512_core_amx_bf16()) {
-        prc.emplace_back(std::vector<element::Type>{element::bf16, element::bf16});
+    if (!only_fp32) {
+        prc.emplace_back(std::vector<element::Type>{element::i8, element::i8});
+        prc.emplace_back(std::vector<element::Type>{element::u8, element::i8});
+        if (InferenceEngine::with_cpu_x86_bfloat16() || InferenceEngine::with_cpu_x86_avx512_core_amx_bf16()) {
+            prc.emplace_back(std::vector<element::Type>{element::bf16, element::bf16});
+        }
     }
     return prc;
 }
@@ -31,7 +33,7 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MatMult, TransposeMatMul,
                          ::testing::Combine(
                                  ::testing::ValuesIn(transpose_input_shapes),
                                  ::testing::Values(0), // Transpose on 0th Matmul input
-                                 ::testing::ValuesIn(precisions()),
+                                 ::testing::ValuesIn(precisions(false)),
                                  ::testing::Values(1), // MatMul
                                  ::testing::Values(1), // Tokenized MatMul + FusedTranspose
                                  ::testing::Values(CommonTestUtils::DEVICE_CPU)),
@@ -57,7 +59,7 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MatMult, TransposeMatMul,
                          ::testing::Combine(
                                  ::testing::ValuesIn(transpose_input_shapes),
                                  ::testing::Values(1), // Transpose on 1st Matmul input
-                                 ::testing::ValuesIn(precisions()),
+                                 ::testing::ValuesIn(precisions(false)),
                                  ::testing::Values(1), // MatMul
                                  ::testing::Values(1), // Tokenized MatMul + FusedTranspose
                                  ::testing::Values(CommonTestUtils::DEVICE_CPU)),
@@ -67,7 +69,7 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_TransposeMatMulFQ, TransposeMatMulFQ,
                          ::testing::Combine(
                                  ::testing::ValuesIn(transpose_input_shapes),
                                  ::testing::Values(1), // Transpose on 1st Matmul input
-                                 ::testing::Values(std::vector<element::Type>{ov::element::f32}),
+                                 ::testing::ValuesIn(precisions()),
                                  ::testing::Values(1), // MatMul
                                  ::testing::Values(1), // Tokenized MatMul + FusedTranspose
                                  ::testing::Values(CommonTestUtils::DEVICE_CPU)),
@@ -83,7 +85,7 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MatMult, TransposeMatMul,
                          ::testing::Combine(
                                  ::testing::ValuesIn(transpose_input_shapes),
                                  ::testing::Values(2), // Transpose on Matmul output
-                                 ::testing::Values(std::vector<element::Type>{ov::element::f32, ov::element::f32}),
+                                 ::testing::ValuesIn(precisions()),
                                  ::testing::Values(1), // MatMul
                                  ::testing::Values(1), // Tokenized MatMul + FusedTranspose
                                  ::testing::Values(CommonTestUtils::DEVICE_CPU)),
