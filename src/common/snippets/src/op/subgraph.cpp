@@ -544,8 +544,6 @@ void snippets::op::Subgraph::convert_to_snippet_dialect() {
                                                     [](const shared_ptr<ngraph::op::Parameter>& p){
                                                         return p->get_partial_shape().rbegin()->is_dynamic();
                                                     });
-    ov::pass::Serialize("/home/a-sidorova/projects/mha_matmul/openvino/graphs/body.xml",
-                        "/home/a-sidorova/projects/mha_matmul/openvino/graphs/body.bin").run_on_model(m_body);
     ngraph::pass::Manager manager;
     if (config.m_has_domain_sensitive_ops) {
         manager.register_pass<snippets::pass::MatMulToBrgemm>();
@@ -628,17 +626,12 @@ snippets::Schedule snippets::op::Subgraph::generate(ngraph::pass::Manager& opt, 
     NGRAPH_CHECK(m_generator != nullptr, "generate is called while generator is not set");
 
     convert_to_snippet_dialect();
-    ov::pass::Serialize("s.xml", "s.bin").run_on_model(m_body);
     opt.run_passes(m_body);
-    ov::pass::Serialize("cpu.xml", "cpu.bin").run_on_model(m_body);
 
     // After all passes, when all optimizations are completed and all MemoryAccess ops are inserted,
     // we can calculate common buffer scratchpad size and propagate offset from Buffer to the corresponding MemoryAccess ops
     if (config.m_has_domain_sensitive_ops)
         initialize_buffer_scratchpad_size();
-
-    ov::pass::Serialize("/home/a-sidorova/projects/mha_matmul/openvino/graphs/gen.xml",
-                        "/home/a-sidorova/projects/mha_matmul/openvino/graphs/gen.bin").run_on_model(m_body);
 
     snippets::pass::AssignRegisters(m_generator->get_target_machine()).run_on_model(m_body);
 
