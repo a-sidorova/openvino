@@ -50,7 +50,7 @@ ov::intel_cpu::CPUTargetMachine::CPUTargetMachine(dnnl::impl::cpu::x64::cpu_isa_
     jitters[ngraph::snippets::op::AllocationBuffer::get_type_info_static()] = CREATE_EMITTER(NopEmitter);
     jitters[ngraph::snippets::op::IntermediateBuffer::get_type_info_static()] = CREATE_EMITTER(NopEmitter);
     jitters[ngraph::snippets::op::VectorBuffer::get_type_info_static()] = CREATE_EMITTER(VectorBufferEmitter);
-    // jitters[ngraph::opset1::Constant::get_type_info_static()] = CREATE_EMITTER(); // Not supported
+    jitters[ngraph::opset1::Constant::get_type_info_static()] = CREATE_EMITTER(NopEmitter); // Not supported
 
     jitters[ngraph::snippets::op::Load::get_type_info_static()] = CREATE_EMITTER(LoadEmitter);
     jitters[ngraph::snippets::op::LoadReshape::get_type_info_static()] = CREATE_EMITTER(LoadEmitter);

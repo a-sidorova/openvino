@@ -9,6 +9,14 @@
 
 namespace {
 static constexpr size_t reg_count = 16lu;
+
+auto filter_ops(const std::shared_ptr<ov::Node>& op) -> bool {
+    if (ov::is_type<ngraph::op::v0::Constant>(op) &&
+        ov::is_type<ngraph::snippets::op::Buffer>(op->get_output_target_inputs(0).begin()->get_node()))
+        return false;
+    return true;
+}
+
 }  // namespace
 
 bool ngraph::snippets::pass::AssignRegisters::run_on_model(const std::shared_ptr<ov::Model>& f) {
@@ -19,8 +27,12 @@ bool ngraph::snippets::pass::AssignRegisters::run_on_model(const std::shared_ptr
     auto ops = f->get_ordered_ops();
 
     std::vector<std::pair<TargetMachine::opRegType, std::shared_ptr<Node>>> typed_ops;
-    for (const auto& op : ops)
-        typed_ops.emplace_back(std::make_pair(m_target_machine->get_op_reg_type(op), op));
+    for (const auto& op : ops) {
+        if (filter_ops(op)) {
+            typed_ops.emplace_back(std::make_pair(m_target_machine->get_op_reg_type(op), op));
+        }
+    }
+
     size_t counter_vec = 0;
     size_t counter_gpr = 0;
     std::map<tensor, Reg> regs_vec, regs_gpr;
@@ -120,8 +132,12 @@ bool ngraph::snippets::pass::AssignRegisters::run_on_model(const std::shared_ptr
     for (size_t i = 0; i < typed_ops.size(); i++) {
         const auto& t_op = typed_ops[i];
         std::vector<tensor> used_tensors, defined_tensors;
-        for (const auto& in : t_op.second->inputs())
+        for (const auto& in : t_op.second->inputs()) {
+            if (ov::is_type<snippets::op::Buffer>(t_op.second) &&
+                ov::is_type<opset1::Constant>(t_op.second->get_input_node_shared_ptr(in.get_index())))
+                continue;
             used_tensors.push_back(in.get_tensor_ptr());
+        }
         for (const auto& out : t_op.second->outputs())
             defined_tensors.push_back(out.get_tensor_ptr());
         switch (t_op.first) {

@@ -441,8 +441,8 @@ void snippets::op::Subgraph::initialize_buffer_scratchpad_size() {
 
         // Propagate to up: in Store. Buffer can have only one Store
         {
-            if (buffer->get_input_size() > 0) {
-                auto parent = buffer->get_input_node_shared_ptr(0);
+            auto parent = buffer->get_input_node_shared_ptr(0);
+            if (!ov::is_type<ngraph::op::v0::Constant>(parent)) {
                 auto idx = buffer->input(0).get_source_output().get_index();
                 while (ov::is_type<snippets::op::LoopBase>(parent)) {
                     const auto source_output = parent->input_value(idx);
@@ -491,13 +491,6 @@ void snippets::op::Subgraph::initialize_buffer_scratchpad_size() {
     for (const auto& op : ops) {
         if (const auto buffer = ov::as_type_ptr<ngraph::snippets::op::Buffer>(op)) {
             const auto buffer_size = buffer->get_byte_size();
-            if (ov::is_type<op::IntermediateBuffer>(op)) {
-                if (op->get_input_size() == 2) {
-                    op->set_arguments({op->get_input_source_output(0)});
-                }
-            } else if (ov::is_type<op::AllocationBuffer>(op)) {
-                op->set_arguments(ov::OutputVector{});
-            }
             // We need to allocate memory for first buffer at least
             if (m_buffer_scratchpad == 0) {
                 m_buffer_scratchpad += buffer_size;
