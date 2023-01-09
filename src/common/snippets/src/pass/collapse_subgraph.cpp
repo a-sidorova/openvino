@@ -6,6 +6,7 @@
 #include <snippets/itt.hpp>
 
 #include "snippets/pass/collapse_subgraph.hpp"
+#include "snippets/pass/tokenization.hpp"
 #include "snippets/pass/transpose_decomposition.hpp"
 #include "snippets/pass/fuse_transpose_brgemm.hpp"
 #include "snippets/op/subgraph.hpp"
@@ -21,7 +22,6 @@
 #include <memory>
 #include <vector>
 #include <cassert>
-#include <queue>
 #include <string>
 #include <numeric>
 #include <climits>
@@ -206,50 +206,12 @@ auto get_num_result_children(const std::shared_ptr<const Node> &node) -> size_t 
 }
 } // namespace
 
-bool AppropriateForSubgraph(const std::shared_ptr<const Node> &node) {
-    return is_supported_op(node) && has_supported_in_out(node);
-}
-
-void SetSnippetsNodeType(const std::shared_ptr<Node> &node, SnippetsNodeType nodeType) {
-    auto &rt = node->get_rt_info();
-    rt["SnippetsNodeType"] = nodeType;
-}
-
-SnippetsNodeType GetSnippetsNodeType(const std::shared_ptr<const Node> &node) {
-    OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::GetSnippetsNodeType")
-    auto &rt = node->get_rt_info();
-    const auto rinfo = rt.find("SnippetsNodeType");
-    if (rinfo == rt.end())
-        return SnippetsNodeType::NotSet;
-    return rinfo->second.as<SnippetsNodeType>();
-}
-
-void SetTopologicalOrder(const std::shared_ptr<Node> &node, int64_t order) {
-    OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::SetTopologicalOrder")
-    auto &rt = node->get_rt_info();
-    rt["TopologicalOrder"] = order;
-}
-
-int64_t GetTopologicalOrder(const std::shared_ptr<const Node> &node) {
-    auto &rt = node->get_rt_info();
-    const auto rinfo = rt.find("TopologicalOrder");
-    if (rinfo == rt.end())
-        throw ngraph_error("Topological order is required, but not set.");
-    return rinfo->second.as<int64_t>();
-}
-
-bool EnumerateNodes::run_on_model(const std::shared_ptr<ov::Model> &m) {
-    OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::EnumerateNodes")
-    int64_t order = 0;
-    // Todo: We don't really have to set order for every node, just for subgraph parents and children would be enough
-    for (auto &node : m->get_ordered_ops()) {
-        SetTopologicalOrder(node, order++);
-    }
-    return true;
-}
-
 const std::set<ngraph::element::Type> ngraph::snippets::pass::TokenizeSnippets::supported_element_types =
         { ngraph::element::f32, ngraph::element::bf16, ngraph::element::i8, ngraph::element::u8 };
+
+bool TokenizeSnippets::AppropriateForSubgraph(const std::shared_ptr<const Node> &node) {
+    return is_supported_op(node) && has_supported_in_out(node);
+}
 
 TokenizeSnippets::TokenizeSnippets() {
     MATCHER_SCOPE(TokenizeSnippets);

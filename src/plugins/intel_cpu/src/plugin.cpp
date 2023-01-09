@@ -97,9 +97,8 @@
 #include "ngraph_transformations/move_eltwise_up_data_movement.hpp"
 #include "ngraph_transformations/swap_convert_transpose.hpp"
 
-#include <snippets/pass/collapse_subgraph.hpp>
+#include <snippets/pass/tokenization.hpp>
 #include <snippets/pass/common_optimizations.hpp>
-#include <snippets/pass/mha_tokenization.hpp>
 
 #include <ngraph/opsets/opset1.hpp>
 #include <ngraph/opsets/opset2.hpp>
@@ -650,10 +649,14 @@ static void TransformationUpToCPUSpecificOpSet(std::shared_ptr<ngraph::Function>
         ngraph::pass::Manager snippetsManager;
         if (_snippetsMode != Config::SnippetsMode::IgnoreCallback)
             snippetsManager.register_pass<SnippetsMarkSkipped>();
-        snippetsManager.register_pass<ngraph::snippets::pass::EnumerateNodes>();
-        if (!_enableBF16) {
+        snippetsManager.register_pass<ngraph::snippets::pass::SnippetsTokenization>();
+
+        if (_enableBF16) {
             // TODO: Need to add BF16 support for MHA in Snippets
-            snippetsManager.register_pass<ngraph::snippets::pass::TokenizeMHASnippets>();
+            const auto snippetsConfig = snippetsManager.get_pass_config();
+            snippetsConfig->disable<ngraph::snippets::pass::TokenizeMHASnippets>();
+        }
+        if (_snippetsMode != Config::SnippetsMode::IgnoreCallback) {
             snippetsManager.get_pass_config()->set_callback<ngraph::snippets::pass::TokenizeMHASnippets>(
                     [](const std::shared_ptr<const ov::Node>& n) -> bool {
                         if (!dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core))
@@ -663,7 +666,8 @@ static void TransformationUpToCPUSpecificOpSet(std::shared_ptr<ngraph::Function>
                         const auto parallel_work_amount =
                                 std::accumulate(shape.rbegin() + 2, shape.rend(), 1, std::multiplies<size_t>());
                         const auto kernel_buffer_size =
-                                std::accumulate(shape.rbegin(), shape.rbegin() + 2, 1, std::multiplies<size_t>()) * n->get_output_element_type(0).size();
+                                std::accumulate(shape.rbegin(), shape.rbegin() + 2, 1, std::multiplies<size_t>()) *
+                                n->get_output_element_type(0).size();
                         // Heuristic values:
                         //    parallelism work amount - not enough work amount for parallelism
                         //    kernel work amount - large shape for kernel execution, not cache-local
@@ -672,14 +676,12 @@ static void TransformationUpToCPUSpecificOpSet(std::shared_ptr<ngraph::Function>
                         //       - parallelism support on JIT level
                         const auto needed_num_of_threads = 12lu;
                         const auto l2_cache_size = dnnl::utils::get_cache_size(2, true);
-                        const auto is_unsupported_parallel_work_amount = IMPLICATION(parallel_get_num_threads() / 2 > parallel_work_amount,
-                                                                                     parallel_work_amount < needed_num_of_threads);
+                        const auto is_unsupported_parallel_work_amount = IMPLICATION(
+                                parallel_get_num_threads() / 2 > parallel_work_amount,
+                                parallel_work_amount < needed_num_of_threads);
                         const auto is_unsupported_kernel_work_amount = kernel_buffer_size > l2_cache_size;
                         return is_unsupported_parallel_work_amount || is_unsupported_kernel_work_amount;
                     });
-        }
-        snippetsManager.register_pass<ngraph::snippets::pass::TokenizeSnippets>();
-        if (_snippetsMode != Config::SnippetsMode::IgnoreCallback) {
             snippetsManager.get_pass_config()->set_callback<ngraph::snippets::pass::TokenizeSnippets>(
                     [](const std::shared_ptr<const ov::Node>& n) -> bool {
                         // CPU Plugin support Swish in Subgraph via conversion to SwichCPU which assumes second input to be constant
@@ -719,7 +721,6 @@ static void TransformationUpToCPUSpecificOpSet(std::shared_ptr<ngraph::Function>
                                is_disabled_tokenization;
                     });
         }
-        snippetsManager.register_pass<ngraph::snippets::pass::CommonOptimizations>();
         snippetsManager.run_passes(nGraphFunc);
     }
 

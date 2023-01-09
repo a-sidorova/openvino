@@ -5,7 +5,7 @@
 #include <snippets/itt.hpp>
 
 #include "snippets/pass/mha_tokenization.hpp"
-#include "snippets/pass/collapse_subgraph.hpp"
+#include "snippets/pass/tokenization.hpp"
 #include "snippets/op/subgraph.hpp"
 
 #include <ngraph/opsets/opset8.hpp>
@@ -24,7 +24,7 @@ auto is_supported_tensor(const ngraph::descriptor::Tensor& t) -> bool {
 
 // TODO: Add support of FQ, Reshape?
 auto is_supported_op(const std::shared_ptr<ngraph::Node>& node) -> bool {
-    return ngraph::snippets::pass::AppropriateForSubgraph(node) &&
+    return ngraph::snippets::pass::TokenizeSnippets::AppropriateForSubgraph(node) &&
            (ngraph::is_type<ngraph::op::util::UnaryElementwiseArithmetic>(node) ||
             ngraph::is_type<ngraph::op::util::BinaryElementwiseArithmetic>(node) ||
             ngraph::is_type<ngraph::op::v1::Select>(node));
