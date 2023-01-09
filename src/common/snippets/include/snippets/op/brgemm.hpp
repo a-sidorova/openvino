@@ -26,6 +26,10 @@ public:
     bool transposed_a() const { return m_transposed_a; }
     bool transposed_b() const { return m_transposed_b; }
 
+    size_t get_offset_a() const { return get_input_port_descriptor(0).m_offset; }
+    size_t get_offset_b() const { return get_input_port_descriptor(1).m_offset; }
+    size_t get_offset_c() const { return get_output_port_descriptor(0).m_offset; }
+
     bool visit_attributes(AttributeVisitor& visitor) override;
     void validate_and_infer_types() override;
     std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& new_args) const override;

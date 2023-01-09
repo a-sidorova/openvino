@@ -24,6 +24,8 @@ public:
     BroadcastLoad(const Output<Node>& x, ov::PartialShape output_shape, size_t offset = 0lu);
     BroadcastLoad() = default;
 
+    size_t get_offset() const { return get_input_port_descriptor(0).m_offset; }
+
     bool visit_attributes(AttributeVisitor& visitor) override;
     std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& new_args) const override;
     void validate_and_infer_types() override;

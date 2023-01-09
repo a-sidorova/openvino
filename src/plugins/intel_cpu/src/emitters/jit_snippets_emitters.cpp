@@ -548,9 +548,8 @@ StoreEmitter::StoreEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::c
         IE_THROW() << "StoreEmitter supports only equal input and output types but gets: " << src_prc.name() << " and " << dst_prc.name();
 
     const auto store = ov::as_type_ptr<ngraph::snippets::op::Store>(n);
-    const auto desc = store->get_output_port_descriptor(0);
-    count = desc.m_count;
-    byte_offset = desc.m_offset;
+    count = store->get_count();
+    byte_offset = store->get_offset();
     in_out_type_ = emitter_in_out_map::vec_to_gpr;
     store_emitter.reset(new jit_store_emitter(h, isa, src_prc, dst_prc, count));
 }
@@ -590,9 +589,8 @@ LoadEmitter::LoadEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu
         IE_THROW() << "LoadEmitter supports only equal input and output types but gets: " << src_prc.name() << " and " << dst_prc.name();
 
     const auto load = std::dynamic_pointer_cast<ngraph::snippets::op::Load>(n);
-    const auto desc = load->get_input_port_descriptor(0);
-    count = desc.m_count;
-    byte_offset = desc.m_offset;
+    count = load->get_count();
+    byte_offset = load->get_offset();
     in_out_type_ = emitter_in_out_map::gpr_to_vec;
     load_emitter.reset(new jit_load_emitter(h, isa, src_prc, dst_prc, count));
 }
@@ -632,8 +630,7 @@ BroadcastLoadEmitter::BroadcastLoadEmitter(dnnl::impl::cpu::x64::jit_generator* 
         IE_THROW() << "BroadcastEmitters support only equal input and output types but gets: " << src_prc.name() << " and " << dst_prc.name();
 
     const auto broadcast_load = std::dynamic_pointer_cast<ngraph::snippets::op::BroadcastLoad>(n);
-    const auto desc = broadcast_load->get_input_port_descriptor(0);
-    byte_offset = desc.m_offset;
+    byte_offset = broadcast_load->get_offset();
     in_out_type_ = emitter_in_out_map::gpr_to_vec;
 }
 
@@ -673,9 +670,8 @@ void BroadcastLoadEmitter::emit_isa(const std::vector<size_t> &in, const std::ve
 LoadConvertEmitter::LoadConvertEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa, const std::shared_ptr<ov::Node>& n)
     : MemoryEmitter(h, isa, n) {
     const auto load = ov::as_type_ptr<ngraph::snippets::op::Load>(n);
-    const auto desc = load->get_input_port_descriptor(0);
-    count = desc.m_count;
-    byte_offset = desc.m_offset;
+    count = load->get_count();
+    byte_offset = load->get_offset();
     in_out_type_ = emitter_in_out_map::gpr_to_vec;
     load_emitter.reset(new jit_load_emitter(h, isa, src_prc, dst_prc, count));
 }
@@ -710,9 +706,8 @@ void LoadConvertEmitter::emit_data() const {
 StoreConvertEmitter::StoreConvertEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa,
                                          const std::shared_ptr<ov::Node>& n) : MemoryEmitter(h, isa, n) {
     const auto store = ov::as_type_ptr<ngraph::snippets::op::Store>(n);
-    const auto desc = store->get_output_port_descriptor(0);
-    count = desc.m_count;
-    byte_offset = desc.m_offset;
+    count = store->get_count();
+    byte_offset = store->get_offset();
     in_out_type_ = emitter_in_out_map::vec_to_gpr;
 
     if (ov::is_type<ov::intel_cpu::StoreConvertTruncation>(n)) {
@@ -848,10 +843,11 @@ BrgemmEmitter::BrgemmEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl:
         }
     }
 
-    load_offset_a = brgemm_node->get_input_port_descriptor(0).m_offset;
-    load_offset_b = brgemm_node->get_input_port_descriptor(1).m_offset;
-    load_offset_scratch = brgemm_node->get_input_port_descriptor(2).m_offset;
-    store_offset_c = brgemm_node->get_output_port_descriptor(0).m_offset;
+    load_offset_a = brgemm_node->get_offset_a();
+    load_offset_b = brgemm_node->get_offset_b();
+    store_offset_c = brgemm_node->get_offset_c();
+    if (with_scratch)
+        load_offset_scratch = brgemm_node->get_offset_scratch();
 }
 
 void BrgemmEmitter::initBrgemm(brgemmCtx& ctx, std::unique_ptr<brgemm_kernel_t>& brgKernel, bool use_amx) const {
@@ -1110,10 +1106,10 @@ BrgemmCopyBEmitter::BrgemmCopyBEmitter(dnnl::impl::cpu::x64::jit_generator* h, d
     brgemm_prc_in1 = brgemm_repack->get_input_element_type(0);
     brgemmVNNIFactor = 4 / brgemm_prc_in0.size();
     with_comp = brgemm_repack->is_with_comp();
-    in_offset = brgemm_repack->get_input_port_descriptor(0).m_offset;
-    out_offset = brgemm_repack->get_output_port_descriptor(0).m_offset;
+    in_offset = brgemm_repack->get_offset_in();
+    out_offset = brgemm_repack->get_offset_out();
     if (with_comp)
-        comp_offset = brgemm_repack->get_output_port_descriptor(1).m_offset;
+        comp_offset = brgemm_repack->get_offset_comp();
 
     auto layout = ngraph::snippets::utils::get_node_output_layout(brgemm_repack->get_input_node_shared_ptr(0));
     const auto& original_shape = brgemm_repack->get_input_shape(0);

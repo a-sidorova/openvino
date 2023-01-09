@@ -37,7 +37,7 @@ void MemoryAccess::set_input_port_descriptor(const PortDescriptor& desc, const s
 }
 
 PortDescriptor MemoryAccess::get_input_port_descriptor(const size_t i) const {
-    // We cannot use the same way as in ov::Node::get_input_descriptor because this method must be static
+    // We cannot use the same way as in ov::Node::get_input_descriptor because this method must be const
     // to allow call const Derived::clone_with_new_inputs() method
     NGRAPH_CHECK(i < m_input_ports.size(), "Index of input port descriptor should be less than count of input ports");
     return m_input_ports[i];
@@ -60,7 +60,7 @@ void MemoryAccess::set_output_port_descriptor(const PortDescriptor& desc, const 
 }
 
 PortDescriptor MemoryAccess::get_output_port_descriptor(const size_t i) const {
-    // We cannot use the same way as in ov::Node::get_input_descriptor because this method must be static
+    // We cannot use the same way as in ov::Node::get_input_descriptor because this method must be const
     // to allow call const Derived::clone_with_new_inputs() method
     NGRAPH_CHECK(i < m_output_ports.size(), "Index of output port descriptor should be less than count of output ports");
     return m_output_ports[i];

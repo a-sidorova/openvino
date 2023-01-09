@@ -12,14 +12,7 @@ namespace op {
 
 /**
  * @interface Buffer
- * @brief The operation is for intermediate data storage
- * TODO
- *        - m_allocation_rank - rank of shape for memory allocation: shape[shape_rank - normalize(m_allocation_rank) : shape_rank].
- *                 It's needed to allocate needed memory size that depends on Tile rank, for example.
- *                 Default value is -1 (full shape)
- *        - m_static_shape - static shape that describes Buffer size in cases when Buffer doesn't have parent node.
- *        - m_element_type - element type  in cases when Buffer doesn't have parent node.
- *        - m_single - True if Buffer doesn't have parent node else False
+ * @brief This is a base class for memory storage.
  *        Notes:
  *               - All buffers in a graph have the same memory pointer. So if we have a few buffers,
  *                 each the corresponding MemoryAccess op for Buffer should have offset for common memory pointer of this Buffer
@@ -40,8 +33,8 @@ protected:
 
 /**
  * @interface AllocationBuffer
- * @brief The operation is for allocation new empty memory
- * TODO
+ * @brief The operation is for allocation of new empty memory. The operation has one parent that is equal to allocation shape
+ *        - m_element_type - element type of memory
  * @ingroup snippets
  */
 class AllocationBuffer : public Buffer {
@@ -63,8 +56,16 @@ protected:
 
 /**
  * @interface IntermediateBuffer
- * @brief The operation is for intermediate data storage
- * TODO
+ * @brief The operation is for intermediate data storage.
+ *        If Buffer has only one parent, the Buffer will allocate a full memory with input shape of Buffer.
+ *        If Buffer has second parent as well, the Buffer will allocate memory with shape that is equal to values from second input but
+ *        saves the input shape for shape inference and input element type.
+ *        For example,
+ *              Parameter [5, 3, 128]    Constant [2] (with values {3, 128})
+ *                     \                 /
+ *                  Buffer with allocated memory 3x128 size
+ *                              |
+ *                       Result [5, 3, 128]
  * @ingroup snippets
  */
 class IntermediateBuffer : public Buffer {

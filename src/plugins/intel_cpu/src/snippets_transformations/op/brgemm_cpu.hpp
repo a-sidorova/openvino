@@ -30,6 +30,7 @@ public:
     void validate_and_infer_types() override;
     std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& new_args) const override;
 
+    size_t get_offset_scratch() const { return get_input_port_descriptor(2).m_offset; }
     std::shared_ptr<BrgemmCopyB> get_brgemm_copy() const;
 
 private:

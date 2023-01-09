@@ -21,6 +21,10 @@ public:
                   const size_t offset_in = 0lu, const size_t offset_out0 = 0lu, const size_t offset_out1 = 0lu);
     BrgemmCopyB() = default;
 
+    size_t get_offset_in() const { return get_input_port_descriptor(0).m_offset; }
+    size_t get_offset_out() const { return get_output_port_descriptor(0).m_offset; }
+    size_t get_offset_comp() const { return get_output_port_descriptor(1).m_offset; }
+
     element::Type get_src_element_type() const { return m_src_type; }
     bool is_with_comp() const { return m_with_comp; }
 
