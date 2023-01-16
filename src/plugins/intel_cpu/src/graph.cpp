@@ -1123,11 +1123,13 @@ void Graph::PullOutputData(std::unordered_map<std::size_t, ov::SoPtr<ITensor>>& 
 }
 
 void Graph::InferStatic(SyncInferRequest* request) {
+    CPU_DEBUG_CAP_ENABLE(const PerfKey perfKey = perfGetKey(*this));
+
     dnnl::stream stream(getEngine());
 
     for (const auto& node : m_executableGraphNodes) {
-        VERBOSE(node, getConfig().debugCaps.verbose);
-        PERF(node, getConfig().collectPerfCounters);
+        VERBOSE(node, getConfig().debugCaps.verbose, infer_count);
+        PERF(node, getConfig().collectPerfCounters, perfKey);
 
         if (request)
             request->throw_if_canceled();
@@ -1351,13 +1353,14 @@ void Graph::InferDynamic(SyncInferRequest* request) {
         updateNodes.reset(new UpdateNodesSeq(m_executableGraphNodes));
     }
 
+    CPU_DEBUG_CAP_ENABLE(const PerfKey perfKey = perfGetKey(*this));
     size_t inferCounter = 0;
     for (auto stopIndx : m_executableSyncNodesInds) {
         updateNodes->run(stopIndx);
         for (; inferCounter < stopIndx; ++inferCounter) {
             auto& node = m_executableGraphNodes[inferCounter];
-            VERBOSE(node, getConfig().debugCaps.verbose);
-            PERF(node, getConfig().collectPerfCounters);
+            VERBOSE(node, getConfig().debugCaps.verbose, infer_count);
+            PERF(node, getConfig().collectPerfCounters, perfKey);
 
             if (request)
                 request->throw_if_canceled();
@@ -1398,7 +1401,7 @@ inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) 
             }
         }
     } else {
-        DUMP(node, getConfig().debugCaps, infer_count);
+        DUMP(node, getConfig().debugCaps, nestingLevel, infer_count);
         OV_ITT_SCOPED_TASK(itt::domains::intel_cpu, node->profiling.execute);
         DEBUG_LOG(*node);
         // TODO: 132954 workaround for latency
@@ -1468,7 +1471,7 @@ void Graph::Infer(SyncInferRequest* request) {
         OPENVINO_THROW("Unknown ov::intel_cpu::Graph state: " , static_cast<size_t>(status));
     }
 
-    if (infer_count != -1) infer_count++;
+    CPU_DEBUG_CAP_ENABLE(infer_count++);
 }
 
 void Graph::SortTopologically() {
