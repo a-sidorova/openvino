@@ -37,6 +37,16 @@ protected:
     void SetUp() override;
 };
 
+class MatMulBiasQuantized : public MatMul {
+protected:
+    void SetUp() override;
+};
+
+class MatMulsQuantized : public MatMul {
+protected:
+    void SetUp() override;
+};
+
 class ExplicitTransposeMatMul : public MatMul {
 protected:
     void SetUp() override;
@@ -46,6 +56,12 @@ class ExplicitTransposeMatMulBias : public MatMul {
 protected:
     void SetUp() override;
 };
+
+class MatMulsQuantizedSoftmax : public MatMul {
+protected:
+    void SetUp() override;
+};
+
 
 } // namespace snippets
 } // namespace test
