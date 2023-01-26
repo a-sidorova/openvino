@@ -95,13 +95,13 @@ private:
                    const std::vector<size_t>& pool,
                    const std::vector<size_t>& gpr,
                    const ov::intel_cpu::emitter_context *emit_context) const override;
-    void init_data_pointers(size_t, size_t, bool, const Reg64&, const Reg64&, const std::vector<Reg64>&) const;
+    void init_data_pointers(size_t, size_t, size_t, const Reg64&, const Reg64&, const std::vector<Reg64>&) const;
 
     jit_snippets_compile_args jcp;
     std::vector<size_t> gp_regs_pool;
     size_t num_inputs;
     size_t num_outputs;
-    bool is_buffer_needed;
+    size_t num_unqiue_buffer;
     // Vector of indices (lenght = input tensor rank) per every input and output that describes in which order
     // corresponding tensor dimensions are accessed (default: consecutive dense, e.g. 0,1,2,3 for 4D tensor).
     // Needed to calc i/o offsets.

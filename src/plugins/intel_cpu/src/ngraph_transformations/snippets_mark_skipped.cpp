@@ -423,13 +423,20 @@ void MarkSubgraphOpAsSkipped(const std::shared_ptr<Node> &node) {
         }
     }
 }
+auto is_skipped_op(const std::shared_ptr<ov::Node>& op) -> bool {
+    return ngraph::op::is_constant(op) ||
+           ov::is_type<ov::op::v0::Parameter>(op) ||
+           ov::is_type<ov::op::v0::Result>(op) ||
+           ov::is_type<ov::op::v1::Transpose>(op) ||
+           ov::is_type<ov::op::v1::Reshape>(op);
+}
 } // namespace
 
 bool SnippetsMarkSkipped::run_on_model(const std::shared_ptr<ov::Model> &m) {
     RUN_ON_MODEL_SCOPE(SnippetsMarkSkipped);
     int channelAxis = DEFAULT_AXIS;
     for (auto &node : m->get_ordered_ops()) {
-        if (ngraph::op::is_constant(node) || ov::is_type<ov::op::v0::Result>(node))
+        if (is_skipped_op(node))
             continue;
         if (isSuitableConvolutionParent(node)) {
             // Initiate fusing chain

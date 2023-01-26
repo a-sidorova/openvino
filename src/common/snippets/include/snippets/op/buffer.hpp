@@ -13,6 +13,7 @@ namespace op {
 /**
  * @interface Buffer
  * @brief This is a base class for memory storage.
+ *         - m_id - identifiers in the common Buffer system - id ~ register
  *        Notes:
  *               - All buffers in a graph have the same memory pointer. So if we have a few buffers,
  *                 each the corresponding MemoryAccess op for Buffer should have offset for common memory pointer of this Buffer
@@ -23,11 +24,19 @@ class Buffer : public ngraph::op::Op {
 public:
     OPENVINO_OP("Buffer", "SnippetsOpset");
 
+    void set_id(size_t id) { m_id = id; }
+
+    size_t get_id() const { return m_id; }
     size_t get_byte_size() const;
     virtual ov::PartialShape get_allocation_shape() const = 0;
 
+    bool visit_attributes(AttributeVisitor& visitor) override;
+
 protected:
     Buffer() = default;
+    Buffer(size_t id) : m_id(id) {}
+
+    size_t m_id = 0;
 };
 
 /**
@@ -41,7 +50,7 @@ public:
     OPENVINO_OP("AllocationBuffer", "SnippetsOpset", Buffer);
 
     AllocationBuffer() = default;
-    AllocationBuffer(const ov::Output<ov::Node>& shape, const ov::element::Type element_type);
+    AllocationBuffer(const ov::Output<ov::Node>& shape, const ov::element::Type element_type, size_t id = 0);
 
     ov::PartialShape get_allocation_shape() const override;
 
@@ -72,12 +81,11 @@ public:
     OPENVINO_OP("IntermediateBuffer", "SnippetsOpset", Buffer);
 
     IntermediateBuffer() = default;
-    IntermediateBuffer(const ov::Output<ov::Node>& x);
-    IntermediateBuffer(const ov::Output<ov::Node>& x, const ov::Output<ov::Node>& shape);
+    IntermediateBuffer(const ov::Output<ov::Node>& x, size_t id = 0);
+    IntermediateBuffer(const ov::Output<ov::Node>& x, const ov::Output<ov::Node>& shape, size_t id = 0);
 
     ov::PartialShape get_allocation_shape() const override;
 
-    bool visit_attributes(AttributeVisitor& visitor) override { return true; }
     std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& new_args) const override;
     void validate_and_infer_types() override;
 

@@ -517,7 +517,9 @@ TEST_P(MHAQuantTest, CompareWithRefs) {
         GTEST_SKIP();
 
     run();
-    CheckNumberOfNodesWithType(compiledModel, expectedNode, 1);
+    const size_t expectedNodeCount = patternType == 0 ? 5  // MHA + 3xFQ (fused into Subgraphs) + Deq Mul for Add
+                                                      : 3; // MHA + 2xFQ
+    CheckNumberOfNodesWithType(compiledModel, expectedNode, expectedNodeCount);
 }
 
 namespace {
@@ -553,7 +555,7 @@ INSTANTIATE_TEST_SUITE_P(smoke_MHAQuant, MHAQuantTest,
                                 ::testing::ValuesIn(inputPrecisionsQuant),
                                 ::testing::ValuesIn(matMulIn0PrecisionsQuant),
                                 ::testing::ValuesIn(patternTypesQuant),
-                                ::testing::Values("MHA"),  // Snippets don't support Quantized MHA pattern yet
+                                ::testing::Values("Subgraph"),
                                 ::testing::Values(CommonTestUtils::DEVICE_CPU)),
                         MHAQuantTest::getTestCaseName);
 

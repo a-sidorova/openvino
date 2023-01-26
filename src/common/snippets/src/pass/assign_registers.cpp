@@ -8,6 +8,9 @@
 #include <iterator>
 
 namespace {
+using Reg = size_t;
+using tensor = std::shared_ptr<ngraph::descriptor::Tensor>;
+
 static constexpr size_t reg_count = 16lu;
 
 auto filter_ops(const std::shared_ptr<ov::Node>& op) -> bool {
@@ -15,6 +18,67 @@ auto filter_ops(const std::shared_ptr<ov::Node>& op) -> bool {
         ov::is_type<ngraph::snippets::op::Buffer>(op->get_output_target_inputs(0).begin()->get_node()))
         return false;
     return true;
+}
+
+auto manual_assigning(const std::shared_ptr<ov::Model>& f,
+                      const ov::NodeVector& ops,
+                      std::map<tensor, Reg>& manually_assigned_gprs,
+                      std::map<tensor, Reg>& manually_assigned_vecs) -> void {
+    const auto num_parameters = f->get_parameters().size();
+    const auto num_results = f->get_results().size();
+    auto accumulator_reg = 0lu;
+    for (const auto& op : ops) {
+        if (const auto& param = ov::as_type_ptr<ov::op::v0::Parameter>(op)) {
+            manually_assigned_gprs[op->output(0).get_tensor_ptr()] =
+                    static_cast<Reg>(f->get_parameter_index(param));
+        } else if (const auto& result = ov::as_type_ptr<ngraph::opset1::Result>(op)) {
+            // here we use the fact that Result input & output tensors are identical by construction
+            manually_assigned_gprs[op->output(0).get_tensor_ptr()] =
+                    static_cast<Reg>(f->get_result_index(result) + num_parameters);
+        } else if (const auto buffer = ov::as_type_ptr<ngraph::snippets::op::Buffer>(op)) {
+            // All buffers have one common data pointer
+            const auto buffer_id = buffer->get_id();
+            if (ov::is_type<ngraph::snippets::op::IntermediateBuffer>(op)) {
+                manually_assigned_gprs[op->input(0).get_tensor_ptr()] =
+                        static_cast<Reg>(num_results + num_parameters + buffer_id);
+            }
+            manually_assigned_gprs[op->output(0).get_tensor_ptr()] =
+                    static_cast<Reg>(num_results + num_parameters + buffer_id);
+        } else if (ov::is_type<ngraph::snippets::op::HorizonMax>(op) || ov::is_type<ngraph::snippets::op::HorizonSum>(op)) {
+            // Only in SoftmaxDecomposition ReduceMax and ReduceSum use HorizonMax/HorizonSum and VectorBuffer.
+            // We should manually set the one vector register for VectorBuffer and Max/Sum output to simulate a accumulator
+            // TODO [96351]: We should rewrite accumulator pattern using another way
+            const auto input = op->get_input_node_shared_ptr(0); // input - it's accumulator math op: Add or Max
+            for (size_t i = 0; i < input->get_input_size(); ++i) {
+                if (ov::is_type<ngraph::snippets::op::VectorBuffer>(input->get_input_node_shared_ptr(i))) {
+                    manually_assigned_vecs[input->input(i).get_tensor_ptr()] =
+                        static_cast<Reg>(accumulator_reg);
+                }
+            }
+
+            manually_assigned_vecs[input->output(0).get_tensor_ptr()] =
+                static_cast<Reg>(accumulator_reg);
+            manually_assigned_vecs[op->output(0).get_tensor_ptr()] =
+                static_cast<Reg>(accumulator_reg);
+
+            auto target_inputs = op->output(0).get_target_inputs();
+            auto output = target_inputs.begin()->get_node()->shared_from_this();
+
+            // All operations `outside loop` after Horizon ops should have the same register to
+            // avoid using it in the hext Loop
+            auto iter = output->get_rt_info().find("outside_loop");
+            while (iter != output->get_rt_info().end() && iter->second) {
+                manually_assigned_vecs[output->output(0).get_tensor_ptr()] =
+                        static_cast<Reg>(accumulator_reg);
+
+                target_inputs = output->output(0).get_target_inputs();
+                output = target_inputs.begin()->get_node()->shared_from_this();
+                iter = output->get_rt_info().find("outside_loop");
+            }
+
+            accumulator_reg++;
+        }
+    }
 }
 
 }  // namespace
@@ -39,55 +103,9 @@ bool ngraph::snippets::pass::AssignRegisters::run_on_model(const std::shared_ptr
     std::map<tensor, Reg> regs_vec, regs_gpr;
     // Define a set of immune tensors that will be ignored by auto reg allocation => their reg allocation is done manually
     std::map<tensor, Reg> manually_assigned_gprs, manually_assigned_vecs;
+    manual_assigning(f, ops, manually_assigned_gprs, manually_assigned_vecs);
+
     const auto IS_MANUALLY_ALLOCATED_REG = SIZE_MAX;
-    const auto num_parameters = f->get_parameters().size();
-    const auto num_results = f->get_results().size();
-    auto accumulator_reg = 0lu;
-    for (const auto& op : ops) {
-        if (const auto& param = ov::as_type_ptr<ov::op::v0::Parameter>(op)) {
-            manually_assigned_gprs[op->output(0).get_tensor_ptr()] =
-                    static_cast<Reg>(f->get_parameter_index(param));
-        } else if (const auto& result = ov::as_type_ptr<opset1::Result>(op)) {
-            // here we use the fact that Result input & output tensors are identical by construction
-            manually_assigned_gprs[op->output(0).get_tensor_ptr()] =
-                    static_cast<Reg>(f->get_result_index(result) + num_parameters);
-        } else if (ov::is_type<op::Buffer>(op)) {
-            // All buffers have one common data pointer
-            if (ov::is_type<op::IntermediateBuffer>(op)) {
-                manually_assigned_gprs[op->input(0).get_tensor_ptr()] =
-                        static_cast<Reg>(num_results + num_parameters);
-            }
-            manually_assigned_gprs[op->output(0).get_tensor_ptr()] =
-                    static_cast<Reg>(num_results + num_parameters);
-        } else if (ov::is_type<op::HorizonMax>(op) || ov::is_type<op::HorizonSum>(op)) {
-            // Only in SoftmaxDecomposition ReduceMax and ReduceSum use HorizonMax/HorizonSum and VectorBuffer.
-            // We should manually set the one vector register for VectorBuffer and Max/Sum output to simulate a accumulator
-            // TODO [96351]: We should rewrite accumulator pattern using another way
-            const auto input = op->get_input_node_shared_ptr(0); // input - it's accumulator math op: Add or Max
-            for (size_t i = 0; i < input->get_input_size(); ++i) {
-                if (ov::is_type<op::VectorBuffer>(input->get_input_node_shared_ptr(i))) {
-                    manually_assigned_vecs[input->input(i).get_tensor_ptr()] =
-                        static_cast<Reg>(accumulator_reg);
-                }
-            }
-
-            manually_assigned_vecs[input->output(0).get_tensor_ptr()] =
-                static_cast<Reg>(accumulator_reg);
-            manually_assigned_vecs[op->output(0).get_tensor_ptr()] =
-                static_cast<Reg>(accumulator_reg);
-
-            // If there is Broadcast, it should have the same register as Horizon op
-            // because it's a result of the accumulator as well
-            for (auto& out : op->output(0).get_target_inputs()) {
-                const auto child = out.get_node()->shared_from_this();
-                if (ov::is_type<op::BroadcastMove>(child)) {
-                    manually_assigned_vecs[child->output(0).get_tensor_ptr()] =
-                        static_cast<Reg>(accumulator_reg);
-                }
-            }
-            accumulator_reg++;
-        }
-    }
     auto enumerate_out_tensors = [IS_MANUALLY_ALLOCATED_REG] (const std::shared_ptr<ov::Node>& op,
                                      decltype(regs_vec)& reg_map,
                                      const std::map<tensor, Reg>& manually_assigned_regs,
