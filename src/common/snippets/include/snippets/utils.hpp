@@ -54,6 +54,13 @@ template <typename T, typename P, typename... Args>
 constexpr bool everyone_is(T val, P item, Args... item_others) {
     return val == item && everyone_is(val, item_others...);
 }
+
+template <typename T, typename U>
+inline T div_up(const T a, const U b) {
+    assert(b);
+    return static_cast<T>((a + b - 1) / b);
+}
+
 } // namespace utils
 } // namespace snippets
 } // namespace ngraph

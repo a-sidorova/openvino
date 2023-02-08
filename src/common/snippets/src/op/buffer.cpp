@@ -24,8 +24,8 @@ size_t ngraph::snippets::op::Buffer::get_byte_size() const {
     return ngraph::shape_size(shape) * get_element_type().size();
 }
 
-snippets::op::AllocationBuffer::AllocationBuffer(const Output<Node>& shape, const ov::element::Type element_type)
-    : Buffer(), m_element_type(element_type) {
+snippets::op::AllocationBuffer::AllocationBuffer(const Output<Node>& shape, const ov::element::Type element_type, size_t offset)
+    : Buffer(m_offset), m_element_type(element_type) {
     set_arguments({shape});
     constructor_validate_and_infer_types();
 }
@@ -39,7 +39,7 @@ bool snippets::op::AllocationBuffer::visit_attributes(AttributeVisitor& visitor)
 std::shared_ptr<Node> snippets::op::AllocationBuffer::clone_with_new_inputs(const OutputVector& new_args) const {
     INTERNAL_OP_SCOPE(AllocationBuffer_clone_with_new_inputs);
     check_new_args_count(this, new_args);
-    return std::make_shared<AllocationBuffer>(new_args.at(0), m_element_type);
+    return std::make_shared<AllocationBuffer>(new_args.at(0), m_element_type, m_offset);
 }
 
 void snippets::op::AllocationBuffer::validate_and_infer_types() {
@@ -60,12 +60,14 @@ ov::PartialShape ngraph::snippets::op::AllocationBuffer::get_allocation_shape() 
     return shape;
 }
 
-snippets::op::IntermediateBuffer::IntermediateBuffer(const ov::Output<ov::Node>& x) : Buffer() {
+snippets::op::IntermediateBuffer::IntermediateBuffer(const ov::Output<ov::Node>& x, size_t offset)
+    : Buffer(offset) {
     set_arguments({x});
     constructor_validate_and_infer_types();
 }
 
-snippets::op::IntermediateBuffer::IntermediateBuffer(const ov::Output<ov::Node>& x, const ov::Output<ov::Node>& shape) : Buffer() {
+snippets::op::IntermediateBuffer::IntermediateBuffer(const ov::Output<ov::Node>& x, const ov::Output<ov::Node>& shape, size_t offset)
+    : Buffer(offset) {
     set_arguments({x, shape});
     constructor_validate_and_infer_types();
 }
@@ -74,9 +76,9 @@ std::shared_ptr<Node> snippets::op::IntermediateBuffer::clone_with_new_inputs(co
     INTERNAL_OP_SCOPE(IntermediateBuffer_clone_with_new_inputs);
     check_new_args_count(this, new_args);
     if (new_args.size() == 2) {
-        return std::make_shared<IntermediateBuffer>(new_args.at(0), new_args.at(1));
+        return std::make_shared<IntermediateBuffer>(new_args.at(0), new_args.at(1), m_offset);
     } else if (new_args.size() == 1) {
-        return std::make_shared<IntermediateBuffer>(new_args.at(0));
+        return std::make_shared<IntermediateBuffer>(new_args.at(0), m_offset);
     }
 
     throw ngraph_error("The IntermediateBuffer op got invalid input count");

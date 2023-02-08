@@ -13,6 +13,8 @@ namespace op {
 /**
  * @interface Buffer
  * @brief This is a base class for memory storage.
+ *         - m_offset - the offset for common memory pointer in buffer scratchpad system
+ *         - m_status - allocation status
  *        Notes:
  *               - All buffers in a graph have the same memory pointer. So if we have a few buffers,
  *                 each the corresponding MemoryAccess op for Buffer should have offset for common memory pointer of this Buffer
@@ -23,11 +25,17 @@ class Buffer : public ngraph::op::Op {
 public:
     OPENVINO_OP("Buffer", "SnippetsOpset");
 
+    void set_offset(size_t offset) { m_offset = offset; }
+
+    size_t get_offset() const { return m_offset; }
     size_t get_byte_size() const;
     virtual ov::PartialShape get_allocation_shape() const = 0;
 
 protected:
     Buffer() = default;
+    Buffer(size_t offset) : m_offset(offset) {}
+
+    size_t m_offset = 0lu;
 };
 
 /**
@@ -41,7 +49,7 @@ public:
     OPENVINO_OP("AllocationBuffer", "SnippetsOpset", Buffer);
 
     AllocationBuffer() = default;
-    AllocationBuffer(const ov::Output<ov::Node>& shape, const ov::element::Type element_type);
+    AllocationBuffer(const ov::Output<ov::Node>& shape, const ov::element::Type element_type, size_t offset = 0lu);
 
     ov::PartialShape get_allocation_shape() const override;
 
@@ -49,7 +57,7 @@ public:
     std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& new_args) const override;
     void validate_and_infer_types() override;
 
-protected:
+private:
     ov::element::Type m_element_type;
 };
 
@@ -72,8 +80,8 @@ public:
     OPENVINO_OP("IntermediateBuffer", "SnippetsOpset", Buffer);
 
     IntermediateBuffer() = default;
-    IntermediateBuffer(const ov::Output<ov::Node>& x);
-    IntermediateBuffer(const ov::Output<ov::Node>& x, const ov::Output<ov::Node>& shape);
+    IntermediateBuffer(const ov::Output<ov::Node>& x, size_t offset = 0lu);
+    IntermediateBuffer(const ov::Output<ov::Node>& x, const ov::Output<ov::Node>& shape, size_t offset = 0lu);
 
     ov::PartialShape get_allocation_shape() const override;
 

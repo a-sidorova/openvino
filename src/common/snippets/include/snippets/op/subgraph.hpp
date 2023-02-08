@@ -95,7 +95,7 @@ public:
     const std::shared_ptr<ngraph::snippets::Generator>& get_generator() const { return m_generator; }
     std::shared_ptr<ngraph::snippets::Generator> & get_generator() { return m_generator; }
 
-    size_t get_buffer_scratchpad_size() const { return m_buffer_scratchpad; }
+    int64_t get_buffer_scratchpad_size() const { return m_buffer_scratchpad; }
     size_t get_virtual_port_count() const { return m_virtual_port_count; }
     bool is_buffer_needed() const { return m_buffer_needed; }
     bool is_quantized() const { return config.m_is_quantized; }
@@ -145,7 +145,7 @@ private:
     //       we should MANUALLY calculate it where it needed.
     size_t m_virtual_port_count = 0;
     bool m_buffer_needed = false;
-    size_t m_buffer_scratchpad = 0lu;
+    int64_t m_buffer_scratchpad = 0lu;
     Shape exec_domain = {};
     std::shared_ptr<ngraph::snippets::Generator> m_generator = nullptr;
 

@@ -110,7 +110,7 @@ private:
 
     // Buffer scratchpad
     std::vector<uint8_t> buffer_scratchpad = {};
-    size_t buffer_scratchpad_size = 0;
+    int64_t buffer_scratchpad_size = 0;
 };
 
 }   // namespace node
