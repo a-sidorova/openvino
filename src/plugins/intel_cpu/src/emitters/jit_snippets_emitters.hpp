@@ -420,6 +420,9 @@ public:
     BrgemmEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa, const std::shared_ptr<ov::Node>& n);
 
     size_t get_inputs_num() const override {return 2;}
+
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
+
 protected:
     std::vector<size_t> init_kernel_offsets(size_t mb, size_t M_blk, size_t LDA, size_t LDC,
                                             size_t k, size_t K0_step0, size_t K0_step1,
@@ -432,6 +435,9 @@ public:
     BrgemmWithScratchEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa, const std::shared_ptr<ov::Node>& n);
 
     size_t get_inputs_num() const override {return 3;}
+
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
+
 protected:
     std::vector<size_t> init_kernel_offsets(size_t mb, size_t M_blk, size_t LDA, size_t LDC,
                                             size_t k, size_t K0_step0, size_t K0_step1,
@@ -489,6 +495,8 @@ class BrgemmCopyBEmitter : public BrgemmCopyBBaseEmitter {
 public:
     BrgemmCopyBEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa, const std::shared_ptr<ov::Node>& n);
 
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
+
 protected:
     void kernel_call(const matmul::jit_brgemm_matmul_copy_b_t* kernel, const std::vector<Reg64>& regs, const std::vector<size_t>& offsets) const override;
     std::vector<size_t> init_kernel_offsets(size_t nb, size_t N_blk, size_t brgemmVNNIFactor, size_t data_size) const override;
@@ -497,6 +505,8 @@ protected:
 class BrgemmCopyBWithCompensationsEmitter : public BrgemmCopyBBaseEmitter {
 public:
     BrgemmCopyBWithCompensationsEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa, const std::shared_ptr<ov::Node>& n);
+
+    static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 protected:
     void kernel_call(const matmul::jit_brgemm_matmul_copy_b_t* kernel, const std::vector<Reg64>& regs, const std::vector<size_t>& offsets) const override;

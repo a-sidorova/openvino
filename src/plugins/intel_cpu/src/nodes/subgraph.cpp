@@ -504,6 +504,7 @@ void Snippet::generate(const jit_snippets_compile_args* jcp) {
     pre_dialect.register_pass<ConvertToSwishCPU>();
 
     ov::pass::Manager post_dialect;
+    post_dialect.register_pass<ov::intel_cpu::pass::BrgemmToBrgemmCPU>();
 
     ov::pass::Manager post_precision;
     post_precision.register_pass<ov::intel_cpu::pass::FuseLoadConvert>();

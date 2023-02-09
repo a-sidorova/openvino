@@ -998,6 +998,17 @@ void BrgemmBaseEmitter::kernel_execute(const brgemm_kernel_t *brg_kernel,
 BrgemmEmitter::BrgemmEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa, const std::shared_ptr<ov::Node>& n)
     : BrgemmBaseEmitter(h, isa, n) {}
 
+std::set<std::vector<element::Type>> BrgemmEmitter::get_supported_precisions(const std::shared_ptr<ngraph::Node>& node) {
+    if (ov::is_type<ov::intel_cpu::BrgemmCPU>(node)) {
+        return {{ov::element::f32, ov::element::f32}};
+    } else if (ov::is_type<ov::intel_cpu::BrgemmIndependentCPU>(node)) {
+        return {{ov::element::u8, ov::element::i8},
+                {ov::element::bf16, ov::element::bf16}};
+    } else {
+        IE_THROW() << "BrgemmEmitter expects BrgemmCPU node or BrgemmIndependentCPU node";
+    }
+}
+
 std::vector<size_t> BrgemmEmitter::init_kernel_offsets(size_t mb, size_t M_blk, size_t LDA, size_t LDC,
                                                        size_t k, size_t K0_step0, size_t K0_step1,
                                                        size_t n, size_t N0_step0, size_t N0_step1) const {
@@ -1078,6 +1089,17 @@ BrgemmWithScratchEmitter::BrgemmWithScratchEmitter(dnnl::impl::cpu::x64::jit_gen
     if (!brgemm_node)
         IE_THROW() << "BrgemmWithScratchEmitter expects BrgemmWithScratchCPU node";
     load_offset_scratch = brgemm_node->get_offset_scratch();
+}
+
+std::set<std::vector<element::Type>> BrgemmWithScratchEmitter::get_supported_precisions(const std::shared_ptr<ngraph::Node>& node) {
+    if (ov::is_type<ov::intel_cpu::BrgemmWithCompensationsCPU>(node)) {
+        return {{ov::element::i8, ov::element::i8, ov::element::f32}};
+    } else if (ov::is_type<ov::intel_cpu::BrgemmAMXCPU>(node)) {
+        return {{ov::element::i8, ov::element::i8, ov::element::f32},
+                {ov::element::bf16, ov::element::bf16, ov::element::f32}};
+    } else {
+        IE_THROW() << "BrgemmWithScratchEmitter expects BrgemmWithCompensationsCPU node or BrgemmAMXCPU node";
+    }
 }
 
 std::vector<size_t> BrgemmWithScratchEmitter::init_kernel_offsets(size_t mb, size_t M_blk, size_t LDA, size_t LDC,
@@ -1391,6 +1413,11 @@ void BrgemmCopyBBaseEmitter::push_value(size_t value, size_t index, size_t gpr_s
 BrgemmCopyBEmitter::BrgemmCopyBEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa, const std::shared_ptr<ov::Node>& n)
     : BrgemmCopyBBaseEmitter(h, isa, n) {}
 
+std::set<std::vector<element::Type>> BrgemmCopyBEmitter::get_supported_precisions(const std::shared_ptr<ngraph::Node>& node) {
+    return {{ov::element::bf16},
+            {ov::element::i8}};
+}
+
 std::vector<size_t> BrgemmCopyBEmitter::init_kernel_offsets(size_t nb, size_t N_blk, size_t brgemmVNNIFactor, size_t data_size) const {
     const size_t offset_in = in_offset + nb * N_blk * data_size;
     const size_t offset_out = out_offset + nb * N_blk * brgemmVNNIFactor * data_size;
@@ -1461,6 +1488,10 @@ BrgemmCopyBWithCompensationsEmitter::BrgemmCopyBWithCompensationsEmitter(dnnl::i
     if (!brgemm_repack)
         IE_THROW() << "BrgemmCopyBWithCompensationsEmitter expects BrgemmCopyBWithCompensations node";
     comp_offset = brgemm_repack->get_offset_comp();
+}
+
+std::set<std::vector<element::Type>> BrgemmCopyBWithCompensationsEmitter::get_supported_precisions(const std::shared_ptr<ngraph::Node>& node) {
+    return {{ov::element::i8}};
 }
 
 std::vector<size_t> BrgemmCopyBWithCompensationsEmitter::init_kernel_offsets(size_t nb, size_t N_blk, size_t brgemmVNNIFactor, size_t data_size) const {
