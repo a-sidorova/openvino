@@ -5,6 +5,7 @@
 #pragma once
 
 #include "linear_IR_transformation.hpp"
+#include "snippets/tensor_descriptor.hpp"
 
 namespace ngraph {
 namespace snippets {
@@ -12,19 +13,20 @@ namespace pass {
 namespace lowered {
 
 /**
- * @interface SoftmaxDecomposition
- * @brief Decomposes snippets::op::Softmax to a range of low-level operations on linear IR
+ * @interface LoopFusion
+ * @brief
+ * @param
+ * @param
  * @ingroup snippets
  */
-class SoftmaxDecomposition : public LinearIRTransformation {
-    size_t m_vector_size;
+class LoopFusion : public LinearIRTransformation {
 public:
-    explicit SoftmaxDecomposition(size_t vector_size);
-    OPENVINO_RTTI("SoftmaxDecomposition", "LinearIRTransformation")
+    OPENVINO_RTTI("LoopFusion", "LinearIRTransformation")
+    LoopFusion();
     bool run(LoweredExprIR& linear_ir) override;
 };
 
-} //namespace lowered
+} // namespace lowered
 } // namespace pass
 } // namespace snippets
 } // namespace ngraph

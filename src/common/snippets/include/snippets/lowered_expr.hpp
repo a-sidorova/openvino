@@ -58,6 +58,8 @@ public:
     void set_reg_info(RegInfo rinfo) {m_reg_info = std::move(rinfo);}
     const std::vector<TensorDescriptorPtr>& get_inputs() {return m_inputs; }
     const std::vector<TensorDescriptorPtr>& get_outputs() {return m_outputs; }
+    size_t get_input_port(const TensorDescriptorPtr& input);
+    size_t get_output_port(const TensorDescriptorPtr& output);
 
 protected:
     void replace_input(const TensorDescriptorPtr& from, TensorDescriptorPtr to);
@@ -123,12 +125,17 @@ public:
     constExprIt end() const noexcept {return cend();}
     constExprIt cbegin() const noexcept {return m_lowered_ops.cbegin();}
     constExprIt cend() const noexcept {return m_lowered_ops.cend();}
-    container ::reverse_iterator rbegin() noexcept {return m_lowered_ops.rbegin();}
+    container::reverse_iterator rbegin() noexcept {return m_lowered_ops.rbegin();}
     container::reverse_iterator rend() noexcept {return m_lowered_ops.rend();}
     container::const_reverse_iterator crbegin() const noexcept {return m_lowered_ops.crbegin();}
     container::const_reverse_iterator crend() const noexcept {return m_lowered_ops.crend();}
+    void splice(constExprIt position, constExprIt value);
     static ov::NodeVector get_ordered_ops(const std::shared_ptr<ov::Model>& model);
     void serialize(const std::string& xml, const std::string& bin);
+
+    ov::NodeVector get_loop_body_by_begin(LoweredExprIR::constExprIt loop_begin_expr_it) const;
+    ov::NodeVector get_loop_body_by_end(LoweredExprIR::constExprIt loop_end_expr_it) const;
+    static ov::NodeVector get_loop_body(LoweredExprIR::constExprIt loop_begin_expr_it, LoweredExprIR::constExprIt loop_end_expr_it);
 
 private:
     void register_expression(const LoweredExprPtr& expr);

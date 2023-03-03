@@ -8,36 +8,35 @@
 #include "snippets/itt.hpp"
 #include <ngraph/pattern/op/wrap_type.hpp>
 #include "openvino/pass/pattern/matcher.hpp"
+#include "snippets/pass/lowered/insert_loops.hpp"
 
 namespace ngraph {
 namespace snippets {
 namespace pass {
 namespace lowered {
 using std::make_shared;
-SoftmaxDecomposition::SoftmaxDecomposition(size_t vector_size, size_t buffer_allocation_rank) :
-                        m_vector_size{vector_size},
-                        m_buffer_allocation_rank(buffer_allocation_rank) {
-}
+SoftmaxDecomposition::SoftmaxDecomposition(size_t vector_size) : m_vector_size{vector_size} {}
 
 bool SoftmaxDecomposition::run(LoweredExprIR& linear_ir) {
     OV_ITT_SCOPED_TASK(itt::domains::SnippetsTransform, "Snippets::SoftmaxDecompositionLowered")
-    auto match_load = ngraph::pattern::wrap_type<op::Load>();
-    auto match_softmax = ngraph::pattern::wrap_type<op::Softmax>({match_load});
-    auto match_store = ngraph::pattern::wrap_type<op::Store>({match_softmax});
-    auto matcher = std::make_shared<pattern::Matcher>(match_store, "SoftmaxDecompositionLowered");
+    auto match_softmax = ngraph::pattern::wrap_type<opset1::Softmax>();
+    auto matcher = std::make_shared<pattern::Matcher>(match_softmax, "SoftmaxDecompositionLowered");
     bool modified = false;
     for (auto expr_it = linear_ir.begin(); expr_it != linear_ir.end(); expr_it++) {
         const auto& op = (*expr_it)->get_node();
         if (matcher->match(op)) {
             const auto& pm = matcher->get_pattern_map();
-            const auto load_node = pm.at(match_load);
-            const auto load_expr = linear_ir.get_expr_by_node(load_node);
-            const auto input_tds = load_expr->get_inputs();
+            const auto load_node = pm.at(match_softmax);
+            const auto softmax_expr = *expr_it;
+            const auto input_tds = softmax_expr->get_inputs();
             const auto output_tds = expr_it->get()->get_outputs();
-            linear_ir.erase(std::prev(expr_it));
-            linear_ir.erase(std::prev(expr_it));
-            expr_it = linear_ir.erase(expr_it);
-            linear_ir.get_config();
+            const auto tensor_out = output_tds.front()->get_tensor();
+            const auto subtensor_in = input_tds.front()->get_subtensor();
+
+            expr_it = linear_ir.erase(expr_it);   // Remove Softmax
+            auto outer_loop_end_pos = expr_it;
+            auto outer_loop_begin_pos = std::prev(expr_it);
+
             const size_t buffer_allocation_rank = 2;
             // We need an iterator to the inserted element
             auto push_node = [&linear_ir, &expr_it](const std::shared_ptr<Node>& n) {
@@ -75,16 +74,14 @@ bool SoftmaxDecomposition::run(LoweredExprIR& linear_ir) {
             // Divide is expensive operation, so we decompose it into 1 / x * y, where 1 / x is executed outside loop
             const auto pow = push_node(make_shared<op::PowerStatic>(horizon_sum.second, -1.));
             const auto broadcast_pow = push_node(make_shared<op::BroadcastMove>(pow.second, horizon_sum.second->get_input_partial_shape(0)));
-            const auto buffer_exp = push_node(make_shared<op::Buffer>(store_exp.second, buffer_allocation_rank));
+            const auto buffer_exp = push_node(make_shared<op::Buffer>(store_exp.second, -1));
 
-            //const auto loop_begin_div = push_node(make_shared<op::LoopBegin>());
             const auto load_div = push_node(make_shared<op::Load>(buffer_exp.second, m_vector_size));
             loop_begin_offset = load_div.first;
             const auto mul = push_node(make_shared<ov::op::v1::Multiply>(load_div.second, broadcast_pow.second));
             const auto store_div_node = make_shared<op::Store>(mul.second, m_vector_size);
             linear_ir.insert(expr_it, make_shared<LoweredExpr>(store_div_node, mul.first->get()->get_outputs(), output_tds));
             loop_begin_end_offsets.emplace_back(loop_begin_offset, expr_it);
-            //const auto loop_end_div = push_node(make_shared<op::LoopEnd>());
 
             /* =========================================== */
 
@@ -96,18 +93,17 @@ bool SoftmaxDecomposition::run(LoweredExprIR& linear_ir) {
             sum.second->input(0).get_rt_info()["set_fill"] = uint32_t(0x00000000);
             size_t m_vector_size = 16;
             for (const auto& begin_end : loop_begin_end_offsets) {
-                InsertLoopsLayout::inject_loops(begin_end.first, begin_end.second, linear_ir, 1, m_vector_size);
-                if (auto loop_end = as_type_ptr<op::LoopEnd>(std::prev(begin_end.second)->get()->get_node()))
-                    // Note: it doesn't matter here if an outer loop is actually present or not. We need to set
-                    // has_outer_loop=true, otherwise finalization_offsets will be ignored by the emitter.
-                    // Look at optimize_single_evaluation() for more details.
-                    loop_end->has_outer_loop = true;
-                else
-                    throw ngraph_error("Lowered Softmax decopmposition failed to insert a loop");
+                InsertLoops::insertion(linear_ir, begin_end.first, begin_end.second, 1, m_vector_size);
             }
+
+            InsertLoops::insert_one_loop(linear_ir, std::next(outer_loop_begin_pos), outer_loop_end_pos,
+                                         *(tensor_out.rbegin() + 1),
+                                         1 < subtensor_in.size() ? *(subtensor_in.rbegin() + 1) : 1lu);
             modified = true;
         }
     }
+    linear_ir.serialize("/home/a-sidorova/projects/lin_ir/openvino/graphs/lin.xml",
+                        "/home/a-sidorova/projects/lin_ir/openvino/graphs/lin.bin");
     return modified;
 }
 

@@ -4,7 +4,7 @@
 
 #include "snippets/lowered_expr.hpp"
 #include "snippets/pass/assign_registers.hpp"
-#include "snippets/pass/vector_to_scalar.hpp"
+#include "snippets/pass/lowered/vector_to_scalar.hpp"
 #include "snippets/op/loop.hpp"
 #include "snippets/op/subgraph.hpp"
 #include <snippets/itt.hpp>
@@ -43,6 +43,20 @@ std::shared_ptr<Emitter> LoweredExpr::get_emitter() const {
 
 void LoweredExpr::init_emitter(const std::shared_ptr<const TargetMachine>& target) {
     m_emitter = target->get(m_source_node->get_type_info())(m_source_node);
+}
+
+size_t LoweredExpr::get_input_port(const TensorDescriptorPtr& input) {
+    const auto iter = std::find(m_inputs.begin(), m_inputs.end(), input);
+    if (iter == m_inputs.end())
+        throw ngraph_error("Failed to get input port: target input is not found");
+    return std::distance(m_inputs.begin(), iter);
+}
+
+size_t LoweredExpr::get_output_port(const TensorDescriptorPtr& output) {
+    const auto iter = std::find(m_outputs.begin(), m_outputs.end(), output);
+    if (iter == m_outputs.end())
+        throw ngraph_error("Failed to get output port: target output is not found");
+    return std::distance(m_outputs.begin(), iter);
 }
 
 void LoweredExpr::replace_input(const TensorDescriptorPtr& from, TensorDescriptorPtr to) {
@@ -128,6 +142,34 @@ void LoweredExprIR::serialize(const std::string& xml, const std::string& bin) {
                                                        ParameterVector {first_node},
                                                        "Lowered_IR_Serialization");
     ov::pass::Serialize(xml, bin).run_on_model(tmp_model);
+}
+
+ov::NodeVector LoweredExprIR::get_loop_body_by_begin(LoweredExprIR::constExprIt loop_begin_expr_it) const {
+    const auto loop_begin = ov::as_type_ptr<op::LoopBegin>((*loop_begin_expr_it)->get_node());
+    OPENVINO_ASSERT(loop_begin, "LoweredExprIR::get_loop_body_by_begin() expects LoopBegin iterator");
+
+    const auto loop_end = loop_begin->get_loop_end();
+    auto loop_end_expr_it = std::find(loop_begin_expr_it, this->cend(), this->get_expr_by_node(loop_end));
+    OPENVINO_ASSERT(loop_end_expr_it != this->end(), "LoopBegin must have corresponding LoopEnd in Linear IR");
+    return get_loop_body(loop_begin_expr_it, loop_end_expr_it);
+}
+
+ov::NodeVector LoweredExprIR::get_loop_body_by_end(LoweredExprIR::constExprIt loop_end_expr_it) const {
+    const auto loop_end = ov::as_type_ptr<op::LoopEnd>((*loop_end_expr_it)->get_node());
+    OPENVINO_ASSERT(loop_end, "LoweredExprIR::get_loop_body_by_end() expects LoopEnd iterator");
+
+    const auto loop_begin = loop_end->get_loop_begin();
+    auto loop_begin_expr_it = std::find(this->cbegin(), loop_end_expr_it, this->get_expr_by_node(loop_begin));
+    OPENVINO_ASSERT(loop_begin_expr_it != loop_end_expr_it, "LoopEnd must have corresponding LoopBegin in Linear IR");
+    return get_loop_body(loop_begin_expr_it, loop_end_expr_it);
+}
+
+ov::NodeVector LoweredExprIR::get_loop_body(LoweredExprIR::constExprIt loop_begin_expr_it, LoweredExprIR::constExprIt loop_end_expr_it) {
+    ov::NodeVector ops;
+    for (auto node_expr_it = std::next(loop_begin_expr_it); node_expr_it != loop_end_expr_it; node_expr_it++) {
+        ops.push_back((*node_expr_it)->get_node());
+    }
+    return ops;
 }
 
 LoweredExprIR::container LoweredExprIR::deep_copy_range(LoweredExprIR::container::const_iterator begin, LoweredExprIR::container::const_iterator end) {
@@ -355,6 +397,10 @@ LoweredExprIR::exprIt LoweredExprIR::erase(LoweredExprIR::exprIt pos) {
 LoweredExprIR::exprIt LoweredExprIR::erase(LoweredExprIR::constExprIt pos) {
     unregister_expression(*pos);
     return m_lowered_ops.erase(pos);
+}
+
+void LoweredExprIR::splice(LoweredExprIR::constExprIt position, LoweredExprIR::constExprIt value) {
+    m_lowered_ops.splice(position, m_lowered_ops, value);
 }
 
 }// namespace snippets
