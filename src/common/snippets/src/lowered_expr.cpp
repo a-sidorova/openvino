@@ -4,7 +4,7 @@
 
 #include "snippets/lowered_expr.hpp"
 #include "snippets/pass/assign_registers.hpp"
-#include "snippets/pass/vector_to_scalar.hpp"
+#include "snippets/pass/lowered/vector_to_scalar.hpp"
 #include "snippets/op/loop.hpp"
 #include "snippets/op/subgraph.hpp"
 #include <snippets/itt.hpp>
@@ -45,6 +45,20 @@ void LoweredExpr::init_emitter(const std::shared_ptr<const TargetMachine>& targe
     m_emitter = target->get(m_source_node->get_type_info())(m_source_node);
 }
 
+size_t LoweredExpr::get_input_port(const TensorDescriptorPtr& input) {
+    const auto iter = std::find(m_inputs.begin(), m_inputs.end(), input);
+    if (iter == m_inputs.end())
+        throw ngraph_error("Failed to get input port: target input is not found");
+    return std::distance(m_inputs.begin(), iter);
+}
+
+size_t LoweredExpr::get_output_port(const TensorDescriptorPtr& output) {
+    const auto iter = std::find(m_outputs.begin(), m_outputs.end(), output);
+    if (iter == m_outputs.end())
+        throw ngraph_error("Failed to get output port: target output is not found");
+    return std::distance(m_outputs.begin(), iter);
+}
+
 void LoweredExpr::replace_input(const TensorDescriptorPtr& from, TensorDescriptorPtr to) {
     const auto& found = std::find(m_inputs.begin(), m_inputs.end(), from);
     if (found == m_inputs.end())
@@ -57,6 +71,21 @@ void LoweredExpr::replace_output(const TensorDescriptorPtr& from, TensorDescript
     if (found == m_outputs.end())
         throw ngraph_error("Failed to replace: target output is not found");
     *found = std::move(to);
+}
+
+void LoweredExpr::set_loop_id(size_t id, size_t idx) {
+    OPENVINO_ASSERT((std::find(m_loop_ids.begin(), m_loop_ids.end(), id) == m_loop_ids.end()),
+                    "LoweredExpr cannot have several the same Loops");
+    if (m_loop_ids.size() <= idx) {
+        m_loop_ids.resize(idx + 1, LoopMarking::LOOP_EMPTY_ID);
+    }
+    m_loop_ids[idx] = id;
+}
+
+void LoweredExpr::remove_loop_id(size_t id) {
+    auto it = std::find(m_loop_ids.begin(), m_loop_ids.end(), id);
+    OPENVINO_ASSERT(it == m_loop_ids.end(), "LoweredExpr doesn't have the Loop with ID " + id);
+    *it = LoopMarking::LOOP_EMPTY_ID;
 }
 
 IOLoweredExpr::IOLoweredExpr(const std::shared_ptr<ov::opset1::Parameter>& par, int64_t index)
@@ -73,7 +102,7 @@ IOLoweredExpr::IOLoweredExpr(const std::shared_ptr<ov::opset1::Result>& res, int
 }
 
 LoweredExprIR::LoweredExprIR(const std::shared_ptr<ov::Model>& model, LoweringConfig config)
-    : m_config{std::move(config)}, m_io_lowered_ops{} {
+    : m_config{std::move(config)}, m_io_lowered_ops{}, m_loop_manager(std::make_shared<LoweredLoopManager>()) {
     for (const auto& n : get_ordered_ops(model)) {
         std::shared_ptr<LoweredExpr> expr;
         std::vector<TensorDescriptorPtr> input_tds;
@@ -355,6 +384,172 @@ LoweredExprIR::exprIt LoweredExprIR::erase(LoweredExprIR::exprIt pos) {
 LoweredExprIR::exprIt LoweredExprIR::erase(LoweredExprIR::constExprIt pos) {
     unregister_expression(*pos);
     return m_lowered_ops.erase(pos);
+}
+
+void LoweredExprIR::splice(LoweredExprIR::constExprIt position, LoweredExprIR::constExprIt value) {
+    m_lowered_ops.splice(position, m_lowered_ops, value);
+}
+
+size_t LoweredLoopManager::add(const LoweredLoopInfoPtr& loop) {
+    const auto index = size;
+    m_map[index] = loop;
+    size++;
+    return index;
+}
+
+void LoweredLoopManager::remove(size_t index) {
+    m_map.erase(index);
+}
+
+std::set<size_t> LoweredLoopManager::get_identifies() const {
+    std::set<size_t> keys;
+    for (auto const& info : m_map)
+        keys.insert(info.first);
+    return keys;
+}
+
+LoweredLoopManager::LoweredLoopInfoPtr LoweredLoopManager::get(size_t index) const {
+    const auto it = m_map.find(index);
+    OPENVINO_ASSERT(it != m_map.end(), "LoopInformation hasn't been found!");
+    return it->second;
+}
+
+void LoweredLoopManager::get_loop_bounds(const LoweredExprIR& linear_ir,
+                                         const std::vector<LoweredExprPort>& entries,
+                                         const std::vector<LoweredExprPort>& exits,
+                                         LoweredExprIR::constExprIt& loop_begin_pos,
+                                         LoweredExprIR::constExprIt& loop_end_pos,
+                                         size_t loop_id) {
+    OPENVINO_ASSERT(!entries.empty(), "Loop must have entry points");
+    loop_begin_pos = std::find(linear_ir.begin(), linear_ir.end(), entries.front().first);
+    OPENVINO_ASSERT(loop_begin_pos != linear_ir.end(), "Loop begin hasn't been found!");
+
+    // Some operations in Loop can be before first entry points: Scalars.
+    // We should iterate by them till the expr is in the corresponding Loop
+    auto prev_loop_ids = (*std::prev(loop_begin_pos))->get_loop_ids();
+    while (std::find(prev_loop_ids.begin(), prev_loop_ids.end(), loop_id) != prev_loop_ids.end()) {
+        loop_begin_pos = std::prev(loop_begin_pos);
+        prev_loop_ids = (*std::prev(loop_begin_pos))->get_loop_ids();
+    }
+
+    // We iterate by expr with the same Loop ID to find accurate LoopEnd in cases when some outputs of Loop aren't exit points
+    // TODO: Is it possible?
+    loop_end_pos = std::next(loop_begin_pos);
+    if (!exits.empty()) {
+        loop_end_pos = std::next(std::find(loop_begin_pos, linear_ir.end(), exits.back().first));
+        OPENVINO_ASSERT(loop_end_pos != linear_ir.end(), "Loop end hasn't been found!");
+    }
+    auto loop_ids = (*loop_end_pos)->get_loop_ids();
+    while (std::find(loop_ids.begin(), loop_ids.end(), loop_id) != loop_ids.end()) {
+        loop_end_pos = std::next(loop_end_pos);
+        loop_ids = (*loop_end_pos)->get_loop_ids();
+    }
+}
+
+void LoweredLoopManager::get_io_loop_ports(LoweredExprIR& linear_ir,
+                                           LoweredExprIR::constExprIt loop_begin_pos,
+                                           LoweredExprIR::constExprIt loop_end_pos,
+                                           std::vector<LoweredExprPort>& entries,
+                                           std::vector<LoweredExprPort>& exits) {
+    std::vector<LoweredExprPtr> body_exprs;
+    for (auto expr_it = loop_begin_pos; expr_it != loop_end_pos; ++expr_it) {
+        body_exprs.push_back(*expr_it);
+    }
+    get_io_loop_ports(linear_ir, body_exprs, entries, exits);
+}
+
+void LoweredLoopManager::get_io_loop_ports(LoweredExprIR& linear_ir,
+                                           const std::vector<LoweredExprPtr>& body_exprs,
+                                           std::vector<LoweredExprPort>& entries,
+                                           std::vector<LoweredExprPort>& exits) {
+    entries.clear();
+    exits.clear();
+    for (size_t i = 0; i < body_exprs.size(); ++i) {
+        auto expr = body_exprs[i];
+        const auto inputs = expr->get_inputs();
+        const auto outputs = expr->get_outputs();
+
+        for (size_t in_port = 0; in_port < inputs.size(); ++in_port) {
+            const auto in_td = inputs[in_port];
+            const auto parent_expr = linear_ir.get_expr_by_output(in_td);
+            if (!ov::is_type<opset1::Constant>(parent_expr->get_node()) &&
+                std::find(body_exprs.begin(), body_exprs.begin() + i, parent_expr) == body_exprs.begin() + i) {
+                entries.push_back({expr, in_port});
+            }
+        }
+
+        for (size_t out_port = 0; out_port < outputs.size(); ++out_port) {
+            const auto out_td = outputs[out_port];
+            const auto consumer_exprs = linear_ir.get_exprs_by_input(out_td);
+            for (const auto& conumer_expr : consumer_exprs) {
+                if (std::find(body_exprs.begin() + i, body_exprs.end(), conumer_expr) == body_exprs.end()) {
+                    exits.push_back({expr, out_port});
+                    break;
+                }
+            }
+        }
+    }
+}
+
+void LoweredLoopManager::marking(LoweredExprIR& linear_ir,
+                                 LoweredExprIR::constExprIt loop_begin_pos, LoweredExprIR::constExprIt loop_end_pos,
+                                 size_t loop_depth, size_t vector_size, const std::vector<LoweredExprPtr>& body_exprs) {
+    // Note: currently we simply take out td of the last expr in the loop. If needed,
+    // this can be generalized for loops with multiple different out td's.
+    const auto& out_td = std::prev(loop_end_pos)->get()->get_outputs().front();
+    const auto& tensor_out = out_td->get_tensor();
+    const auto& subtensor_in = loop_begin_pos->get()->get_outputs().front()->get_subtensor();
+    const auto& layout_out = out_td->get_layout();
+
+    const auto exprs = body_exprs.empty() ? get_body_exprs(loop_begin_pos, loop_end_pos) : body_exprs;
+    std::vector<LoweredExprPort> loop_entry_points, loop_exit_points;
+    LoweredLoopManager::get_io_loop_ports(linear_ir, exprs, loop_entry_points, loop_exit_points);
+
+    for (size_t dim_idx = 0; dim_idx < loop_depth; ++dim_idx) {
+        OPENVINO_ASSERT(dim_idx < tensor_out.size(), "Incorrect indexes of Loop for markup");
+        const auto dim = layout_out.size() >= dim_idx ? *(layout_out.rbegin() + dim_idx) : 0;
+        const auto work_amount = tensor_out.size() > dim ? tensor_out[dim] : 0;
+        const auto work_amount_increment = subtensor_in.size() > dim_idx ? *(subtensor_in.rbegin() + dim_idx) :
+                                           dim_idx == 0 ? vector_size : 1;
+
+        marking(linear_ir, loop_begin_pos, loop_end_pos, loop_depth - dim_idx - 1, work_amount, work_amount_increment, loop_entry_points, loop_exit_points);
+    }
+}
+
+void LoweredLoopManager::marking(LoweredExprIR& linear_ir,
+                                 LoweredExprIR::constExprIt loop_begin_pos,
+                                 LoweredExprIR::constExprIt loop_end_pos,
+                                 size_t idx,
+                                 size_t work_amount,
+                                 size_t work_amount_increment,
+                                 const std::vector<LoweredExprPort>& entries,
+                                 const std::vector<LoweredExprPort>& exits) {
+    const auto& loop_manager = linear_ir.get_loop_manager();
+    const auto loop_info = std::make_shared<LoweredLoopManager::LoweredLoopInfo>(
+            work_amount, work_amount_increment, entries, exits);
+    const auto loop_id = loop_manager->add(loop_info);
+    for (auto expr_it = loop_begin_pos; expr_it != loop_end_pos; ++expr_it) {
+        const auto& expr = *expr_it;
+        expr->set_loop_id(loop_id, idx);
+    }
+}
+
+void LoweredLoopManager::skipped_marking(LoweredExprIR::constExprIt loop_begin_pos,
+                                         LoweredExprIR::constExprIt loop_end_pos,
+                                         size_t loop_depth) {
+    for (auto expr_it = loop_begin_pos; expr_it != loop_end_pos; ++expr_it) {
+        const auto& expr = *expr_it;
+        expr->set_loop_ids(std::vector<size_t>(loop_depth, EMPTY_ID));
+    }
+}
+
+std::vector<LoweredExprPtr> LoweredLoopManager::get_body_exprs(LoweredExprIR::constExprIt loop_begin_pos,
+                                                               LoweredExprIR::constExprIt loop_end_pos) {
+    std::vector<LoweredExprPtr> exprs;
+    for (auto it = loop_begin_pos; it != loop_end_pos; ++it) {
+        exprs.push_back(*it);
+    }
+    return exprs;
 }
 
 }// namespace snippets

@@ -14,6 +14,10 @@
 namespace ngraph {
 namespace snippets {
 
+namespace LoopMarking {
+constexpr size_t LOOP_EMPTY_ID = SIZE_MAX;
+}
+
 using code = const uint8_t *;
 using RegInfo = std::pair<std::vector<size_t>, std::vector<size_t>>;
 
@@ -34,11 +38,6 @@ public:
     size_t m_loop_depth = 1;
 };
 
-/**
- * @interface Emitter
- * @brief Base class for all target specific code emitters used by generator.
- * @ingroup snippets
- */
 class LoweredExprIR;
 class LoweredExpr {
     friend LoweredExprIR;
@@ -58,6 +57,12 @@ public:
     void set_reg_info(RegInfo rinfo) {m_reg_info = std::move(rinfo);}
     const std::vector<TensorDescriptorPtr>& get_inputs() {return m_inputs; }
     const std::vector<TensorDescriptorPtr>& get_outputs() {return m_outputs; }
+    size_t get_input_port(const TensorDescriptorPtr& input);
+    size_t get_output_port(const TensorDescriptorPtr& output);
+    std::vector<size_t> get_loop_ids() const { return m_loop_ids; }
+    void set_loop_ids(const std::vector<size_t>& loops) { m_loop_ids = loops; }
+    void set_loop_id(size_t id, size_t idx);
+    void remove_loop_id(size_t id);
 
 protected:
     void replace_input(const TensorDescriptorPtr& from, TensorDescriptorPtr to);
@@ -67,7 +72,11 @@ protected:
     std::vector<TensorDescriptorPtr> m_inputs;
     std::vector<TensorDescriptorPtr> m_outputs;
     RegInfo m_reg_info{{}, {}};
+    // IDs of Loops: Outer ---> Inner
+    std::vector<size_t> m_loop_ids;
 };
+using LoweredExprPtr = std::shared_ptr<LoweredExpr>;
+using LoweredExprPort = std::pair<ngraph::snippets::LoweredExprPtr, size_t>;
 
 class IOLoweredExpr : public LoweredExpr {
 public:
@@ -81,7 +90,8 @@ private:
     io_type m_type = io_type::UNDEFINED;
 };
 
-using LoweredExprPtr = std::shared_ptr<LoweredExpr>;
+class LoweredLoopManager;
+using LoweredLoopManagerPtr = std::shared_ptr<LoweredLoopManager>;
 class LoweredExprIR {
 public:
     using container = std::list<LoweredExprPtr>;
@@ -123,12 +133,15 @@ public:
     constExprIt end() const noexcept {return cend();}
     constExprIt cbegin() const noexcept {return m_lowered_ops.cbegin();}
     constExprIt cend() const noexcept {return m_lowered_ops.cend();}
-    container ::reverse_iterator rbegin() noexcept {return m_lowered_ops.rbegin();}
+    container::reverse_iterator rbegin() noexcept {return m_lowered_ops.rbegin();}
     container::reverse_iterator rend() noexcept {return m_lowered_ops.rend();}
     container::const_reverse_iterator crbegin() const noexcept {return m_lowered_ops.crbegin();}
     container::const_reverse_iterator crend() const noexcept {return m_lowered_ops.crend();}
+    void splice(constExprIt position, constExprIt value);
     static ov::NodeVector get_ordered_ops(const std::shared_ptr<ov::Model>& model);
     void serialize(const std::string& xml, const std::string& bin);
+
+    LoweredLoopManagerPtr get_loop_manager() const { return m_loop_manager; }
 
 private:
     void register_expression(const LoweredExprPtr& expr);
@@ -144,6 +157,74 @@ private:
     std::unordered_map<TensorDescriptorPtr , std::set<LoweredExprPtr>> m_input2expression_map;
     io_container m_io_lowered_ops;
     LoweringConfig m_config{};
+    LoweredLoopManagerPtr m_loop_manager = nullptr;
+};
+
+class LoweredLoopManager {
+public:
+    constexpr static size_t EMPTY_ID = LoopMarking::LOOP_EMPTY_ID;
+
+    LoweredLoopManager() = default;
+
+    class LoweredLoopInfo {
+    public:
+        LoweredLoopInfo() = default;
+        LoweredLoopInfo(size_t work_amount, size_t increment,
+                        const std::vector<LoweredExprPort>& entries,
+                        const std::vector<LoweredExprPort>& exits)
+                : m_work_amount(work_amount), m_increment(increment), m_entry_exprs(entries), m_exit_exprs(exits) {}
+        size_t m_work_amount;
+        size_t m_increment;
+        // The order of entry and exit expressions: IR Start <-- first element...last element --> IR End
+        std::vector<LoweredExprPort> m_entry_exprs;
+        std::vector<LoweredExprPort> m_exit_exprs;
+    };
+    using LoweredLoopInfoPtr = std::shared_ptr<LoweredLoopInfo>;
+
+    size_t add(const LoweredLoopInfoPtr& loop);
+    void remove(size_t index);
+    LoweredLoopInfoPtr get(size_t index) const;
+    size_t get_loop_count() const { return m_map.size(); }
+    std::set<size_t> get_identifies() const;
+
+    static void marking(LoweredExprIR& linear_ir,
+                        LoweredExprIR::constExprIt loop_begin_pos,
+                        LoweredExprIR::constExprIt loop_end_pos,
+                        size_t loop_depth, size_t vector_size,
+                        const std::vector<LoweredExprPtr>& body_exprs = {});
+    static void marking(LoweredExprIR& linear_ir,
+                        LoweredExprIR::constExprIt loop_begin_pos,
+                        LoweredExprIR::constExprIt loop_end_pos,
+                        size_t idx,
+                        size_t work_amount,
+                        size_t work_amount_increment,
+                        const std::vector<LoweredExprPort>& entries,
+                        const std::vector<LoweredExprPort>& exits);
+    static void skipped_marking(LoweredExprIR::constExprIt loop_begin_pos,
+                                LoweredExprIR::constExprIt loop_end_pos,
+                                size_t loop_depth);
+
+    static void get_loop_bounds(const LoweredExprIR& linear_ir,
+                                const std::vector<LoweredExprPort>& entries,
+                                const std::vector<LoweredExprPort>& exits,
+                                LoweredExprIR::constExprIt& loop_begin_pos,
+                                LoweredExprIR::constExprIt& loop_end_pos,
+                                size_t loop_id = EMPTY_ID);
+
+private:
+    static void get_io_loop_ports(LoweredExprIR& linear_ir,
+                                  const std::vector<LoweredExprPtr>& body_exprs,
+                                  std::vector<LoweredExprPort>& entries,
+                                  std::vector<LoweredExprPort>& exits);
+    static void get_io_loop_ports(LoweredExprIR& linear_ir,
+                                  LoweredExprIR::constExprIt loop_begin_pos,
+                                  LoweredExprIR::constExprIt loop_end_pos,
+                                  std::vector<LoweredExprPort>& entries,
+                                  std::vector<LoweredExprPort>& exits);
+    static std::vector<LoweredExprPtr> get_body_exprs(LoweredExprIR::constExprIt loop_begin_pos, LoweredExprIR::constExprIt loop_end_pos);
+
+    std::map<size_t, LoweredLoopInfoPtr> m_map;
+    size_t size;
 };
 
 using AllocatedEmitter = std::pair<std::shared_ptr<Emitter>, RegInfo>;

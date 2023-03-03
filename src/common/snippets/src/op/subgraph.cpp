@@ -10,11 +10,11 @@
 #include "snippets/pass/insert_load_store.hpp"
 #include "snippets/pass/insert_movebroadcast.hpp"
 #include "snippets/pass/broadcast_to_movebroadcast.hpp"
-#include "snippets/pass/load_movebroadcast_to_broadcastload.hpp"
+#include "snippets/pass/lowered/load_movebroadcast_to_broadcastload.hpp"
 #include "snippets/pass/assign_registers.hpp"
 #include "snippets/pass/convert_constants.hpp"
 #include "snippets/pass/convert_power_to_powerstatic.hpp"
-#include "snippets/pass/vector_to_scalar.hpp"
+#include "snippets/pass/lowered/vector_to_scalar.hpp"
 #include "snippets/pass/insert_loops.hpp"
 #include "snippets/pass/transpose_decomposition.hpp"
 #include "snippets/pass/transform_convert.hpp"
@@ -544,14 +544,11 @@ void snippets::op::Subgraph::convert_to_snippet_dialect() {
     if (config.m_has_domain_sensitive_ops) {
         manager.register_pass<snippets::pass::MatMulToBrgemm>();
         manager.register_pass<snippets::pass::FuseTransposeBrgemm>();
-        manager.register_pass<snippets::pass::SoftmaxDecomposition>(count, allocationRank);
         manager.register_pass<snippets::pass::TransposeDecomposition>();
     }
     manager.register_pass<snippets::pass::BroadcastToMoveBroadcast>();
     manager.register_pass<snippets::pass::ConvertConstantsToScalars>();
     manager.register_pass<snippets::pass::ConvertPowerToPowerStatic>();
-    manager.register_pass<snippets::pass::InsertLoad>(count);
-    manager.register_pass<snippets::pass::InsertStore>(count);
     // todo: presently dynamic pipeline is activated even if the last two dimension are static
     //  In general, we can use static kernels in this case, but several parameters (src and dst memory pointers for example)
     //  should be passed as run-time args, so it's a mixed mode: kernel is shape-aware, but some additional runtime args are required
@@ -559,30 +556,6 @@ void snippets::op::Subgraph::convert_to_snippet_dialect() {
     // * ALL last dims are static => broadcasting is handled via MoveBroadcast and pointer arithmetics (even for dynamic upper dims)
     if (!inputs_has_dynamic_last_dims) {
         manager.register_pass<snippets::pass::InsertMoveBroadcast>();
-        manager.register_pass<snippets::pass::LoadMoveBroadcastToBroadcastLoad>();
-        // Note that, BrodacastMove is typically inserted right after the Load. Such cases are typical for
-        // simple subgraphs where one of the ngraph::op's inputs is broadcasted to match the larger one. However, BroadcastMove
-        // could also be inserted after the ngraph::op, if the op input don't need broadcasting, but the output does
-        // (for example, to match the larger output of a child node). In such cases, Loads (and Stores) should be replaced
-        // with ScalarLoads (ScalarStores) to avoid invalid read in vector Loop. Graph example:
-        // Parameter_0    Parameter_1        Parameter_2
-        // [1,2,5,16]      [1,2,5,1]          [1,2,5,1]
-        //   Load        BroadcastLoad         Load*       Scalar
-        //          Add                             Subtract
-        //            \___________     ___________BroadcastMove
-        //                        \   /
-        //                       Multiply
-        //                         Store
-        //                        Result
-        // Note: Load* should be replaced with ScalarLoad in this example to avoid invalid read in vector Loop.
-        if (master_shape.size() != 0 && master_shape[master_shape.size() - 1] != 1) {
-            manager.register_pass<snippets::pass::SetScalarCountForLoad>();
-            manager.register_pass<snippets::pass::SetScalarCountForStore>();
-            manager.get_pass_config()->
-                    set_callback<ngraph::snippets::pass::SetScalarCountForLoad>(skip_matching_domain);
-            manager.get_pass_config()->
-                    set_callback<ngraph::snippets::pass::SetScalarCountForStore>(skip_matching_domain);
-        }
     }
     manager.run_passes(body_ptr());
 }
@@ -611,8 +584,12 @@ snippets::Schedule snippets::op::Subgraph::generate(ngraph::pass::Manager& opt, 
     INTERNAL_OP_SCOPE(Subgraph);
     OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::op::generate")
     NGRAPH_CHECK(m_generator != nullptr, "generate is called while generator is not set");
+    //ov::pass::Serialize("/home/a-sidorova/projects/lin_ir/openvino/graphs/0.xml",
+    //                    "/home/a-sidorova/projects/lin_ir/openvino/graphs/0.bin").run_on_model(body_ptr());
     convert_to_snippet_dialect();
     opt.run_passes(body_ptr());
+    ov::pass::Serialize("/home/a-sidorova/projects/lin_ir/openvino/graphs/test.xml",
+                        "/home/a-sidorova/projects/lin_ir/openvino/graphs/test.bin").run_on_model(body_ptr());
     // After all passes, when all optimizations are completed and all MemoryAccess ops are inserted,
     // we can calculate common buffer scratchpad size and propagate offset from Buffer to the corresponding MemoryAccess ops
     if (config.m_has_domain_sensitive_ops)

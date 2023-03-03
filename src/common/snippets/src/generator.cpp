@@ -11,13 +11,18 @@
 #include <snippets/itt.hpp>
 #include "snippets/pass/lowered/assign_registers.hpp"
 #include "snippets/pass/lowered/insert_tail_loop.hpp"
-#include "snippets/pass/lowered/insert_loops_layout.hpp"
-#include "snippets/pass/lowered/transpose_decomposition.hpp"
+#include "snippets/pass/lowered/insert_loops.hpp"
 #include "snippets/pass/lowered/buffer_propagate_offset_and_reset.hpp"
 #include "snippets/pass/lowered/propagate_layout.hpp"
 #include "snippets/pass/lowered/softmax_decomposition.hpp"
 #include "snippets/lowered_expr.hpp"
 #include "snippets/tensor_descriptor.hpp"
+#include "snippets/pass/lowered/loop_fusion.hpp"
+#include "snippets/pass/lowered/insert_buffer.hpp"
+#include "snippets/pass/lowered/insert_load_store.hpp"
+#include "snippets/pass/lowered/init_loops.hpp"
+#include "snippets/pass/lowered/vector_to_scalar.hpp"
+#include "snippets/pass/lowered/load_movebroadcast_to_broadcastload.hpp"
 
 namespace ngraph {
 namespace snippets {
@@ -27,13 +32,22 @@ Generator::LoweringResult Generator::generate(std::shared_ptr<ov::Model>& m, con
     if (!target->is_supported())
         throw ngraph_error("unsupported architecture for code generation");
     auto linear_ir = LoweredExprIR(m, config);
+    linear_ir.serialize("/home/a-sidorova/projects/lin_ir/openvino/graphs/lin_test.xml",
+                        "/home/a-sidorova/projects/lin_ir/openvino/graphs/lin_test.bin");
     const size_t vector_size = target->get_lanes();
     // todo: fix buffer allocation rank
     const size_t buffer_allocation_rank = -1;
     auto propagate_buffer_offsets = std::make_shared<pass::lowered::PropagateOffsetAndResetBuffer>();
+   // TODO: Softmax
     std::vector<std::shared_ptr<pass::lowered::LinearIRTransformation>> transformation_pipeline {
-            std::make_shared<pass::lowered::InsertLoopsLayout>(vector_size, buffer_allocation_rank),
-            std::make_shared<pass::lowered::SoftmaxDecomposition>(vector_size, buffer_allocation_rank),
+            std::make_shared<pass::lowered::InsertLoops>(vector_size),
+            std::make_shared<pass::lowered::SoftmaxDecomposition>(vector_size),
+            std::make_shared<pass::lowered::LoopFusion>(),
+            std::make_shared<pass::lowered::InsertBuffer>(buffer_allocation_rank),
+            std::make_shared<pass::lowered::InsertLoadStore>(vector_size),
+            std::make_shared<pass::lowered::SetScalarCountForLoadStore>(),
+            std::make_shared<pass::lowered::InitLoops>(vector_size),
+            std::make_shared<pass::lowered::LoadMoveBroadcastToBroadcastLoad>(),
             std::make_shared<pass::lowered::PropagateLayout>(),
             propagate_buffer_offsets,
             std::make_shared<pass::lowered::AssignRegisters>(),
@@ -43,6 +57,8 @@ Generator::LoweringResult Generator::generate(std::shared_ptr<ov::Model>& m, con
         transform->run(linear_ir);
     }
     const auto buffer_scratchpad_size = propagate_buffer_offsets->get_scratchpad_size();
+    linear_ir.serialize("/home/a-sidorova/projects/lin_ir/openvino/graphs/lin_1.xml",
+                        "/home/a-sidorova/projects/lin_ir/openvino/graphs/lin_1.bin");
     linear_ir.init_emitters(target);
     OV_ITT_TASK_NEXT(GENERATE, "::EmitCode")
     auto loops2DKernel = std::make_shared<op::Kernel>(linear_ir);

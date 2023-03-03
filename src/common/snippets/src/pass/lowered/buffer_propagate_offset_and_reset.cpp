@@ -60,27 +60,31 @@ bool PropagateOffsetAndResetBuffer::run(LoweredExprIR& linear_ir) {
     size_t offset = 0;
     for (auto expr_it = linear_ir.begin(); expr_it != linear_ir.end(); expr_it++) {
         if (auto buffer = as_type_ptr<op::Buffer>(expr_it->get()->get_node())) {
+            std::cout << "BUFFER HAS BEEN FOUND!!!" << std::endl;
             const auto buffer_size = buffer->get_byte_size();
             // If it's the first buffer, offsets are zero => nothing to propagate, can continue
             if (m_buffer_scratchpad_size == 0) {
                 m_buffer_scratchpad_size += buffer_size;
                 continue;
             }
-            const auto& parent_expr = linear_ir.get_expr_by_output(expr_it->get()->get_inputs()[0]);
-            const auto& prent_node = parent_expr->get_node();
+           // const auto& parent_expr = linear_ir.get_expr_by_output(expr_it->get()->get_inputs()[0]);
+           // const auto& prent_node = parent_expr->get_node();
             // Brgemm is a special case, since it doesn't allow memory reuse
-            if (ov::is_type<op::Brgemm>(prent_node)) {
-                offset = m_buffer_scratchpad_size;
-                buffer->set_offset(static_cast<int64_t>(offset));
-                propagate_offset(linear_ir, *expr_it, offset);
-                m_buffer_scratchpad_size += buffer_size;
-                continue;
-            }
-            const auto current_allocated_memory_size = m_buffer_scratchpad_size - offset;
-            if (buffer_size > current_allocated_memory_size) {
-                m_buffer_scratchpad_size += (buffer_size - current_allocated_memory_size);
+          //  if (ov::is_type<op::Brgemm>(prent_node)) {
+          //      offset = m_buffer_scratchpad_size;
+          //      buffer->set_offset(static_cast<int64_t>(offset));
+          //      propagate_offset(linear_ir, *expr_it, offset);
+           //     m_buffer_scratchpad_size += buffer_size;
+           //     continue;
+           // }
+           // const auto current_allocated_memory_size = m_buffer_scratchpad_size - offset;
+          //  if (buffer_size > current_allocated_memory_size) {
+            offset = m_buffer_scratchpad_size;
+            buffer->set_offset(static_cast<int64_t>(offset));
+            propagate_offset(linear_ir, *expr_it, offset);
+            m_buffer_scratchpad_size += buffer_size;
                 // Note: we don't update offset because we just add memory to needed size
-            }
+          //  }
             propagate_offset(linear_ir, *expr_it, offset);
             modified = true;
         } else if (auto loop_end = as_type_ptr<op::LoopEnd>(expr_it->get()->get_node())) {
@@ -102,14 +106,14 @@ bool PropagateOffsetAndResetBuffer::run(LoweredExprIR& linear_ir) {
                 }
             }
             // This is currently not allowed because all Buffers are implicitly used in-place
-            if (buffer_idx.size() > 2) {
-                throw ngraph_error("More than 2 Buffers connected to a single LoopEnd.");
-            } else if (buffer_idx.size() == 2) {
-                const auto idx_to_drop = buffer_idx.front();
+            if (buffer_idx.size() > 1) {
                 auto ptr_increments = loop_end->get_ptr_increments();
                 auto fin_offsets = loop_end->get_finalization_offsets();
-                ptr_increments[idx_to_drop] = 0;
-                fin_offsets[idx_to_drop] = 0;
+                for (size_t i = 0; i < buffer_idx.size() - 1; i++) {
+                    const auto idx_to_drop = buffer_idx[i];
+                    ptr_increments[idx_to_drop] = 0;
+                    fin_offsets[idx_to_drop] = 0;
+                }
                 loop_end->set_ptr_increments(ptr_increments);
                 loop_end->set_finalization_offsets(fin_offsets);
             }
