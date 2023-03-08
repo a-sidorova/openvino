@@ -60,6 +60,10 @@ bool LoopBegin::get_evaluate_once() const {
     return get_loop_end()->get_evaluate_once();
 }
 
+bool LoopBegin::get_work_with_buffer() const {
+    return get_loop_end()->get_work_with_buffer();
+}
+
 LoopEnd::LoopEnd(const std::vector<Output<Node>> &args, size_t work_amount, size_t work_amount_increment,
                  std::vector<bool> apply_increments, std::vector<int64_t> finalization_offsets)
         : LoopBase(args),
@@ -138,6 +142,10 @@ void LoopEnd::set_evaluate_once(bool once) {
     evaluate_once = once;
 }
 
+void LoopEnd::set_work_with_buffer(bool buffer) {
+    work_with_buffer = buffer;
+}
+
 void LoopEnd::validate_and_infer_types() {
     NODE_VALIDATION_CHECK(this, get_input_size() >= 1, "LoopEnd must have at least one input");
     const auto loop_io_size = static_cast<int64_t>(get_input_size()) - 1;
@@ -174,6 +182,10 @@ bool LoopEnd::get_evaluate_once() const {
 
 size_t LoopEnd::get_increment() const {
     return work_amount_increment;
+}
+
+bool LoopEnd::get_work_with_buffer() const {
+    return work_with_buffer;
 }
 
 } // namespace op

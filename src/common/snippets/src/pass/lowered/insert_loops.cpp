@@ -56,19 +56,31 @@ bool InsertLoops::run(LoweredExprIR& linear_ir) {
 
     // Parameters Results or Constants are ignored. They can't be used as a loop starting point
     auto is_not_start_point = [](const std::shared_ptr<ov::Node>& node) {
-        return ov::is_type<opset1::Constant>(node) ||
-               ov::is_type<opset1::Result>(node) ||
+        return ov::is_type<opset1::Result>(node) ||
                ov::is_type<opset1::Parameter>(node) ||
                ov::is_type<opset1::Softmax>(node) ||
                ov::is_type<op::Brgemm>(node);
     };
 
+    // Due to features of topological sort, some Constants (Scalars) may appear right after Parameters in
+    // sorted ops (so it's between Parameters and LoopBegin). Consequently, ScalarEmitters would be called
+    // outside the Loop, and only the first Loop iteration would yield correct data (assuming the vector reg
+    // assigned to scalar will get corrupted inside the loop body). To avoid such cases, we add Constants to the places in Linear IR
+    // in the corresponding Loops.
+    // Note: We cannot create Loop with alone Scalars so we don't start Loop creation starting Scalar
+    //       We save Scalars to add them to the Loops where there iare their consumers
+    std::vector<LoweredExprIR::exprIt> scalars;
+
     for (auto expr_it = linear_ir.begin(); expr_it != linear_ir.end(); expr_it++) {
         const auto& node = expr_it->get()->get_node();
         if (is_not_start_point(node))
             continue;
+        if (ov::is_type<opset1::Constant>(node)) {
+            scalars.push_back(expr_it);
+            continue;
+        }
 
-        // Skip existing loops? Softmax history
+        // Skip existing loops?
 
         auto loop_begin_pos = expr_it;
         auto loop_end_pos = loop_begin_pos;
@@ -116,6 +128,19 @@ bool InsertLoops::run(LoweredExprIR& linear_ir) {
         expr_it = std::prev(loop_end_pos);
         linear_ir.serialize("/home/a-sidorova/projects/lin_ir/openvino/graphs/lin.xml",
                             "/home/a-sidorova/projects/lin_ir/openvino/graphs/lin.bin");
+    }
+
+    // We should move Scalars to Loops
+    for (const auto& scalar_it : scalars) {
+        const auto& scalar = (*scalar_it)->get_node();
+        const auto td = (*scalar_it)->get_outputs().front();
+        const auto consumers = linear_ir.get_exprs_by_input(td);
+        OPENVINO_ASSERT(consumers.size() == 1, "Constant must have only one consumer!");
+
+        const auto consumer_expr = *(consumers.begin());
+        const auto child_expr_iter = std::find(scalar_it, linear_ir.end(), consumer_expr);
+        OPENVINO_ASSERT(child_expr_iter != linear_ir.end(), "Consumer of Constant hasn't been found in Linear IR!");
+        linear_ir.splice(child_expr_iter, scalar_it);
     }
     linear_ir.serialize("/home/a-sidorova/projects/lin_ir/openvino/graphs/lin.xml",
                         "/home/a-sidorova/projects/lin_ir/openvino/graphs/lin.bin");

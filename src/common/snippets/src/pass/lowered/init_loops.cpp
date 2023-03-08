@@ -178,6 +178,17 @@ bool InitLoops::run(LoweredExprIR& linear_ir) {
             auto ptr_increments = init_ptr_increments(linear_ir, loop_in_exprs, loop_out_exprs, dim);
             auto finalization_offsets = init_finalization_offsets(ptr_increments, work_amount);
 
+            auto is_buffer_input = [&linear_ir](const LoweredExprPtr& expr) {
+                const auto parent_expr = linear_ir.get_expr_by_output(expr->get_inputs().front());
+                return ov::is_type<op::Buffer>(parent_expr->get_node());
+            };
+            auto is_buffer_output = [&linear_ir](const LoweredExprPtr& expr) {
+                const auto child_exprs = linear_ir.get_exprs_by_input(expr->get_outputs().front());
+                return ov::is_type<op::Buffer>((*child_exprs.begin())->get_node());
+            };
+            auto there_is_buffer = std::any_of(loop_in_exprs.begin(), loop_in_exprs.end(), is_buffer_input) ||
+                                   std::any_of(loop_out_exprs.begin(), loop_out_exprs.end(), is_buffer_output);
+
             OutputVector managed_outputs = loop_in_outputs;
             managed_outputs.insert(managed_outputs.end(), loop_out_outputs.begin(), loop_out_outputs.end());
             managed_outputs.push_back(loop_begin->output(0));
@@ -189,6 +200,7 @@ bool InitLoops::run(LoweredExprIR& linear_ir) {
             loop_end->set_increment(work_amount_increment);
             loop_end->set_ptr_increments(ptr_increments);
             loop_end->set_finalization_offsets(finalization_offsets);
+            loop_end->set_work_with_buffer(there_is_buffer);
 
             std::vector<TensorDescriptorPtr> loop_end_inputs;
             for (const auto& expr : loop_in_exprs)
