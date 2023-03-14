@@ -564,14 +564,31 @@ void Snippet::execute(dnnl::stream strm) {
 void Snippet::schedule_6d() {
     const auto& dom = exec_domain;
     // < N, C, H, W > < 1, 1, N, C*H*W>
-    parallel_for5d(dom[0], dom[1], dom[2], dom[3], dom[4],
-        [&](int64_t d0, int64_t d1, int64_t d2, int64_t d3, int64_t d4) {
-            int64_t indexes[] = {d0, d1, d2, d3, d4};
-            jit_snippets_call_args call_args;
-            update_ptrs(call_args);
+//    parallel_for5d(dom[0], dom[1], dom[2], dom[3], dom[4],
+//        [&](int64_t d0, int64_t d1, int64_t d2, int64_t d3, int64_t d4) {
+//            int64_t indexes[] = {d0, d1, d2, d3, d4};
+//            jit_snippets_call_args call_args;
+//            update_ptrs(call_args);
+//
+//            schedule.get_callable<kernel>()(indexes, &call_args);
+//        });
 
-            schedule.get_callable<kernel>()(indexes, &call_args);
-        });
+    // < N, C, H, W > < 1, 1, N, C*H*W>
+    for (auto d0 = 0; d0 < dom[0]; d0++) {
+        for (auto d1 = 0; d1 < dom[1]; d1++) {
+            for (auto d2 = 0; d2 < dom[2]; d2++) {
+                for (auto d3 = 0; d3 < dom[3]; d3++) {
+                    for (auto d4 = 0; d4 < dom[4]; d4++) {
+                        int64_t indexes[] = {d0, d1, d2, d3, d4};
+                        jit_snippets_call_args call_args;
+                        update_ptrs(call_args);
+
+                        schedule.get_callable<kernel>()(indexes, &call_args);
+                    }
+                }
+            }
+        }
+    }
 }
 
 void Snippet::schedule_nt() {

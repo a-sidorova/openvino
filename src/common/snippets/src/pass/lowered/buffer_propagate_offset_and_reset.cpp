@@ -60,27 +60,31 @@ bool PropagateOffsetAndResetBuffer::run(LoweredExprIR& linear_ir) {
     size_t offset = 0;
     for (auto expr_it = linear_ir.begin(); expr_it != linear_ir.end(); expr_it++) {
         if (auto buffer = as_type_ptr<op::Buffer>(expr_it->get()->get_node())) {
+            std::cout << "BUFFER HAS BEEN FOUND!!!" << std::endl;
             const auto buffer_size = buffer->get_byte_size();
             // If it's the first buffer, offsets are zero => nothing to propagate, can continue
             if (m_buffer_scratchpad_size == 0) {
                 m_buffer_scratchpad_size += buffer_size;
                 continue;
             }
-            const auto& parent_expr = linear_ir.get_expr_by_output(expr_it->get()->get_inputs()[0]);
-            const auto& prent_node = parent_expr->get_node();
+           // const auto& parent_expr = linear_ir.get_expr_by_output(expr_it->get()->get_inputs()[0]);
+           // const auto& prent_node = parent_expr->get_node();
             // Brgemm is a special case, since it doesn't allow memory reuse
-            if (ov::is_type<op::Brgemm>(prent_node)) {
-                offset = m_buffer_scratchpad_size;
-                buffer->set_offset(static_cast<int64_t>(offset));
-                propagate_offset(linear_ir, *expr_it, offset);
-                m_buffer_scratchpad_size += buffer_size;
-                continue;
-            }
-            const auto current_allocated_memory_size = m_buffer_scratchpad_size - offset;
-            if (buffer_size > current_allocated_memory_size) {
-                m_buffer_scratchpad_size += (buffer_size - current_allocated_memory_size);
+          //  if (ov::is_type<op::Brgemm>(prent_node)) {
+          //      offset = m_buffer_scratchpad_size;
+          //      buffer->set_offset(static_cast<int64_t>(offset));
+          //      propagate_offset(linear_ir, *expr_it, offset);
+           //     m_buffer_scratchpad_size += buffer_size;
+           //     continue;
+           // }
+           // const auto current_allocated_memory_size = m_buffer_scratchpad_size - offset;
+          //  if (buffer_size > current_allocated_memory_size) {
+            offset = m_buffer_scratchpad_size;
+            buffer->set_offset(static_cast<int64_t>(offset));
+            propagate_offset(linear_ir, *expr_it, offset);
+            m_buffer_scratchpad_size += buffer_size;
                 // Note: we don't update offset because we just add memory to needed size
-            }
+          //  }
             propagate_offset(linear_ir, *expr_it, offset);
             modified = true;
         } else if (auto loop_end = as_type_ptr<op::LoopEnd>(expr_it->get()->get_node())) {

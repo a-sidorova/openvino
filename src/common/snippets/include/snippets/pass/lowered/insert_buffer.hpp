@@ -25,7 +25,8 @@ public:
     bool run(LoweredExprIR& linear_ir) override;
 
 private:
-    void insertion(LoweredExprIR& linear_ir, LoweredExprIR::constExprIt loop_begin_pos, LoweredExprIR::constExprIt loop_end_pos);
+    void insertion(LoweredExprIR& linear_ir, size_t loop_id,
+                   const std::vector<LoweredExprPort>& loop_entries, const std::vector<LoweredExprPort>& loop_exits);
 
     size_t m_buffer_allocation_rank;
 };

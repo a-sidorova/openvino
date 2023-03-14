@@ -27,18 +27,9 @@ public:
     InsertLoops(size_t vector_size);
     bool run(LoweredExprIR& linear_ir) override;
 
-    static void insertion(LoweredExprIR& linear_ir,
-                          LoweredExprIR::constExprIt loop_begin_pos,
-                          LoweredExprIR::constExprIt loop_end_pos,
-                          size_t loop_depth, size_t vector_size);
-
-    static LoweredExprIR::constExprIt insert_one_loop(LoweredExprIR& linear_ir,
-                                                      LoweredExprIR::constExprIt loop_begin_pos,
-                                                      LoweredExprIR::constExprIt loop_end_pos,
-                                                      size_t work_amount,
-                                                      size_t work_amount_increment);
-
 private:
+    void scalars_markup(LoweredExprIR& linear_ir, std::vector<LoweredExprIR::constExprIt>& scalars_iterators);
+
     size_t m_vector_size;
 };
 

@@ -43,13 +43,13 @@ Generator::LoweringResult Generator::generate(std::shared_ptr<ov::Model>& m, con
    // TODO: Softmax
     std::vector<std::shared_ptr<pass::lowered::LinearIRTransformation>> transformation_pipeline {
             std::make_shared<pass::lowered::InsertLoops>(vector_size),
-            std::make_shared<pass::lowered::SoftmaxDecomposition>(vector_size),
-            //std::make_shared<pass::lowered::LoopFusion>(),
+            //std::make_shared<pass::lowered::SoftmaxDecomposition>(vector_size),
+            std::make_shared<pass::lowered::LoopFusion>(),
             std::make_shared<pass::lowered::InsertBuffer>(buffer_allocation_rank),
             std::make_shared<pass::lowered::InsertLoadStore>(vector_size),
-            std::make_shared<pass::lowered::LoadMoveBroadcastToBroadcastLoad>(),
             std::make_shared<pass::lowered::SetScalarCountForLoadStore>(),
             std::make_shared<pass::lowered::InitLoops>(vector_size),
+            std::make_shared<pass::lowered::LoadMoveBroadcastToBroadcastLoad>(),
             std::make_shared<pass::lowered::PropagateLayout>(),
             propagate_buffer_offsets,
             std::make_shared<pass::lowered::AssignRegisters>(),

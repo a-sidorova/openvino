@@ -13,36 +13,25 @@ namespace lowered {
 
 InsertLoops::InsertLoops(size_t vector_size) : LinearIRTransformation(), m_vector_size(vector_size) {}
 
-LoweredExprIR::constExprIt InsertLoops::insert_one_loop(LoweredExprIR& linear_ir,
-                                                        LoweredExprIR::constExprIt loop_begin_pos,
-                                                        LoweredExprIR::constExprIt loop_end_pos,
-                                                        size_t work_amount,
-                                                        size_t work_amount_increment) {
-    const auto& loop_begin = std::make_shared<op::LoopBegin>();
-    const auto& loop_begin_expr = std::make_shared<LoweredExpr>(loop_begin, std::vector<TensorDescriptorPtr>{});
-    loop_begin_pos = linear_ir.insert(loop_begin_pos, loop_begin_expr);
+// Due to features of topological sort, some Constants (Scalars) may appear right after Parameters in
+// sorted ops (so it's between Parameters and LoopBegin). Consequently, ScalarEmitters would be called
+// outside the Loop, and only the first Loop iteration would yield correct data (assuming the vector reg
+// assigned to scalar will get corrupted inside the loop body). To avoid such cases, we add Constants to the places in Linear IR
+// in the corresponding Loops.
+void InsertLoops::scalars_markup(LoweredExprIR& linear_ir, std::vector<LoweredExprIR::constExprIt>& scalars_iterators) {
+    for (const auto& scalar_it : scalars_iterators) {
+        const auto scalar_expr = *scalar_it;
+        const auto output_td = scalar_expr->get_outputs().front();
+        const auto consumers = linear_ir.get_exprs_by_input(output_td);
+        OPENVINO_ASSERT(consumers.size() == 1, "Scalar must have only one consumer!");
+        const auto consumer = *(consumers.begin());
+        scalar_expr->set_loop_ids(consumer->get_loop_ids());
 
-    const auto& loop_end = std::make_shared<op::LoopEnd>(
-            OutputVector{loop_begin}, work_amount, work_amount_increment, std::vector<int64_t>{}, std::vector<int64_t>{});
-    const auto& loop_end_expr = std::make_shared<LoweredExpr>(loop_end);
-    linear_ir.insert(loop_end_pos, loop_end_expr);
-    return loop_begin_pos;
-}
-
-void InsertLoops::insertion(LoweredExprIR& linear_ir, LoweredExprIR::constExprIt loop_begin_pos, LoweredExprIR::constExprIt loop_end_pos,
-                            size_t loop_depth, size_t vector_size) {
-    // Note: currently we simply take out td of the last expr in the loop. If needed,
-    // this can be generalized for loops with multiple different out td's.
-    const auto& out_td = std::prev(loop_end_pos)->get()->get_outputs().front();
-    const auto& tensor_out = out_td->get_tensor();
-    const auto& subtensor_in = loop_begin_pos->get()->get_outputs().front()->get_subtensor();
-
-    for (size_t idx = 0; idx < loop_depth; ++idx) {
-        OPENVINO_ASSERT(idx < tensor_out.size(), "Incorrect indexes of Loop for insertion");
-        const auto work_amount = *(tensor_out.rbegin() + idx);
-        const auto increment = idx < subtensor_in.size() ? *(subtensor_in.rbegin() + idx)
-                                                       : idx == 0 ? vector_size : 1lu;
-        loop_begin_pos = insert_one_loop(linear_ir, loop_begin_pos, loop_end_pos, work_amount, increment);
+        const auto consumer_it = std::find(scalar_it, linear_ir.cend(), consumer);
+        OPENVINO_ASSERT(consumer_it != linear_ir.cend(), "Scalar consumer hasn't been found in linear IR!");
+        if (scalar_it != std::prev(consumer_it)) {
+            linear_ir.splice(consumer_it, scalar_it);
+        }
     }
 }
 
@@ -52,70 +41,69 @@ bool InsertLoops::run(LoweredExprIR& linear_ir) {
         return false;
 
     const auto& lowering_config = linear_ir.get_config();
+    const auto& loop_manager = linear_ir.get_loop_manager();
     auto loop_depth = lowering_config.m_loop_depth;
 
     // Parameters Results or Constants are ignored. They can't be used as a loop starting point
     auto is_not_start_point = [](const std::shared_ptr<ov::Node>& node) {
         return ov::is_type<opset1::Result>(node) ||
+               ov::is_type<opset1::Constant>(node) ||
                ov::is_type<opset1::Parameter>(node) ||
                ov::is_type<opset1::Softmax>(node) ||
                ov::is_type<op::Brgemm>(node);
     };
 
-    // Due to features of topological sort, some Constants (Scalars) may appear right after Parameters in
-    // sorted ops (so it's between Parameters and LoopBegin). Consequently, ScalarEmitters would be called
-    // outside the Loop, and only the first Loop iteration would yield correct data (assuming the vector reg
-    // assigned to scalar will get corrupted inside the loop body). To avoid such cases, we add Constants to the places in Linear IR
-    // in the corresponding Loops.
-    // Note: We cannot create Loop with alone Scalars so we don't start Loop creation starting Scalar
-    //       We save Scalars to add them to the Loops where there iare their consumers
-    std::vector<LoweredExprIR::exprIt> scalars;
+    // Scalars cannot be a single node in Loop
+    // So after common markup we should manually mark Scalars and
+    // explicitly move to before the corresponding consumer
+    std::vector<LoweredExprIR::constExprIt> scalars_iterators;
 
-    for (auto expr_it = linear_ir.begin(); expr_it != linear_ir.end(); expr_it++) {
-        const auto& node = expr_it->get()->get_node();
-        if (is_not_start_point(node))
-            continue;
+    for (auto expr_it = linear_ir.cbegin(); expr_it != linear_ir.cend(); expr_it++) {
+        const auto expr = *expr_it;
+        const auto& node = expr->get_node();
         if (ov::is_type<opset1::Constant>(node)) {
-            scalars.push_back(expr_it);
+            scalars_iterators.push_back(expr_it);
             continue;
         }
-
-        // Skip existing loops?
+        if (is_not_start_point(node))
+            continue;
 
         auto loop_begin_pos = expr_it;
         auto loop_end_pos = loop_begin_pos;
 
-        const auto& outputs = expr_it->get()->get_outputs();
+        const auto& outputs = expr->get_outputs();
         const auto& loop_inner_layout = outputs.front()->get_layout();
         const auto& loop_inner_subtensor = outputs.front()->get_subtensor();
 
+        std::vector<LoweredExprPtr> body_exprs;
         bool is_inside = true;
         do {
             const auto& prev_node = loop_end_pos->get()->get_node();
+            body_exprs.push_back(*loop_end_pos);
             loop_end_pos++;
             // If iterator is the last, we should finish Loop
             if (loop_end_pos == linear_ir.end())
                 break;
 
             // If iterator is the last, we should finish Loop
-            const auto& current_node = loop_end_pos->get()->get_node();
+            const auto& current_expr = *loop_end_pos;
+            const auto& current_node = current_expr->get_node();
             if (ov::is_type<op::Brgemm>(current_node) ||
                 ov::is_type<opset1::Softmax>(current_node) ||
-                ov::is_type<opset1::Result>(current_node))
+                ov::is_type<opset1::Result>(current_node) ||
+                ov::is_type<opset1::Constant>(current_node))
                 break;
 
             // If the next expr isn't real customer of prev expr we should finish Loop
-            std::set<ov::Input<ov::Node>> prev_node_customers;
-            for (const auto& output : prev_node->outputs()) {
-                const auto target_inputs = output.get_target_inputs();
-                prev_node_customers.insert(target_inputs.begin(), target_inputs.end());
+            std::set<LoweredExprPtr> prev_node_customers;
+            const auto prev_outputs = body_exprs.back()->get_outputs();
+            for (const auto& td_output : prev_outputs) {
+                const auto consumers = linear_ir.get_exprs_by_input(td_output);
+                prev_node_customers.insert(consumers.begin(), consumers.end());
             }
-            auto compare = [&current_node](const ov::Input<ov::Node>& input){ return input.get_node()->shared_from_this() == current_node;};
+            auto compare = [&current_node](const LoweredExprPtr& consumer){ return consumer->get_node() == current_node;};
             if (std::none_of(prev_node_customers.begin(), prev_node_customers.end(), compare))
                 break;
-
-            if (ov::is_type<opset1::Constant>(current_node))
-                continue;
 
             const auto& ins = loop_end_pos->get()->get_inputs();
 
@@ -124,24 +112,14 @@ bool InsertLoops::run(LoweredExprIR& linear_ir) {
             is_inside &= layout == loop_inner_layout && subtensor == loop_inner_subtensor;
         } while (is_inside);
 
-        insertion(linear_ir, loop_begin_pos, loop_end_pos, loop_depth, m_vector_size);
+        loop_manager->marking(linear_ir, loop_begin_pos, loop_end_pos, loop_depth, m_vector_size, body_exprs);
         expr_it = std::prev(loop_end_pos);
         linear_ir.serialize("/home/a-sidorova/projects/lin_ir/openvino/graphs/lin.xml",
                             "/home/a-sidorova/projects/lin_ir/openvino/graphs/lin.bin");
     }
 
-    // We should move Scalars to Loops
-    for (const auto& scalar_it : scalars) {
-        const auto& scalar = (*scalar_it)->get_node();
-        const auto td = (*scalar_it)->get_outputs().front();
-        const auto consumers = linear_ir.get_exprs_by_input(td);
-        OPENVINO_ASSERT(consumers.size() == 1, "Constant must have only one consumer!");
+    scalars_markup(linear_ir, scalars_iterators);
 
-        const auto consumer_expr = *(consumers.begin());
-        const auto child_expr_iter = std::find(scalar_it, linear_ir.end(), consumer_expr);
-        OPENVINO_ASSERT(child_expr_iter != linear_ir.end(), "Consumer of Constant hasn't been found in Linear IR!");
-        linear_ir.splice(child_expr_iter, scalar_it);
-    }
     linear_ir.serialize("/home/a-sidorova/projects/lin_ir/openvino/graphs/lin.xml",
                         "/home/a-sidorova/projects/lin_ir/openvino/graphs/lin.bin");
     return true;

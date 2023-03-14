@@ -24,6 +24,19 @@ public:
     OPENVINO_RTTI("LoopFusion", "LinearIRTransformation")
     LoopFusion();
     bool run(LoweredExprIR& linear_ir) override;
+
+private:
+    static bool can_be_fused(const LoweredLoopManager::LoweredLoopInfoPtr& loop_current, const LoweredLoopManager::LoweredLoopInfoPtr& loop_target);
+    static bool fuse_up(LoweredExprIR& linear_ir, const LoweredExprPort& current_entry_point, const LoweredExprPort& target_exit_point,
+                        size_t loop_id, size_t dim_idx,
+                        const LoweredLoopManager::LoweredLoopInfoPtr& loop_current,
+                        const LoweredLoopManager::LoweredLoopInfoPtr& loop_target,
+                        LoweredExprIR::constExprIt& current_loop_begin_pos, LoweredExprIR::constExprIt& current_loop_end_pos);
+    static bool fuse_down(LoweredExprIR& linear_ir, const LoweredExprPort& current_entry_point, const LoweredExprPort& target_exit_point,
+                          size_t loop_id, size_t dim_idx,
+                          const LoweredLoopManager::LoweredLoopInfoPtr& loop_current,
+                          const LoweredLoopManager::LoweredLoopInfoPtr& loop_target,
+                          LoweredExprIR::constExprIt& current_loop_begin_pos, LoweredExprIR::constExprIt& current_loop_end_pos);
 };
 
 } // namespace lowered
