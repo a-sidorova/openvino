@@ -25,7 +25,7 @@ public:
     bool run(LoweredExprIR& linear_ir) override;
 
 private:
-    void insertion(LoweredExprIR& linear_ir, const LoweredLoopManager::LoweredLoopInfoPtr& loop_info, size_t dim_idx, bool& has_outer_loop);
+    bool insertion(LoweredExprIR& linear_ir, const LoweredLoopManager::LoweredLoopInfoPtr& loop_info, size_t loop_id, size_t dim_idx, bool has_outer_loop);
     std::vector<int64_t> init_ptr_increments(LoweredExprIR& linear_ir,
                                              const std::vector<LoweredExprPtr>& loop_in_exprs,
                                              const std::vector<LoweredExprPtr>& loop_out_exprs,

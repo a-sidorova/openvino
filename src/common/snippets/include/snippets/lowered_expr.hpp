@@ -200,12 +200,16 @@ public:
                         size_t work_amount_increment,
                         const std::vector<LoweredExprPort>& entries,
                         const std::vector<LoweredExprPort>& exits);
+    static void skipped_marking(LoweredExprIR::constExprIt loop_begin_pos,
+                                LoweredExprIR::constExprIt loop_end_pos,
+                                size_t loop_depth);
 
     static void get_loop_bounds(const LoweredExprIR& linear_ir,
                                 const std::vector<LoweredExprPort>& entries,
                                 const std::vector<LoweredExprPort>& exits,
                                 LoweredExprIR::constExprIt& loop_begin_pos,
-                                LoweredExprIR::constExprIt& loop_end_pos);
+                                LoweredExprIR::constExprIt& loop_end_pos,
+                                size_t loop_id = EMPTY_ID);
 
 private:
     static void get_io_loop_ports(LoweredExprIR& linear_ir,

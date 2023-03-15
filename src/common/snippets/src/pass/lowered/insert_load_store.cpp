@@ -147,7 +147,7 @@ bool InsertLoadStore::run(LoweredExprIR& linear_ir) {
         const auto& loop_info = loop_manager->get(loop_id);
         const auto entry_exprs = loop_info->m_entry_exprs;
         const auto exit_exprs = loop_info->m_exit_exprs;
-        LoweredLoopManager::get_loop_bounds(linear_ir, entry_exprs, exit_exprs, loop_begin_pos, loop_end_pos);
+        LoweredLoopManager::get_loop_bounds(linear_ir, entry_exprs, exit_exprs, loop_begin_pos, loop_end_pos, loop_id);
 
         for (const auto& entry_point : entry_exprs) {
             insert_load(linear_ir, loop_manager, entry_point, loop_begin_pos, loop_end_pos);

@@ -418,16 +418,32 @@ void LoweredLoopManager::get_loop_bounds(const LoweredExprIR& linear_ir,
                                          const std::vector<LoweredExprPort>& entries,
                                          const std::vector<LoweredExprPort>& exits,
                                          LoweredExprIR::constExprIt& loop_begin_pos,
-                                         LoweredExprIR::constExprIt& loop_end_pos) {
+                                         LoweredExprIR::constExprIt& loop_end_pos,
+                                         size_t loop_id) {
     OPENVINO_ASSERT(!entries.empty(), "Loop must have entry points");
-    OPENVINO_ASSERT(!exits.empty(), "Loop must have exit points");
     loop_begin_pos = std::find(linear_ir.begin(), linear_ir.end(), entries.front().first);
-    loop_end_pos = std::next(std::find(loop_begin_pos, linear_ir.end(), exits.back().first));
     OPENVINO_ASSERT(loop_begin_pos != linear_ir.end(), "Loop begin hasn't been found!");
-    OPENVINO_ASSERT(loop_end_pos != linear_ir.end(), "Loop end hasn't been found!");
-    // Loop doesn't map Scalar inside body as entry point
-    // So to correctly get LoopBegin we should check for Scalars before first entry point
-    while (ov::is_type<opset1::Constant>((*std::prev(loop_begin_pos))->get_node())) { loop_begin_pos = std::prev(loop_begin_pos); }
+
+    // Some operations in Loop can be before first entry points: Scalars.
+    // We should iterate by them till the expr is in the corresponding Loop
+    auto prev_loop_ids = (*std::prev(loop_begin_pos))->get_loop_ids();
+    while (std::find(prev_loop_ids.begin(), prev_loop_ids.end(), loop_id) != prev_loop_ids.end()) {
+        loop_begin_pos = std::prev(loop_begin_pos);
+        prev_loop_ids = (*std::prev(loop_begin_pos))->get_loop_ids();
+    }
+
+    // We iterate by expr with the same Loop ID to find accurate LoopEnd in cases when some outputs of Loop aren't exit points
+    // TODO: Is it possible?
+    loop_end_pos = std::next(loop_begin_pos);
+    if (!exits.empty()) {
+        loop_end_pos = std::next(std::find(loop_begin_pos, linear_ir.end(), exits.back().first));
+        OPENVINO_ASSERT(loop_end_pos != linear_ir.end(), "Loop end hasn't been found!");
+    }
+    auto loop_ids = (*loop_end_pos)->get_loop_ids();
+    while (std::find(loop_ids.begin(), loop_ids.end(), loop_id) != loop_ids.end()) {
+        loop_end_pos = std::next(loop_end_pos);
+        loop_ids = (*loop_end_pos)->get_loop_ids();
+    }
 }
 
 void LoweredLoopManager::get_io_loop_ports(LoweredExprIR& linear_ir,
@@ -515,6 +531,15 @@ void LoweredLoopManager::marking(LoweredExprIR& linear_ir,
     for (auto expr_it = loop_begin_pos; expr_it != loop_end_pos; ++expr_it) {
         const auto& expr = *expr_it;
         expr->set_loop_id(loop_id, idx);
+    }
+}
+
+void LoweredLoopManager::skipped_marking(LoweredExprIR::constExprIt loop_begin_pos,
+                                         LoweredExprIR::constExprIt loop_end_pos,
+                                         size_t loop_depth) {
+    for (auto expr_it = loop_begin_pos; expr_it != loop_end_pos; ++expr_it) {
+        const auto& expr = *expr_it;
+        expr->set_loop_ids(std::vector<size_t>(loop_depth, EMPTY_ID));
     }
 }
 

@@ -125,7 +125,8 @@ std::vector<int64_t> InitLoops::init_finalization_offsets(const std::vector<int6
     return finalization_offsets;
 }
 
-void InitLoops::insertion(LoweredExprIR& linear_ir, const LoweredLoopManager::LoweredLoopInfoPtr& loop_info, size_t dim_idx, bool& has_outer_loop) {
+bool InitLoops::insertion(LoweredExprIR& linear_ir, const LoweredLoopManager::LoweredLoopInfoPtr& loop_info,
+                          size_t loop_id, size_t dim_idx, bool has_outer_loop) {
     const auto loop_entries = loop_info->m_entry_exprs;
     const auto loop_exits = loop_info->m_exit_exprs;
     const auto work_amount = loop_info->m_work_amount;
@@ -141,12 +142,11 @@ void InitLoops::insertion(LoweredExprIR& linear_ir, const LoweredLoopManager::Lo
     const auto subtensor_in = loop_in_exprs.empty() ? std::vector<size_t>{} : loop_in_exprs.front()->get_inputs().front()->get_subtensor();
     const bool explicit_execution = work_amount == 0 || dim_idx == 0 && subtensor_in.size() > 1 && subtensor_in.back() == work_amount;
     if (explicit_execution) {
-        has_outer_loop |= false;
-        return;
+        return false;
     }
 
     LoweredExprIR::constExprIt loop_begin_pos, loop_end_pos;
-    LoweredLoopManager::get_loop_bounds(linear_ir, loop_entries, loop_exits, loop_begin_pos, loop_end_pos);
+    LoweredLoopManager::get_loop_bounds(linear_ir, loop_entries, loop_exits, loop_begin_pos, loop_end_pos, loop_id);
 
     auto ptr_increments = init_ptr_increments(linear_ir, loop_in_exprs, loop_out_exprs, dim_idx);
     auto finalization_offsets = init_finalization_offsets(ptr_increments, work_amount);
@@ -186,8 +186,7 @@ void InitLoops::insertion(LoweredExprIR& linear_ir, const LoweredLoopManager::Lo
 
     const auto& loop_end_expr = std::make_shared<LoweredExpr>(loop_end, loop_end_inputs);
     linear_ir.insert(loop_end_pos, loop_end_expr);
-    has_outer_loop |= true;
-    return;
+    return true;
 }
 
 bool InitLoops::run(LoweredExprIR& linear_ir) {
@@ -198,7 +197,7 @@ bool InitLoops::run(LoweredExprIR& linear_ir) {
     const auto& loop_manager = linear_ir.get_loop_manager();
 
     std::set<size_t> inserted_loops;
-    std::stack<size_t> current_loops;
+    std::set<size_t> loop_identifies = loop_manager->get_identifies();
     for (auto expr_it = linear_ir.begin(); expr_it != linear_ir.end(); expr_it++) {
         const auto expr = *expr_it;
         const auto& node = expr->get_node();
@@ -211,14 +210,18 @@ bool InitLoops::run(LoweredExprIR& linear_ir) {
         // Outer Loop ----> Inner Loop
         const auto expr_loops = expr->get_loop_ids();
         const auto loop_depth = expr_loops.size();
-        bool has_outer_loop = false;
         for (size_t i = 0; i < loop_depth; ++i) {
             const auto loop_id = expr_loops[i];
-            bool need_to_insert = inserted_loops.find(loop_id) == inserted_loops.end();
+            if (loop_id == LoweredLoopManager::EMPTY_ID)
+                continue;
+            bool need_to_insert = loop_identifies.find(loop_id) != loop_identifies.end();
             if (need_to_insert) {
                 const auto loop_info = loop_manager->get(loop_id);
-                insertion(linear_ir, loop_info, loop_depth - i - 1, has_outer_loop);
-                inserted_loops.insert(loop_id);  // save Loop ID
+                const bool has_outer_loop = i > 0 && inserted_loops.find(expr_loops[i - 1]) != inserted_loops.end();
+                const auto status = insertion(linear_ir, loop_info, loop_id, loop_depth - i - 1, has_outer_loop);
+                if (status)
+                    inserted_loops.insert(loop_id);  // save Loop ID
+                loop_identifies.erase(loop_id);
                 linear_ir.serialize("/home/a-sidorova/projects/lin_ir/openvino/graphs/lin.xml",
                                     "/home/a-sidorova/projects/lin_ir/openvino/graphs/lin.bin");
             }

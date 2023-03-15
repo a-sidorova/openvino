@@ -11,9 +11,7 @@
 #include <snippets/itt.hpp>
 #include "snippets/pass/lowered/assign_registers.hpp"
 #include "snippets/pass/lowered/insert_tail_loop.hpp"
-#include "snippets/pass/lowered/insert_loops_layout.hpp"
 #include "snippets/pass/lowered/insert_loops.hpp"
-#include "snippets/pass/lowered/transpose_decomposition.hpp"
 #include "snippets/pass/lowered/buffer_propagate_offset_and_reset.hpp"
 #include "snippets/pass/lowered/propagate_layout.hpp"
 #include "snippets/pass/lowered/softmax_decomposition.hpp"
@@ -43,7 +41,7 @@ Generator::LoweringResult Generator::generate(std::shared_ptr<ov::Model>& m, con
    // TODO: Softmax
     std::vector<std::shared_ptr<pass::lowered::LinearIRTransformation>> transformation_pipeline {
             std::make_shared<pass::lowered::InsertLoops>(vector_size),
-            //std::make_shared<pass::lowered::SoftmaxDecomposition>(vector_size),
+            std::make_shared<pass::lowered::SoftmaxDecomposition>(vector_size),
             std::make_shared<pass::lowered::LoopFusion>(),
             std::make_shared<pass::lowered::InsertBuffer>(buffer_allocation_rank),
             std::make_shared<pass::lowered::InsertLoadStore>(vector_size),
