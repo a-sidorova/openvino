@@ -115,6 +115,27 @@ protected:
  *        \      /
  *         MatMul1
  *           |
+ */
+class MHAWOTransposeFunction : public SnippetsFunctionBase {
+public:
+    explicit MHAWOTransposeFunction(const std::vector<PartialShape>& inputShapes) : SnippetsFunctionBase(inputShapes) {
+        NGRAPH_CHECK(input_shapes.size() == 3, "Got invalid number of input shapes");
+    }
+protected:
+    std::shared_ptr<ov::Model> initOriginal() const override;
+};
+
+/* Graph:
+ *             Constant
+ *        \      /
+ *        Multiply
+ *    \     /
+ *    MatMul0
+ *       |
+ *    Softmax
+ *        \      /
+ *         MatMul1
+ *           |
  *       Transpose3[0,2,1,3]
  */
 class MHAWOTransposeOnInputsFunction : public SnippetsFunctionBase {

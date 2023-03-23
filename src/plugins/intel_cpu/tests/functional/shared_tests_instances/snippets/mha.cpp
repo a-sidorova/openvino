@@ -47,13 +47,34 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHA, MHASelect,
                                  ::testing::Values(CommonTestUtils::DEVICE_CPU)),
                          MHA::getTestCaseName);
 
-const std::vector<std::vector<ov::PartialShape>> inputShapesWOTranspose = {
-        {{1, 12, 197, 64}, {1, 12, 64, 197}, {1, 12, 197, 64}}
-};
+
+static std::vector<std::vector<ov::PartialShape>> inputShapesWOTranspose(bool supports_3d = false) {
+    std::vector<std::vector<ov::PartialShape>> shapes = {
+            {{1, 12, 197, 64}, {1, 12, 64, 197}, {1, 12, 197, 64}}
+    };
+    if (supports_3d) {
+        std::vector<std::vector<ov::PartialShape>> shapes_3d = {
+            {{12, 197, 64}, {12, 64, 197}, {12, 197, 64}},
+            {{12, 128, 100}, {12, 100, 128}, {12, 128, 100}}
+        };
+        shapes.insert(shapes.end(), shapes_3d.begin(), shapes_3d.end());
+    }
+    return shapes;
+}
+
+
+INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTranspose, MHAWOTranspose,
+                         ::testing::Combine(
+                                 ::testing::ValuesIn(inputShapesWOTranspose(true)),
+                                 ::testing::ValuesIn({true}),  // Need to support False for graph builder in tests
+                                 ::testing::Values(1),
+                                 ::testing::Values(1),
+                                 ::testing::Values(CommonTestUtils::DEVICE_CPU)),
+                         MHA::getTestCaseName);
 
 INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTransposeOnInputs, MHAWOTransposeOnInputs,
                          ::testing::Combine(
-                                 ::testing::ValuesIn(inputShapesWOTranspose),
+                                 ::testing::ValuesIn(inputShapesWOTranspose()),
                                  ::testing::ValuesIn({true}),  // Need to support False for graph builder in tests
                                  ::testing::Values(1),
                                  ::testing::Values(1),

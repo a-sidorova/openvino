@@ -37,6 +37,11 @@ protected:
     void generate_inputs(const std::vector<ngraph::Shape>& targetInputStaticShapes) override;
 };
 
+class MHAWOTranspose : public MHA {
+protected:
+    void SetUp() override;
+};
+
 class MHAWOTransposeOnInputs : public MHA {
 protected:
     void SetUp() override;

@@ -18,8 +18,8 @@ namespace {
 auto is_supported_tensor(const ngraph::descriptor::Tensor& t) -> bool {
     // TODO: Add support of all supported by common tokenization element types
     //       return ngraph::snippets::pass::TokenizeSnippets::supported_element_types.count(input.get_element_type()) != 0;
-    //       Also only 4D is supported at the moment
-    return t.get_element_type() == ngraph::element::f32 && t.get_partial_shape().is_static() && t.get_shape().size() == 4;
+    const auto shape_rank = t.get_shape().size();
+    return t.get_element_type() == ngraph::element::f32 && t.get_partial_shape().is_static() && (shape_rank == 3 || shape_rank == 4);
 }
 
 // TODO: Add support of FQ, Reshape?

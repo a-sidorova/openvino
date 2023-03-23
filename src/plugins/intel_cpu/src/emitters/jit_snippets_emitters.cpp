@@ -755,12 +755,15 @@ BrgemmEmitter::BrgemmEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl:
     const auto& C_shape = io_values[2].get_shape();
     const auto& C_layout = io_layouts[2];
 
-    M = C_shape[C_layout[2]];
-    K = A_shape[A_layout[3]];
+    auto get_ordered_idx = [](const std::vector<size_t>& layout, size_t idx) {
+        return std::distance(layout.begin(), std::find(layout.begin(), layout.end(), idx));
+    };
+
+    M = C_shape[get_ordered_idx(C_layout, C_layout.size() - 2)];
+    K = A_shape[get_ordered_idx(A_layout, A_layout.size() - 1)];
     M_blk = matmulOptimalM;
     M_tail = M % M_blk;
-    // B_shape[B_layout[3]]
-    N = C_shape[C_layout[3]];
+    N = C_shape[get_ordered_idx(C_layout, C_layout.size() - 1)];
 
     auto brg0Prc = InferenceEngine::details::convertPrecision(brgemm_node->get_input_element_type(0));
     auto brg1Prc = InferenceEngine::details::convertPrecision(brgemm_node->get_input_element_type(1));
