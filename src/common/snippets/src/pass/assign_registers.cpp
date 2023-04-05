@@ -34,7 +34,7 @@ bool ngraph::snippets::pass::AssignRegisters::run_on_model(const std::shared_ptr
     std::map<tensor, Reg> regs_vec, regs_gpr;
     // Define a set of immune tensors that will be ignored by auto reg allocation => their reg allocation is done manually
     std::map<tensor, Reg> manually_assigned_gprs, manually_assigned_vecs;
-    const auto IS_MANUALLY_ALLOCATED_REG = SIZE_MAX;
+    const auto IS_MANUALLY_ASSIGNED_REG = SIZE_MAX;
     const auto num_parameters = f->get_parameters().size();
     const auto num_results = f->get_results().size();
     auto accumulator_reg = 0lu;
@@ -47,13 +47,15 @@ bool ngraph::snippets::pass::AssignRegisters::run_on_model(const std::shared_ptr
             manually_assigned_gprs[op->output(0).get_tensor_ptr()] =
                     static_cast<Reg>(f->get_result_index(result) + num_parameters);
         } else if (const auto buffer = ov::as_type_ptr<op::Buffer>(op)) {
+            // All buffers with the same ID have one common data pointer
+            const auto buffer_id = buffer->get_id();
             // All buffers have one common data pointer
             if (buffer->is_intermediate_memory()) {
                 manually_assigned_gprs[op->input(0).get_tensor_ptr()] =
-                        static_cast<Reg>(num_results + num_parameters);
+                        static_cast<Reg>(num_results + num_parameters + buffer_id);
             }
             manually_assigned_gprs[op->output(0).get_tensor_ptr()] =
-                    static_cast<Reg>(num_results + num_parameters);
+                    static_cast<Reg>(num_results + num_parameters + buffer_id);
         } else if (ov::is_type<op::HorizonMax>(op) || ov::is_type<op::HorizonSum>(op)) {
             // Only in SoftmaxDecomposition ReduceMax and ReduceSum use HorizonMax/HorizonSum and VectorBuffer.
             // We should manually set the one vector register for VectorBuffer and Max/Sum output to simulate a accumulator
@@ -71,19 +73,24 @@ bool ngraph::snippets::pass::AssignRegisters::run_on_model(const std::shared_ptr
             manually_assigned_vecs[op->output(0).get_tensor_ptr()] =
                 static_cast<Reg>(accumulator_reg);
 
-            // If there is Broadcast, it should have the same register as Horizon op
-            // because it's a result of the accumulator as well
-            for (auto& out : op->output(0).get_target_inputs()) {
-                const auto child = out.get_node()->shared_from_this();
-                if (ov::is_type<op::BroadcastMove>(child)) {
-                    manually_assigned_vecs[child->output(0).get_tensor_ptr()] =
+            auto target_inputs = op->output(0).get_target_inputs();
+            auto output = target_inputs.begin()->get_node()->shared_from_this();
+
+            // All operations `outside loop` after Horizon ops should have the same register to
+            // avoid using it in the hext Loop
+            auto iter = output->get_rt_info().find("outside_loop");
+            while (iter != output->get_rt_info().end() && iter->second.as<bool>()) {
+                manually_assigned_vecs[output->output(0).get_tensor_ptr()] =
                         static_cast<Reg>(accumulator_reg);
-                }
+
+                target_inputs = output->output(0).get_target_inputs();
+                output = target_inputs.begin()->get_node()->shared_from_this();
+                iter = output->get_rt_info().find("outside_loop");
             }
             accumulator_reg++;
         }
     }
-    auto enumerate_out_tensors = [IS_MANUALLY_ALLOCATED_REG] (const std::shared_ptr<ov::Node>& op,
+    auto enumerate_out_tensors = [IS_MANUALLY_ASSIGNED_REG] (const std::shared_ptr<ov::Node>& op,
                                      decltype(regs_vec)& reg_map,
                                      const std::map<tensor, Reg>& manually_assigned_regs,
                                      size_t& counter) {
@@ -92,7 +99,7 @@ bool ngraph::snippets::pass::AssignRegisters::run_on_model(const std::shared_ptr
             // Note that some ops might have identical input&output tensors (Result and Tile* for ex.)
             // so we have to check that the tensor has not been enumerated already
             if (reg_map.count(t) == 0) {
-                reg_map[t] = manually_assigned_regs.count(t) == 0 ? counter++ : IS_MANUALLY_ALLOCATED_REG;
+                reg_map[t] = manually_assigned_regs.count(t) == 0 ? counter++ : IS_MANUALLY_ASSIGNED_REG;
             }
         }
     };
@@ -114,13 +121,13 @@ bool ngraph::snippets::pass::AssignRegisters::run_on_model(const std::shared_ptr
     std::vector<std::set<Reg>> used_vec(ops.size(), std::set<Reg>());
     std::vector<std::set<Reg>> defined_vec(ops.size(), std::set<Reg>());
 
-    auto tensor2reg = [IS_MANUALLY_ALLOCATED_REG] (const std::vector<tensor>& tensors, const std::map<tensor, Reg>& reg_map) {
+    auto tensor2reg = [IS_MANUALLY_ASSIGNED_REG] (const std::vector<tensor>& tensors, const std::map<tensor, Reg>& reg_map) {
         std::set<Reg> result;
         for (const auto& t : tensors) {
             if (reg_map.count(t) == 0)
                 throw ngraph::ngraph_error("Assign registers: attempt to access not enumerated tensor");
             Reg reg_id = reg_map.at(t);
-            if (reg_id != IS_MANUALLY_ALLOCATED_REG)
+            if (reg_id != IS_MANUALLY_ASSIGNED_REG)
                 result.insert(reg_id);
         }
         return result;
@@ -281,10 +288,10 @@ bool ngraph::snippets::pass::AssignRegisters::run_on_model(const std::shared_ptr
 
     std::map<tensor, Reg> assigned_regs(std::move(manually_assigned_gprs));
     assigned_regs.insert(manually_assigned_vecs.begin(), manually_assigned_vecs.end());
-    auto register_assigned_regs = [IS_MANUALLY_ALLOCATED_REG, &assigned_regs](const std::map<tensor, Reg>& unique_regs,
+    auto register_assigned_regs = [IS_MANUALLY_ASSIGNED_REG, &assigned_regs](const std::map<tensor, Reg>& unique_regs,
                                                    const std::map<Reg, Reg>& unique2reused) {
         for (const auto& reg : unique_regs) {
-            if (reg.second == IS_MANUALLY_ALLOCATED_REG)
+            if (reg.second == IS_MANUALLY_ASSIGNED_REG)
                 continue;
             if (unique2reused.count(reg.second) == 0)
                 throw ngraph::ngraph_error("Assign registers failed to allocate register for a tensor");

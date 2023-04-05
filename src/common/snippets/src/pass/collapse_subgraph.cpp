@@ -55,20 +55,26 @@ auto is_supported_op(const std::shared_ptr<const Node> &n) -> bool {
             return false;
         const auto intype_0 = matmul->get_input_element_type(0);
         const auto intype_1 = matmul->get_input_element_type(1);
-        const bool is_f32 = intype_0 == element::f32 && intype_1 == element::f32;
-        const bool is_int8 = (intype_0 == element::i8 || intype_0 == element::u8) && (intype_1 == element::i8);
-        const bool is_bf16 = intype_0 == element::bf16 && intype_1 == element::bf16;
-        return is_f32 || is_bf16 || is_int8;
+        return snippets::op::Brgemm::get_output_type(intype_0, intype_1) != ov::element::undefined;
     };
     auto is_supported_transpose = [](const std::shared_ptr<const Node>& n) -> bool {
         const auto& transpose = as_type_ptr<const opset1::Transpose>(n);
         const auto& out_shape = n->get_output_partial_shape(0);
         if (transpose && out_shape.is_static()) {
+            const auto parent = transpose->get_input_node_shared_ptr(0);
+            const auto child = transpose->get_output_target_inputs(0).begin()->get_node()->shared_from_this();
+            auto is_brgemm_case = ov::is_type<opset1::MatMul>(parent) || ov::is_type<opset1::MatMul>(child);
+            // Check for Transpose parent is MatMul inside Subgraph
+            if (const auto subgraph = ov::as_type_ptr<op::Subgraph>(parent)) {
+                const auto body = subgraph->body_ptr();
+                const auto subgraph_output = body->get_results()[transpose->input_value(0).get_index()]->get_input_node_shared_ptr(0);
+                is_brgemm_case = is_brgemm_case || ov::is_type<opset1::MatMul>(subgraph_output);
+            }
             const auto& order = as_type_ptr<const opset1::Constant>(n->get_input_node_shared_ptr(1));
             if (order) {
                 const auto order_value = order->cast_vector<int>();
-                return TransposeDecomposition::supported_cases.count(order_value) != 0 ||
-                       FuseTransposeBrgemm::supported_cases.count(order_value) != 0;
+                return (TransposeDecomposition::supported_cases.count(order_value) != 0) ||
+                       (is_brgemm_case && FuseTransposeBrgemm::supported_cases.count(order_value) != 0);
             }
         }
         return false;
@@ -336,7 +342,7 @@ TokenizeSnippets::TokenizeSnippets() {
 
         for (const auto &input_node : ngraph::as_node_vector(input_values)) {
             if (auto subgraph = ov::as_type_ptr<op::Subgraph>(input_node)) {
-                if (!clones.count(input_node)) {
+                if (!clones.count(input_node) && GetSnippetsSubgraphType(subgraph) != SnippetsSubgraphType::Completed) {
                     auto f = subgraph->body().clone();
                     f->set_friendly_name(subgraph->body_ptr()->get_friendly_name());
                     clones[input_node] = f;
@@ -512,23 +518,27 @@ TokenizeSnippets::TokenizeSnippets() {
         // To avoid unsupported number of non-scalar Constants in the future (plugin specific limitation)
         // we should calculate potentional number of non-scalar Constants that will be moved up from body.
         size_t hidden_data_count = 0;
-        bool need_buffer = false;
         if (const auto fq_node = ov::as_type_ptr<ov::op::v0::FakeQuantize>(node)) {
             hidden_data_count += ngraph::snippets::utils::get_non_scalar_constant_count_for_fq(fq_node);
-        // Ops require a Buffer
-        } else if (ov::is_type<ov::op::v1::Softmax>(node) ||
-                   ov::is_type<ov::op::v8::Softmax>(node)) {
-            need_buffer |= true;
         }
 
         ResultVector body_results;
         std::vector<std::set<Input<Node>>> subgraph_result_inputs;
 
+        ov::NodeVector ops_for_buffer_count;
         for (auto subgraph : input_subgraphs) {
             // we should summurize additional needed data count (non-scalar Constants and Buffers) from all input subgraphs
             // because we will collapse them with our node and we should get total count
-            hidden_data_count += ov::as_type_ptr<ngraph::snippets::op::Subgraph>(subgraph)->get_virtual_port_count();
-            need_buffer |= ov::as_type_ptr<ngraph::snippets::op::Subgraph>(subgraph)->is_buffer_needed();
+            const auto subgraph_ptr = ov::as_type_ptr<ngraph::snippets::op::Subgraph>(subgraph);
+            hidden_data_count += subgraph_ptr->get_virtual_port_count();
+
+            // Buffers can be existed only in Subgraphs with domain sensetive ops which
+            // requires intermediate memory for data repacking
+            // To avoid load time regressions, we verify only these Subgraph with domain sensetive ops
+            if (subgraph_ptr->has_domain_sensitive_ops()) {
+                const auto ops = subgraph_ptr->body_ptr()->get_ordered_ops();
+                ops_for_buffer_count.insert(ops_for_buffer_count.end(), ops.begin(), ops.end());
+            }
 
             for (auto output : subgraph->outputs()) {
                 bool first_side_consumer = true;
@@ -559,6 +569,10 @@ TokenizeSnippets::TokenizeSnippets() {
             }
         }
 
+        if (op::Subgraph::is_domain_sensitive_op(node)) {
+            ops_for_buffer_count.push_back(node);
+        }
+
         for (auto output : node->outputs()) {
             body_results.push_back(std::make_shared<opset1::Result>(body_node->output(output.get_index())));
             subgraph_result_inputs.push_back(output.get_target_inputs());
@@ -568,14 +582,15 @@ TokenizeSnippets::TokenizeSnippets() {
             throw ngraph_error("body results and node results size mismatch during subgraph collaps");
         }
 
-        // todo: move this plugin-specific constraint to the plugin callback
-        if (body_parameters.size() + body_results.size() + hidden_data_count + static_cast<size_t>(need_buffer) > 12) {
+        // [75567]: move this plugin-specific constraint to the plugin callback
+        const auto unique_buffer_count = op::Subgraph::get_estimated_buffer_count(ops_for_buffer_count);
+        if (body_parameters.size() + body_results.size() + hidden_data_count + unique_buffer_count > 12) {
             const std::string message_reset = "new subgraph is created. Impossible to schedule subgraph with " +
             std::to_string(body_parameters.size()) + " inputs, " + std::to_string(body_results.size()) + " outputs and " +
-            std::to_string(hidden_data_count) + " non-scalar constants and " + std::to_string(need_buffer) + "buffers.";
+            std::to_string(hidden_data_count) + " non-scalar constants and " + std::to_string(unique_buffer_count) + "buffers.";
             const std::string message_abort = "failed to continue subgraph. Impossible to schedule subgraph with " +
             std::to_string(body_parameters.size()) + " inputs, " + std::to_string(body_results.size()) + " outputs and " +
-            std::to_string(hidden_data_count) + " non-scalar constants and " + std::to_string(need_buffer) + "buffers.";
+            std::to_string(hidden_data_count) + " non-scalar constants and " + std::to_string(unique_buffer_count) + "buffers.";
             return abort_with_strategy(message_reset, message_abort);
         }
 
@@ -612,7 +627,6 @@ TokenizeSnippets::TokenizeSnippets() {
         }
         subgraph->get_rt_info()["originalLayersNames"] = fusedNames;
         subgraph->set_virtual_port_count(hidden_data_count);
-        subgraph->set_buffer_needed(need_buffer);
 
         remark(1) << "Replacement (merge) done for: "
                     << subgraph->get_friendly_name()

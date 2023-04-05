@@ -569,6 +569,18 @@ void Transformations::MainSnippets(void) {
         snippetsManager.register_pass<SnippetsMarkSkipped>(enableBF16);
     snippetsManager.register_pass<ngraph::snippets::pass::SnippetsTokenization>();
 
+    auto is_supported_matmul = [](const std::shared_ptr<const ov::Node>& n) {
+        const auto matmul = ov::as_type_ptr<const ov::op::v0::MatMul>(n);
+        if (!matmul)
+            return false;
+        if (matmul->get_input_element_type(1) == ov::element::i8)
+            return dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core_vnni);
+        if (matmul->get_input_element_type(0) == ov::element::bf16 &&
+            matmul->get_input_element_type(1) == ov::element::bf16)
+            return dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core_bf16);
+        return true;
+    };
+
     const bool isMHASupported =
             !enableBF16 &&  // TODO: Need to add BF16 support for MHA in Snippets
             dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core);  // MHA has BRGEMM that is supported only on AVX512 platforms
@@ -577,7 +589,18 @@ void Transformations::MainSnippets(void) {
     }
     if (snippetsMode != Config::SnippetsMode::IgnoreCallback) {
         snippetsManager.get_pass_config()->set_callback<ngraph::snippets::pass::TokenizeMHASnippets>(
-                [](const std::shared_ptr<const ov::Node>& n) -> bool {
+                [is_supported_matmul](const std::shared_ptr<const ov::Node>& n) -> bool {
+                    // Tranformation callback is called on MatMul1
+                    if (!is_supported_matmul(n))
+                        return true;
+                    // Search for MatMul0
+                    auto parent = n->get_input_node_shared_ptr(0);
+                    while (!ov::is_type<ov::op::v0::MatMul>(parent)) {
+                        parent = parent->get_input_node_shared_ptr(0);
+                    }
+                    if (!is_supported_matmul(parent))
+                        return true;
+
                     const auto pshape = n->get_output_partial_shape(0);
                     const auto shape = pshape.get_shape();
                     const auto parallel_work_amount =
