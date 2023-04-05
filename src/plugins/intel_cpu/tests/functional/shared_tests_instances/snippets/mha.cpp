@@ -47,9 +47,19 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHA, MHASelect,
                                  ::testing::Values(CommonTestUtils::DEVICE_CPU)),
                          MHA::getTestCaseName);
 
+
 const std::vector<std::vector<ov::PartialShape>> inputShapesWOTranspose = {
         {{1, 12, 197, 64}, {1, 12, 64, 197}, {1, 12, 197, 64}}
 };
+
+INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTranspose, MHAWOTranspose,
+                         ::testing::Combine(
+                                 ::testing::ValuesIn(inputShapesWOTranspose),
+                                 ::testing::ValuesIn({true, false}),
+                                 ::testing::Values(1),
+                                 ::testing::Values(1),
+                                 ::testing::Values(CommonTestUtils::DEVICE_CPU)),
+                         MHA::getTestCaseName);
 
 INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTransposeOnInputs, MHAWOTransposeOnInputs,
                          ::testing::Combine(
