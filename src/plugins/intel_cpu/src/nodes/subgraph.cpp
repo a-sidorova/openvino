@@ -510,6 +510,10 @@ bool Snippet::canBeInPlace() const {
     if (getChildEdges().size() != 1) {
         return false;
     }
+    // Subgraph doesn't support InPlace when there are domain sensitive ops inside body: MatMul, Transpose
+    if (snippet->has_domain_sensitive_ops()) {
+        return false;
+    }
 
     for (auto& parentEdge : getParentEdges()) {
         auto parent = parentEdge.lock()->getParent();

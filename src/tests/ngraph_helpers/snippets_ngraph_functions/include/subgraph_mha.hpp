@@ -118,14 +118,15 @@ protected:
  */
 class MHAWOTransposeFunction : public SnippetsFunctionBase {
 public:
-    explicit MHAWOTransposeFunction(const std::vector<PartialShape>& inputShapes, bool with_mul)
-        : SnippetsFunctionBase(inputShapes), m_with_mul(with_mul) {
+    explicit MHAWOTransposeFunction(const std::vector<PartialShape>& inputShapes, bool with_mul, bool transposed_b_0)
+        : SnippetsFunctionBase(inputShapes), m_with_mul(with_mul), m_transposed_b_0(transposed_b_0) {
         NGRAPH_CHECK(input_shapes.size() == 3, "Got invalid number of input shapes");
     }
 protected:
     std::shared_ptr<ov::Model> initOriginal() const override;
 
     bool m_with_mul = false;
+    bool m_transposed_b_0 = false;
 };
 
 /* Graph:
@@ -143,11 +144,15 @@ protected:
  */
 class MHAWOTransposeOnInputsFunction : public SnippetsFunctionBase {
 public:
-    explicit MHAWOTransposeOnInputsFunction(const std::vector<PartialShape>& inputShapes) : SnippetsFunctionBase(inputShapes) {
+    explicit MHAWOTransposeOnInputsFunction(const std::vector<PartialShape>& inputShapes, bool with_mul, bool transposed_b_0)
+        : SnippetsFunctionBase(inputShapes), m_with_mul(with_mul), m_transposed_b_0(transposed_b_0) {
         NGRAPH_CHECK(input_shapes.size() == 3, "Got invalid number of input shapes");
     }
 protected:
     std::shared_ptr<ov::Model> initOriginal() const override;
+
+    bool m_with_mul = false;
+    bool m_transposed_b_0 = false;
 };
 
 }  // namespace snippets

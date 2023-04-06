@@ -49,26 +49,54 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHA, MHASelect,
 
 
 const std::vector<std::vector<ov::PartialShape>> inputShapesWOTranspose = {
-        {{1, 12, 197, 64}, {1, 12, 64, 197}, {1, 12, 197, 64}}
+        {{1, 12, 197, 64}, {1, 12, 64, 197}, {1, 12, 197, 64}},
+        {{12, 197, 64}, {12, 64, 197}, {12, 197, 64}}
 };
 
 INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTranspose, MHAWOTranspose,
                          ::testing::Combine(
                                  ::testing::ValuesIn(inputShapesWOTranspose),
                                  ::testing::ValuesIn({true, false}),
+                                 ::testing::ValuesIn({false}),
                                  ::testing::Values(1),
                                  ::testing::Values(1),
                                  ::testing::Values(CommonTestUtils::DEVICE_CPU)),
-                         MHA::getTestCaseName);
+                         MHAWOTranspose::getTestCaseName);
 
 INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTransposeOnInputs, MHAWOTransposeOnInputs,
                          ::testing::Combine(
-                                 ::testing::ValuesIn(inputShapesWOTranspose),
-                                 ::testing::ValuesIn({true}),  // Need to support False for graph builder in tests
+                                 ::testing::Values(inputShapesWOTranspose[0]), // Only 4D
+                                 ::testing::ValuesIn({true, false}),
+                                 ::testing::ValuesIn({false}),
                                  ::testing::Values(1),
                                  ::testing::Values(1),
                                  ::testing::Values(CommonTestUtils::DEVICE_CPU)),
-                         MHA::getTestCaseName);
+                         MHAWOTranspose::getTestCaseName);
+
+const std::vector<std::vector<ov::PartialShape>> inputShapesWOTransposeMatMul0TransposedB = {
+        {{1, 12, 197, 64}, {1, 12, 197, 64}, {1, 12, 197, 64}},
+        {{12, 197, 64}, {12, 197, 64}, {12, 197, 64}}
+};
+
+INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTransposeMatMul0TransposedB, MHAWOTranspose,
+                         ::testing::Combine(
+                                 ::testing::ValuesIn(inputShapesWOTransposeMatMul0TransposedB),
+                                 ::testing::ValuesIn({true, false}),
+                                 ::testing::ValuesIn({true}),
+                                 ::testing::Values(2), // Extracted Transpose + MHA
+                                 ::testing::Values(1),
+                                 ::testing::Values(CommonTestUtils::DEVICE_CPU)),
+                         MHAWOTranspose::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTransposeOnInputsMatMul0TransposedB, MHAWOTransposeOnInputs,
+                         ::testing::Combine(
+                                 ::testing::Values(inputShapesWOTransposeMatMul0TransposedB[0]), // Only 4D
+                                 ::testing::ValuesIn({true, false}),
+                                 ::testing::ValuesIn({true}),
+                                 ::testing::Values(2), // Extracted Transpose + MHA
+                                 ::testing::Values(1),
+                                 ::testing::Values(CommonTestUtils::DEVICE_CPU)),
+                         MHAWOTranspose::getTestCaseName);
 
 
 } // namespace

@@ -75,7 +75,7 @@ bool SnippetsTokenization::run_on_model(const std::shared_ptr<ov::Model>& m) {
     manager.set_per_pass_validation(false);
 
     manager.register_pass<EnumerateNodes>();
-    manager.register_pass<TokenizeMHASnippets>();
+    manager.register_pass<TokenizeMHASnippets>(m_config.mha_enable_transpose_tokenization);
     manager.register_pass<TokenizeSnippets>();
     manager.register_pass<CommonOptimizations>();
     manager.run_passes(m);

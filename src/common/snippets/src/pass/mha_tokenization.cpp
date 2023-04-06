@@ -19,7 +19,7 @@
 namespace {
 auto is_supported_tensor(const ngraph::descriptor::Tensor& t) -> bool {
     return ngraph::snippets::utils::one_of(t.get_element_type(), ov::element::f32, ov::element::bf16) &&
-           t.get_partial_shape().is_static() && t.get_shape().size() == 4;
+           t.get_partial_shape().is_static() && ngraph::snippets::utils::one_of(t.get_shape().size(), 3lu, 4lu);
 }
 
 auto is_supported_intermediate_op(const std::shared_ptr<ngraph::Node>& node) -> bool {
@@ -173,7 +173,7 @@ auto update_intermediate_supported_ops(std::shared_ptr<ov::Node>& interm_op, ngr
 };
 }  // namespace
 
-ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
+ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets(bool enable_transpose_tokenization) {
     MATCHER_SCOPE(TokenizeMHASnippets);
 
     auto m_matmul0 = std::make_shared<ngraph::opset1::MatMul>(ngraph::pattern::any_input(ngraph::pattern::has_static_shape()),
@@ -305,37 +305,53 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
          * We can add them into Subgraph body
          */
 
+        auto tokenize_transpose = [enable_transpose_tokenization](const std::shared_ptr<ngraph::Node>& node) -> std::shared_ptr<ngraph::opset1::Transpose> {
+            return enable_transpose_tokenization ? ngraph::as_type_ptr<ngraph::opset1::Transpose>(node)
+                                                 : nullptr;
+        };
+
         // First input branch of MatMul0 should be executed before second input branch of MatMul0,
         // so firstly we insert Transpose1 on the beginning of ordered_ops and then Transpose1
-        bool are_weights_scalar = true;
-        auto parent = matmul0->get_input_node_shared_ptr(1);
+        // Note: If MatMul0 has transposed_b, we should tokenize only scalars ops from 1st branch
+        //       to move extracted Transpose from MatMul input to body Parameter
+        auto output = matmul0->input_value(1);
+        auto parent = output.get_node_shared_ptr();
+        // We can support several ops between MatMul0 with transposed_b and Transpose1 with 0213 order (or without this Transpose1)
+        // only if these ops have scalar shapes on other inputs.
+        // There is transformation ExplicitTransposeMatMulInputs that set supported order and transposed_b(false).
+        // We can allow to call this pass only if ops have scalar shapes to avoid shape mismatching
+        const auto is_transposed_b_0 = matmul0->get_transpose_b();
+
         while (is_supported_intermediate_op(parent)) {
             // All supported ops have only one output port
             if (parent->get_output_target_inputs(0).size() != 1)
                 break;
-            const auto parent_count = parent->get_input_size();
-            for (size_t i = 1; i < parent_count; ++i) {
-                are_weights_scalar = are_weights_scalar && ngraph::shape_size(parent->get_input_shape(i)) == 1;
+
+            // Only if MatMul0 has transposed_b, we have to tokenize scalar ops
+            // to move explicit Transpose from MatMul0 input_1 to Parameter of Subgraph body
+            if (is_transposed_b_0) {
+                const auto parent_count = parent->get_input_size();
+                bool are_weights_scalar = true;
+                for (size_t i = 1; i < parent_count; ++i) {
+                    are_weights_scalar = are_weights_scalar && ngraph::shape_size(parent->get_input_shape(i)) == 1;
+                }
+                if (!are_weights_scalar) {
+                    break;
+                }
             }
+
             potential_body_params_count += get_potential_body_params(parent);
             ordered_ops.insert(ordered_ops.begin(), parent);
             // [107731] To go always through 0-th port - is it safe?
-            parent = parent->get_input_node_shared_ptr(0);
+            output = parent->input_value(0);
+            parent = output.get_node_shared_ptr();
         }
 
-        auto transpose1 = ngraph::as_type_ptr<ngraph::opset1::Transpose>(parent);
-        if (matmul0->get_transpose_b()) {
+        const auto transpose1 = tokenize_transpose(parent);
+        if (is_transposed_b_0) {
             if (is_valid_transpose(transpose1, {0, 2, 1, 3})) {
-                // We can support several ops between MatMul0 with transposed_b and Transpose1 with 0213 order
-                // only if these ops have scalar shapes on other inputs.
-                // There is transformation ExplicitTransposeMatMulInputs that set supported order and transposed_b(false).
-                // We can allow to call this pass only if ops have scalar shapes to avoid shape mismatching
-                if (are_weights_scalar) {
-                    ordered_ops.insert(ordered_ops.begin(), transpose1);
-                } else {
-                    return false;
-                }
-            } else {
+                ordered_ops.insert(ordered_ops.begin(), transpose1);
+            } else if (transpose1) { // incorrect Transpose
                 return false;
             }
         } else {
@@ -353,14 +369,14 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
             }
         }
 
-        const auto transpose0 = ngraph::as_type_ptr<ngraph::opset1::Transpose>(matmul0->get_input_node_shared_ptr(0));
+        const auto transpose0 = tokenize_transpose(matmul0->get_input_node_shared_ptr(0));
         if (is_valid_transpose(transpose0, {0, 2, 1, 3})) {
             ordered_ops.insert(ordered_ops.begin(), transpose0);
-        } else if (matmul0->get_transpose_b()) {
+        } else if (matmul0->get_transpose_a()) {
             return false;
         }
 
-        const auto transpose2 = ngraph::as_type_ptr<ngraph::opset1::Transpose>(matmul1->get_input_node_shared_ptr(1));
+        const auto transpose2 = tokenize_transpose(matmul1->get_input_node_shared_ptr(1));
         if (is_valid_transpose(transpose2, {0, 2, 1, 3})) {
             ordered_ops.push_back(transpose2);
         }
@@ -390,7 +406,7 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets() {
         //  <Supported ops>
         //    Transpose3
         // TODO: Add check for precision of MatMul (we cannot collapse Transpose to I8/BF16 MatMul)
-        if (!are_ops_after_matmul2) {
+        if (enable_transpose_tokenization && !are_ops_after_matmul2) {
             auto transpose3 = ngraph::as_type_ptr<ngraph::opset1::Transpose>(child);
             if (is_valid_transpose(transpose3, {0, 2, 1, 3})) {
                 ordered_ops.push_back(transpose3);

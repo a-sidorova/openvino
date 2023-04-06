@@ -563,11 +563,15 @@ void Transformations::MainSnippets(void) {
         !dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx2)) // snippets are implemented only for relevant platforms (avx2+ extensions)
         return;
 
+    // At the moment Snippets supports Transposes in MHA pattern only in FP32 case
+    ngraph::snippets::pass::SnippetsTokenization::Config tokenization_config;
+    tokenization_config.mha_enable_transpose_tokenization = !enableBF16;
+
     ngraph::pass::Manager snippetsManager;
     snippetsManager.set_per_pass_validation(false);
     if (snippetsMode != Config::SnippetsMode::IgnoreCallback)
         snippetsManager.register_pass<SnippetsMarkSkipped>(enableBF16);
-    snippetsManager.register_pass<ngraph::snippets::pass::SnippetsTokenization>();
+    snippetsManager.register_pass<ngraph::snippets::pass::SnippetsTokenization>(tokenization_config);
 
     auto is_supported_matmul = [](const std::shared_ptr<const ov::Node>& n) {
         const auto matmul = ov::as_type_ptr<const ov::op::v0::MatMul>(n);

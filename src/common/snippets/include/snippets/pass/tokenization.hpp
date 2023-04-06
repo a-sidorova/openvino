@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2022 Intel Corporation
+// Copyright (C) 2018-2023 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
@@ -57,8 +57,24 @@ public:
  */
 class SnippetsTokenization : public ngraph::pass::FunctionPass {
 public:
+    /**
+     * @interface Config
+     * @brief Allow to adjust tokenization passes
+     * @ingroup snippets
+     */
+    struct Config {
+        Config(bool enable_transpose_token = true) : mha_enable_transpose_tokenization(enable_transpose_token) {}
+
+        bool mha_enable_transpose_tokenization = true;
+    };
+
+    SnippetsTokenization(const Config& config) : m_config(config) {}
+
     OPENVINO_RTTI("SnippetsTokenization", "0");
     bool run_on_model(const std::shared_ptr<ov::Model>& m) override;
+
+private:
+    Config m_config{};
 };
 
 

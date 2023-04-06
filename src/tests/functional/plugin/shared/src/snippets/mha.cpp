@@ -12,6 +12,19 @@
 namespace ov {
 namespace test {
 namespace snippets {
+namespace {
+void input_generation(std::map<std::shared_ptr<ov::Node>, ov::Tensor>& inputs,
+                      const std::vector<ov::Output<ov::Node>>& model_inputs,
+                      const std::vector<ngraph::Shape>& targetInputStaticShapes) {
+    inputs.clear();
+    for (int i = 0; i < model_inputs.size(); ++i) {
+        const auto& model_input = model_inputs[i];
+        ov::Tensor tensor;
+        tensor = ov::test::utils::create_and_fill_tensor_normal_distribution(model_input.get_element_type(), targetInputStaticShapes[i], 1.0f, 0.5f);
+        inputs.insert({model_input.get_node_shared_ptr(), tensor});
+    }
+}
+} // namespace
 
 std::string MHA::getTestCaseName(testing::TestParamInfo<ov::test::snippets::MHAParams> obj) {
     std::vector<ov::PartialShape> inputShapes;
@@ -46,14 +59,7 @@ void MHA::SetUp() {
 }
 
 void MHA::generate_inputs(const std::vector<ngraph::Shape>& targetInputStaticShapes) {
-    inputs.clear();
-    const auto& model_inputs = function->inputs();
-    for (int i = 0; i < model_inputs.size(); ++i) {
-        const auto& model_input = model_inputs[i];
-        ov::Tensor tensor;
-        tensor = ov::test::utils::create_and_fill_tensor_normal_distribution(model_input.get_element_type(), targetInputStaticShapes[i], 1.0f, 0.5f);
-        inputs.insert({model_input.get_node_shared_ptr(), tensor});
-    }
+    input_generation(inputs, function->inputs(), targetInputStaticShapes);
 }
 
 void MHASelect::SetUp() {
@@ -89,13 +95,35 @@ void MHASelect::generate_inputs(const std::vector<ngraph::Shape>& targetInputSta
     }
 }
 
+std::string MHAWOTranspose::getTestCaseName(testing::TestParamInfo<ov::test::snippets::MHAWOTransposeParams> obj) {
+    std::vector<ov::PartialShape> inputShapes;
+    bool withMul, transposedB_0;
+    std::string targetDevice;
+    size_t num_nodes, num_subgraphs;
+    std::tie(inputShapes, withMul, transposedB_0, num_nodes, num_subgraphs, targetDevice) = obj.param;
+
+    std::ostringstream result;
+    for (size_t i = 0; i < inputShapes.size(); ++i)
+        result << "IS[" << i << "]=" << CommonTestUtils::partialShape2str({inputShapes[i]}) << "_";
+    result << "Mul=" << withMul << "_";
+    result << "TransposedB_0=" << withMul << "_";
+    result << "#N=" << num_nodes << "_";
+    result << "#S=" << num_subgraphs << "_";
+    result << "targetDevice=" << targetDevice;
+    return result.str();
+}
+
+void MHAWOTranspose::generate_inputs(const std::vector<ngraph::Shape>& targetInputStaticShapes) {
+    input_generation(inputs, function->inputs(), targetInputStaticShapes);
+}
+
 void MHAWOTranspose::SetUp() {
     std::vector<ov::PartialShape> inputShapes;
-    bool withMul;
-    std::tie(inputShapes, withMul, ref_num_nodes, ref_num_subgraphs, targetDevice) = this->GetParam();
+    bool withMul, transposedB_0;
+    std::tie(inputShapes, withMul, transposedB_0, ref_num_nodes, ref_num_subgraphs, targetDevice) = this->GetParam();
     init_input_shapes(static_partial_shapes_to_test_representation(inputShapes));
 
-    auto f = ov::test::snippets::MHAWOTransposeFunction(inputDynamicShapes, withMul);
+    auto f = ov::test::snippets::MHAWOTransposeFunction(inputDynamicShapes, withMul, transposedB_0);
     function = f.getOriginal();
 
     if (!configuration.count(InferenceEngine::PluginConfigInternalParams::KEY_SNIPPETS_MODE)) {
@@ -106,11 +134,11 @@ void MHAWOTranspose::SetUp() {
 
 void MHAWOTransposeOnInputs::SetUp() {
     std::vector<ov::PartialShape> inputShapes;
-    bool withMul;
-    std::tie(inputShapes, withMul, ref_num_nodes, ref_num_subgraphs, targetDevice) = this->GetParam();
+    bool withMul, transposedB_0;
+    std::tie(inputShapes, withMul, transposedB_0, ref_num_nodes, ref_num_subgraphs, targetDevice) = this->GetParam();
     init_input_shapes(static_partial_shapes_to_test_representation(inputShapes));
 
-    auto f = ov::test::snippets::MHAWOTransposeOnInputsFunction(inputDynamicShapes);
+    auto f = ov::test::snippets::MHAWOTransposeOnInputsFunction(inputDynamicShapes, withMul, transposedB_0);
     function = f.getOriginal();
 
     if (!configuration.count(InferenceEngine::PluginConfigInternalParams::KEY_SNIPPETS_MODE)) {
