@@ -133,7 +133,9 @@ auto update_intermediate_supported_ops(std::shared_ptr<ov::Node>& interm_op, ngr
 
         // Check for supported ops on branches: Broadcast/Elementwise (for example, dequantize ops)
         if (interm_op->get_input_size() > 1) {
-            tokenize_broadcast(interm_op, ordered_ops);
+            // NOTE: To avoid shape mismathcing after reshaping, we disabled branch tokenization for non-4D
+            if (interm_op->get_shape().size() == 4)
+                tokenize_broadcast(interm_op, ordered_ops);
 
             auto is_supported_branch_op = [&ordered_ops](const std::shared_ptr<ov::Node>& op) {
                 return is_supported_intermediate_op(op) &&
@@ -159,7 +161,8 @@ auto update_intermediate_supported_ops(std::shared_ptr<ov::Node>& interm_op, ngr
                     ordered_ops.insert(ordered_ops.begin() + shift, parent);
                     // We think that sequence of ops goes through input port 0
                     // But can be Select here? If it can be, parent shouldn't be on input port 0. Need another way?
-                    parent = parent->get_input_node_shared_ptr(0);
+                    if (parent->get_input_size() > 0)
+                        parent = parent->get_input_node_shared_ptr(0);
                 }
             }
 
@@ -287,7 +290,7 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets(bool enable_tra
             !is_supported_tensor(matmul1->get_input_tensor(0)) || !is_supported_tensor(matmul1->get_input_tensor(1)))
             return false;
 
-        if (transformation_callback(matmul1)) {
+        if (transformation_callback(matmul0)) {
             return false;
         }
 
@@ -314,8 +317,7 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets(bool enable_tra
         // so firstly we insert Transpose1 on the beginning of ordered_ops and then Transpose1
         // Note: If MatMul0 has transposed_b, we should tokenize only scalars ops from 1st branch
         //       to move extracted Transpose from MatMul input to body Parameter
-        auto output = matmul0->input_value(1);
-        auto parent = output.get_node_shared_ptr();
+        auto parent = matmul0->get_input_node_shared_ptr(1);
         // We can support several ops between MatMul0 with transposed_b and Transpose1 with 0213 order (or without this Transpose1)
         // only if these ops have scalar shapes on other inputs.
         // There is transformation ExplicitTransposeMatMulInputs that set supported order and transposed_b(false).
@@ -343,8 +345,7 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets(bool enable_tra
             potential_body_params_count += get_potential_body_params(parent);
             ordered_ops.insert(ordered_ops.begin(), parent);
             // [107731] To go always through 0-th port - is it safe?
-            output = parent->input_value(0);
-            parent = output.get_node_shared_ptr();
+            parent = parent->get_input_node_shared_ptr(0);
         }
 
         const auto transpose1 = tokenize_transpose(parent);
@@ -382,35 +383,16 @@ ngraph::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets(bool enable_tra
         }
         ordered_ops.push_back(matmul1);
 
-        bool are_ops_after_matmul2 = false;
         auto child = matmul1->get_output_target_inputs(0).begin()->get_node()->shared_from_this();
-        while (is_supported_intermediate_op(child)) {
-            are_ops_after_matmul2 = true;
-            // All supported ops have only one output port
-            if (child->get_output_target_inputs(0).size() != 1)
-                break;
+        // TODO: Add support Eltwises between MatMul1 and Transpose
+        // status = update_intermediate_supported_ops(child, ordered_ops);
+        // if (!status) {
+        //     ordered_ops.push_back(child);
+        // }
 
-            potential_body_params_count += get_potential_body_params(child);
-            // [75567]: move this plugin-specific constraint to the plugin callback
-            //          We cannot collapse op to Subgraph if count of potential Parameter and Result count is higher 12
-            if (potential_body_params_count + child->get_output_target_inputs(0).size() + hidden_virtual_ports_count + buffer_count > 12) {
-                break;
-            }
-
-            ordered_ops.push_back(child);
-            child = child->get_output_target_inputs(0).begin()->get_node()->shared_from_this();
-        }
-
-        // At the moment Snippets don't support nodes between MatMul2 and Transpose3 due to Loop and strided calculations limitations
-        //     MatMul2
-        //  <Supported ops>
-        //    Transpose3
-        // TODO: Add check for precision of MatMul (we cannot collapse Transpose to I8/BF16 MatMul)
-        if (enable_transpose_tokenization && !are_ops_after_matmul2) {
-            auto transpose3 = ngraph::as_type_ptr<ngraph::opset1::Transpose>(child);
-            if (is_valid_transpose(transpose3, {0, 2, 1, 3})) {
-                ordered_ops.push_back(transpose3);
-            }
+        auto transpose3 = tokenize_transpose(child);
+        if (is_valid_transpose(transpose3, {0, 2, 1, 3})) {
+            ordered_ops.push_back(transpose3);
         }
 
         /**********************/

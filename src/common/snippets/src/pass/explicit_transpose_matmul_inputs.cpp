@@ -66,7 +66,7 @@ ngraph::snippets::pass::ExplicitTransposeMatMulInputs::ExplicitTransposeMatMulIn
                 new_transpose_order->set_friendly_name(transpose_pattern->get_friendly_name());
                 ngraph::copy_runtime_info(transpose_pattern, new_transpose_order);
                 transpose->set_argument(1, new_transpose_order);
-            } else {
+            } else {  // Otherwise, merge existing and new Transpose orders
                 OPENVINO_ASSERT(ov::is_type<opset1::Parameter>(parent),
                                 "ExplicitTransposeMatMulInputs expects Parameter in cases when there isn't existing Transpose on input");
                 const auto& consumers = parent->get_output_target_inputs(0);

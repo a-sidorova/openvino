@@ -594,18 +594,18 @@ void Transformations::MainSnippets(void) {
     if (snippetsMode != Config::SnippetsMode::IgnoreCallback) {
         snippetsManager.get_pass_config()->set_callback<ngraph::snippets::pass::TokenizeMHASnippets>(
                 [is_supported_matmul](const std::shared_ptr<const ov::Node>& n) -> bool {
-                    // Tranformation callback is called on MatMul1
+                    // Tranformation callback is called on MatMul0
                     if (!is_supported_matmul(n))
                         return true;
-                    // Search for MatMul0
-                    auto parent = n->get_input_node_shared_ptr(0);
-                    while (!ov::is_type<ov::op::v0::MatMul>(parent)) {
-                        parent = parent->get_input_node_shared_ptr(0);
+                    // Search for MatMul1
+                    auto child = n->get_output_target_inputs(0).begin()->get_node()->shared_from_this();
+                    while (!ov::is_type<const ov::op::v0::MatMul>(child)) {
+                        child = child->get_output_target_inputs(0).begin()->get_node()->shared_from_this();
                     }
-                    if (!is_supported_matmul(parent))
+                    if (!is_supported_matmul(child))
                         return true;
 
-                    const auto pshape = n->get_output_partial_shape(0);
+                    const auto pshape = child->get_output_partial_shape(0);
                     const auto shape = pshape.get_shape();
                     const auto parallel_work_amount =
                             std::accumulate(shape.rbegin() + 2, shape.rend(), 1, std::multiplies<size_t>());
@@ -620,8 +620,9 @@ void Transformations::MainSnippets(void) {
                     //       - parallelism support on JIT level
                     const auto needed_num_of_threads = 12lu;
                     const auto l2_cache_size = dnnl::utils::get_cache_size(2, true);
-                    const auto is_unsupported_parallel_work_amount = parallel_get_num_threads() / 2 > parallel_work_amount &&
-                                                                     parallel_work_amount < needed_num_of_threads;
+                    const auto is_unsupported_parallel_work_amount = (parallel_get_num_threads() / 2 > parallel_work_amount &&
+                                                                      parallel_work_amount < needed_num_of_threads) &&
+                                                                      !ngraph::snippets::pass::CommonOptimizations::canBeParallelOptimized(n);
                     const auto is_unsupported_kernel_work_amount = kernel_buffer_size > l2_cache_size;
                     return is_unsupported_parallel_work_amount || is_unsupported_kernel_work_amount;
                 });

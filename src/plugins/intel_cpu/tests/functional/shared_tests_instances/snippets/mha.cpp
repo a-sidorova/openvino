@@ -48,24 +48,37 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHA, MHASelect,
                          MHA::getTestCaseName);
 
 
-const std::vector<std::vector<ov::PartialShape>> inputShapesWOTranspose = {
+const std::vector<std::vector<ov::PartialShape>> inputShapesWOTranspose_4D = {
         {{1, 12, 197, 64}, {1, 12, 64, 197}, {1, 12, 197, 64}},
-        {{12, 197, 64}, {12, 64, 197}, {12, 197, 64}}
 };
 
-INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTranspose, MHAWOTranspose,
+const std::vector<std::vector<ov::PartialShape>> inputShapesWOTranspose_3D = {
+        {{2, 192, 64}, {2, 64, 192}, {2, 192, 64}}  // batch is equal to 2 - to enable ReshapeSubgraph optimization
+};
+
+INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTranspose4D, MHAWOTranspose,
                          ::testing::Combine(
-                                 ::testing::ValuesIn(inputShapesWOTranspose),
+                                 ::testing::ValuesIn(inputShapesWOTranspose_4D),
                                  ::testing::ValuesIn({true, false}),
                                  ::testing::ValuesIn({false}),
                                  ::testing::Values(1),
+                                 ::testing::Values(1),
+                                 ::testing::Values(CommonTestUtils::DEVICE_CPU)),
+                         MHAWOTranspose::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTranspose3D, MHAWOTranspose,
+                         ::testing::Combine(
+                                 ::testing::ValuesIn(inputShapesWOTranspose_3D),
+                                 ::testing::ValuesIn({true, false}),
+                                 ::testing::ValuesIn({false}),
+                                 ::testing::Values(5), // MHA + 4 Reshapes after ReshapeSubgraph optimization
                                  ::testing::Values(1),
                                  ::testing::Values(CommonTestUtils::DEVICE_CPU)),
                          MHAWOTranspose::getTestCaseName);
 
 INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTransposeOnInputs, MHAWOTransposeOnInputs,
                          ::testing::Combine(
-                                 ::testing::Values(inputShapesWOTranspose[0]), // Only 4D
+                                 ::testing::ValuesIn(inputShapesWOTranspose_4D),
                                  ::testing::ValuesIn({true, false}),
                                  ::testing::ValuesIn({false}),
                                  ::testing::Values(1),
@@ -73,14 +86,17 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTransposeOnInputs, MHAWOTransposeOn
                                  ::testing::Values(CommonTestUtils::DEVICE_CPU)),
                          MHAWOTranspose::getTestCaseName);
 
-const std::vector<std::vector<ov::PartialShape>> inputShapesWOTransposeMatMul0TransposedB = {
+const std::vector<std::vector<ov::PartialShape>> inputShapesWOTransposeMatMul0TransposedB_4D = {
         {{1, 12, 197, 64}, {1, 12, 197, 64}, {1, 12, 197, 64}},
-        {{12, 197, 64}, {12, 197, 64}, {12, 197, 64}}
 };
 
-INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTransposeMatMul0TransposedB, MHAWOTranspose,
+const std::vector<std::vector<ov::PartialShape>> inputShapesWOTransposeMatMul0TransposedB_3D = {
+        {{2, 192, 64}, {2, 192, 64}, {2, 192, 64}}  // batch is equal to 2 - to enable ReshapeSubgraph optimization
+};
+
+INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTransposeMatMul0TransposedB4D, MHAWOTranspose,
                          ::testing::Combine(
-                                 ::testing::ValuesIn(inputShapesWOTransposeMatMul0TransposedB),
+                                 ::testing::ValuesIn(inputShapesWOTransposeMatMul0TransposedB_4D),
                                  ::testing::ValuesIn({true, false}),
                                  ::testing::ValuesIn({true}),
                                  ::testing::Values(2), // Extracted Transpose + MHA
@@ -88,9 +104,19 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTransposeMatMul0TransposedB, MHAWOT
                                  ::testing::Values(CommonTestUtils::DEVICE_CPU)),
                          MHAWOTranspose::getTestCaseName);
 
+INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTransposeMatMul0TransposedB3D, MHAWOTranspose,
+                         ::testing::Combine(
+                                 ::testing::ValuesIn(inputShapesWOTransposeMatMul0TransposedB_3D),
+                                 ::testing::ValuesIn({true, false}),
+                                 ::testing::ValuesIn({true}),
+                                 ::testing::Values(6), // Extracted Transpose + MHA + 4 Reshapes after ReshapeSubgraph optimization
+                                 ::testing::Values(1),
+                                 ::testing::Values(CommonTestUtils::DEVICE_CPU)),
+                         MHAWOTranspose::getTestCaseName);
+
 INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHAWOTransposeOnInputsMatMul0TransposedB, MHAWOTransposeOnInputs,
                          ::testing::Combine(
-                                 ::testing::Values(inputShapesWOTransposeMatMul0TransposedB[0]), // Only 4D
+                                 ::testing::ValuesIn(inputShapesWOTransposeMatMul0TransposedB_4D),
                                  ::testing::ValuesIn({true, false}),
                                  ::testing::ValuesIn({true}),
                                  ::testing::Values(2), // Extracted Transpose + MHA

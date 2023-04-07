@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Intel Corporation
+// Copyright (C) 2023 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
@@ -18,11 +18,15 @@ public:
     NGRAPH_RTTI_DECLARATION;
     CommonOptimizations();
 
+    static bool canBeParallelOptimized(const std::shared_ptr<const ov::Node>& node);
+
 private:
     // Move up Constants which aren't scalars from body to Subgraph and replace them with Parameters inside body
-    void ExtractConstants(const std::shared_ptr<ngraph::snippets::op::Subgraph>& subgraph);
+    static void ExtractConstants(const std::shared_ptr<ngraph::snippets::op::Subgraph>& subgraph);
     // Move up unsupported Transposes after Parameters from body
-    void ExtractUnsupportedTransposes(const std::shared_ptr<ngraph::snippets::op::Subgraph>& subgraph);
+    static bool ExtractUnsupportedTransposes(const std::shared_ptr<ngraph::snippets::op::Subgraph>& subgraph);
+    // Insert Reshape nodes around Subgraph to increase work amount for parallelism
+    static bool SplitDimensions(const std::shared_ptr<ngraph::snippets::op::Subgraph>& subgraph);
 };
 
 }  // namespace pass
