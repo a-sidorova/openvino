@@ -42,9 +42,6 @@ bool MarkLoops::run(LinearIR& linear_ir) {
         auto loop_begin_pos = expr_it;
         auto loop_end_pos = loop_begin_pos;
 
-        const auto& outputs = expr->get_outputs();
-        const auto& loop_inner_layout = outputs.front()->get_layout();
-        const auto& loop_inner_subtensor = outputs.front()->get_subtensor();
         const bool loop_is_outside = expr->is_outside_loop();
         const bool loop_is_inside = !loop_is_outside;
 
@@ -65,21 +62,33 @@ bool MarkLoops::run(LinearIR& linear_ir) {
                 ov::is_type<opset1::Constant>(current_node))
                 break;
 
-            const auto& ins = loop_end_pos->get()->get_inputs();
-            current_is_inside = std::all_of(ins.begin(), ins.end(),
-                                          [&loop_inner_layout, &loop_inner_subtensor](const TensorDescriptorPtr& td) {
-                                              return td->get_layout() == loop_inner_layout &&
-                                                     td->get_subtensor() == loop_inner_subtensor; });
-            // If the next expr isn't real customer of prev expr we should finish Loop
-            auto connected = [&](const TensorDescriptorPtr& td) {return linear_ir.get_expr_by_output(td).expr == prev_expr;};
-            if (current_is_inside && std::none_of(ins.begin(), ins.end(), connected))
+            // We finish Loop if
+            //  - the next expr isn't real customer
+            //  - the is conflict between the corresponding ports
+            bool is_connected = false;
+            bool is_conflicted = false;
+            for (size_t i = 0; i < prev_expr->get_output_count(); ++i) {
+                const auto& loop_td = prev_expr->get_outputs()[i];
+                const auto& consumers = loop_td->get_consumers();
+                const auto found = std::find_if(consumers.begin(), consumers.end(), [&loop_end_pos](const TensorDescriptor& consumer) {
+                    return consumer.get_expr_ptr().get() == loop_end_pos->get();
+                });
+                if (found != consumers.end()) {
+                    if (loop_td->is_conflicted_consumer(*found)) {
+                        is_conflicted = true;
+                        break;
+                    }
+                   is_connected = true;
+                }
+            }
+            if (is_conflicted || !is_connected)
                 break;
 
             current_is_outside = current_expr->is_outside_loop();
         } while (current_is_inside == loop_is_inside && current_is_outside == loop_is_outside);
 
         if (loop_is_inside)
-            loop_manager->mark_loop(linear_ir, loop_begin_pos, loop_end_pos, loop_depth, m_vector_size);
+            loop_manager->mark_loop(loop_begin_pos, loop_end_pos, loop_depth, m_vector_size);
         else if (loop_is_outside)
             loop_manager->skipped_mark(loop_begin_pos, loop_end_pos, loop_depth);
 

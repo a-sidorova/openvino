@@ -27,7 +27,7 @@ void Brgemm::validate_and_infer_types() {
     NODE_VALIDATION_CHECK(this, get_input_partial_shape(0).is_static() && get_input_partial_shape(1).is_static(),
                           "Brgemm currently supports only static shapes.");
 
-    const auto planar_input_shapes = get_planar_input_shapes(input_values());
+    const auto planar_input_shapes = get_planar_input_shapes(inputs());
     auto output_shape = get_output_partial_shape(planar_input_shapes);
     set_output_type(0, get_output_type(), get_planar_output_shape(output_shape));
 }
@@ -56,18 +56,22 @@ ov::element::Type Brgemm::get_output_type() const {
     }
 }
 
-std::vector<ov::PartialShape> Brgemm::get_planar_input_shapes(const std::vector<ov::Output<ov::Node>>& inputs) const {
+std::vector<ov::PartialShape> Brgemm::get_planar_input_shapes(const std::vector<ov::Input<ov::Node>>& inputs) const {
     OPENVINO_ASSERT(inputs.size() == 2, "Brgemm::get_planar_input_shapes() expects 2 inputs");
     return { utils::get_port_planar_shape(inputs[0]), utils::get_port_planar_shape(inputs[1]) };
 }
 
 ov::PartialShape Brgemm::get_planar_output_shape(const ov::PartialShape& output_shape) const {
     // This method can be safely called from validate_and_infer_types() before output creation
-    const auto& rt_info = get_rt_info();
-    auto it = rt_info.find(TensorDescriptorPtrVectorAttribute::get_type_info_static());
-    if (it != rt_info.end()) {
-        const auto& td = it->second.as<TensorDescriptorPtrVectorAttribute>().m_value[0];
-        return utils::get_reordered_planar_shape(output_shape, td->get_layout());
+    const auto& key = PortDescriptorVectorAttribute::get_type_info_static();
+    auto& rt_info = get_rt_info();
+    const auto& found = rt_info.find(key);
+    if (found != rt_info.end()) {
+        const auto& out_descs = found->second.as<PortDescriptorVectorAttribute>().outputs;
+        if (out_descs.size() != get_output_size())
+            OPENVINO_THROW("Get output port descriptor is failed: incorrect count");
+        const auto& port_desc = out_descs[0];
+        return utils::get_reordered_planar_shape(output_shape, port_desc->get_layout());
     }
     return output_shape;
 }

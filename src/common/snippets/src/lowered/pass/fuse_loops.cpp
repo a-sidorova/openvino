@@ -29,20 +29,20 @@ bool FuseLoops::can_be_fused(const LoopInfoPtr& loop_current, const LoopInfoPtr&
     return supported_work_amount && supported_increment;
 }
 
-void FuseLoops::fuse_points(LinearIR& linear_ir, std::vector<ExpressionPort>& exit_points, std::vector<ExpressionPort>& entry_points,
-                             LinearIR::constExprIt loop_begin_pos, LinearIR::constExprIt loop_end_pos) {
-    std::vector<ExpressionPort> new_exit_points;
+void FuseLoops::fuse_points(std::vector<TensorDescriptor>& exit_points, std::vector<TensorDescriptor>& entry_points,
+                            LinearIR::constExprIt loop_begin_pos, LinearIR::constExprIt loop_end_pos) {
+    std::vector<TensorDescriptor> new_exit_points;
     for (const auto& exit_point : exit_points) {
-        const auto expr = exit_point.expr;
-        const auto port = exit_point.port;
+        const auto expr = exit_point.get_expr_ptr();
+        const auto port = exit_point.get_index();
         const auto output_td = expr->get_outputs()[port];
-        const auto consumers_inputs = linear_ir.get_exprs_by_input(output_td);
+        const auto consumers_inputs = output_td->get_consumers();
 
-        std::vector<ExpressionPort> mapped_entry_points;
+        std::vector<TensorDescriptor> mapped_entry_points;
         std::vector<ExpressionPtr> outside_consumers;
         for (const auto& consumer_input : consumers_inputs) {
-            const auto consumer = consumer_input.expr;
-            const auto consumer_port = consumer_input.port;
+            const auto consumer = consumer_input.get_expr_ptr();
+            const auto consumer_port = consumer_input.get_index();
             const auto consumer_point = consumer->input_port(consumer_port);
             const auto entry_point_it = std::find(entry_points.begin(), entry_points.end(), consumer_point);
             if (entry_point_it != entry_points.end()) {
@@ -73,9 +73,9 @@ void FuseLoops::fuse_points(LinearIR& linear_ir, std::vector<ExpressionPort>& ex
 }
 
 bool FuseLoops::fuse_upper_into_current(LinearIR& linear_ir, const LinearIR::LoopManagerPtr& loop_manager,
-                                         const ExpressionPort& current_entry_point, const ExpressionPort& target_exit_point,
-                                         size_t current_loop_id, size_t target_loop_id, size_t dim_idx,
-                                         LinearIR::constExprIt& current_loop_begin_pos, LinearIR::constExprIt& current_loop_end_pos) {
+                                        const TensorDescriptor& current_entry_point, const TensorDescriptor& target_exit_point,
+                                        size_t current_loop_id, size_t target_loop_id, size_t dim_idx,
+                                        LinearIR::constExprIt& current_loop_begin_pos, LinearIR::constExprIt& current_loop_end_pos) {
     const auto& loop_current = loop_manager->get_loop_info(current_loop_id);
     const auto& loop_target = loop_manager->get_loop_info(target_loop_id);
     if (!can_be_fused(loop_current, loop_target))
@@ -89,13 +89,13 @@ bool FuseLoops::fuse_upper_into_current(LinearIR& linear_ir, const LinearIR::Loo
     bool is_fusion_allowed = true;
     for (size_t i = 0; i < loop_target->exit_exprs.size() && is_fusion_allowed; ++i) {
         const auto target_exit_point = loop_target->exit_exprs[i];
-        const auto target_exit_expr = target_exit_point.expr;
-        const auto port = target_exit_point.port;
+        const auto target_exit_expr = target_exit_point.get_expr_ptr();
+        const auto port = target_exit_point.get_index();
         const auto output_td = target_exit_expr->get_outputs()[port];
-        const auto consumer_inputs = linear_ir.get_exprs_by_input(output_td);
+        const auto consumer_inputs = output_td->get_consumers();
         for (const auto& consumer_input : consumer_inputs) {
-            const auto consumer = consumer_input.expr;
-            if (ov::is_type<opset1::Result>(consumer->get_node()) || consumer == current_entry_point.expr)
+            const auto consumer = consumer_input.get_expr_ptr();
+            if (ov::is_type<opset1::Result>(consumer->get_node()) || consumer == current_entry_point.get_expr_ptr())
                 continue;
             // The fusing is only valid if target Loop consumer (the Consumer is outside of target Loop)
             // is after current Loop (after Loop_down).
@@ -113,7 +113,7 @@ bool FuseLoops::fuse_upper_into_current(LinearIR& linear_ir, const LinearIR::Loo
     auto current_exit_points = loop_current->exit_exprs;
     auto target_entry_points = loop_target->entry_exprs;
     auto target_exit_points = loop_target->exit_exprs;
-    fuse_points(linear_ir, target_exit_points, current_entry_points, target_loop_begin_pos, target_loop_end_pos);
+    fuse_points(target_exit_points, current_entry_points, target_loop_begin_pos, target_loop_end_pos);
 
     const auto insertion_place = current_loop_begin_pos;
     const auto is_move_needed = target_loop_end_pos != current_loop_begin_pos;
@@ -135,9 +135,9 @@ bool FuseLoops::fuse_upper_into_current(LinearIR& linear_ir, const LinearIR::Loo
     // Update work_amount for Loop (increment is constant because increments must be the identical for fusion):
     loop_current->work_amount = std::max(loop_current->work_amount, loop_target->work_amount);
 
-    std::vector<ExpressionPort> new_entries = target_entry_points;
+    std::vector<TensorDescriptor> new_entries = target_entry_points;
     new_entries.insert(new_entries.end(), current_entry_points.begin(), current_entry_points.end());
-    std::vector<ExpressionPort> new_exits = target_exit_points;
+    std::vector<TensorDescriptor> new_exits = target_exit_points;
     new_exits.insert(new_exits.end(), current_exit_points.begin(), current_exit_points.end());
 
     loop_current->entry_exprs = new_entries;
@@ -147,9 +147,9 @@ bool FuseLoops::fuse_upper_into_current(LinearIR& linear_ir, const LinearIR::Loo
 }
 
 bool FuseLoops::fuse_lower_into_current(LinearIR& linear_ir, const LinearIR::LoopManagerPtr& loop_manager,
-                                         const ExpressionPort& current_exit_point, const ExpressionPort& target_entry_point,
-                                         size_t current_loop_id, size_t target_loop_id, size_t dim_idx,
-                                         LinearIR::constExprIt& current_loop_begin_pos, LinearIR::constExprIt& current_loop_end_pos) {
+                                        const TensorDescriptor& current_exit_point, const TensorDescriptor& target_entry_point,
+                                        size_t current_loop_id, size_t target_loop_id, size_t dim_idx,
+                                        LinearIR::constExprIt& current_loop_begin_pos, LinearIR::constExprIt& current_loop_end_pos) {
     const auto& loop_current = loop_manager->get_loop_info(current_loop_id);
     const auto& loop_target = loop_manager->get_loop_info(target_loop_id);
     if (!can_be_fused(loop_current, loop_target))
@@ -160,12 +160,12 @@ bool FuseLoops::fuse_lower_into_current(LinearIR& linear_ir, const LinearIR::Loo
     bool is_fusion_allowed = true;
     for (size_t i = 0; i < loop_target->entry_exprs.size() && is_fusion_allowed; ++i) {
         const auto target_entry_point = loop_target->entry_exprs[i];
-        const auto target_entry_expr = target_entry_point.expr;
-        const auto port = target_entry_point.port;
+        const auto target_entry_expr = target_entry_point.get_expr_ptr();
+        const auto port = target_entry_point.get_index();
         const auto input_td = target_entry_expr->get_inputs()[port];
-        const auto parent_expr_output = linear_ir.get_expr_by_output(input_td);
-        const auto parent_expr = parent_expr_output.expr;
-        if (ov::is_type<opset1::Parameter>(parent_expr->get_node()) || parent_expr == current_exit_point.expr)
+        const auto parent_expr_output = input_td->get_source();
+        const auto parent_expr = parent_expr_output.get_expr_ptr();
+        if (ov::is_type<opset1::Parameter>(parent_expr->get_node()) || parent_expr == current_exit_point.get_expr_ptr())
             continue;
         is_fusion_allowed = parent_expr->get_loop_ids()[dim_idx] == current_loop_id ||  // The parent expr is from the same current Loop
                             std::find(linear_ir.cbegin(), current_loop_begin_pos, parent_expr) != current_loop_begin_pos; // The parent is before current Loop
@@ -182,7 +182,7 @@ bool FuseLoops::fuse_lower_into_current(LinearIR& linear_ir, const LinearIR::Loo
     auto current_exit_points = loop_current->exit_exprs;
     auto target_entry_points = loop_target->entry_exprs;
     auto target_exit_points = loop_target->exit_exprs;
-    fuse_points(linear_ir, current_exit_points, target_entry_points, current_loop_begin_pos, current_loop_end_pos);
+    fuse_points(current_exit_points, target_entry_points, current_loop_begin_pos, current_loop_end_pos);
 
     const auto insertion_place = current_loop_end_pos;
     const auto is_move_needed = insertion_place != target_loop_begin_pos;
@@ -205,9 +205,9 @@ bool FuseLoops::fuse_lower_into_current(LinearIR& linear_ir, const LinearIR::Loo
     // Update work_amount for Loop (increment is constant because increments must be the identical for fusion):
     loop_current->work_amount = std::max(loop_current->work_amount, loop_target->work_amount);
 
-    std::vector<ExpressionPort>& new_entries = current_entry_points;
+    std::vector<TensorDescriptor>& new_entries = current_entry_points;
     new_entries.insert(new_entries.end(), target_entry_points.begin(), target_entry_points.end());
-    std::vector<ExpressionPort>& new_exits = current_exit_points;
+    std::vector<TensorDescriptor>& new_exits = current_exit_points;
     new_exits.insert(new_exits.end(), target_exit_points.begin(), target_exit_points.end());
 
     loop_current->entry_exprs = new_entries;
@@ -268,12 +268,12 @@ bool FuseLoops::run(LinearIR& linear_ir) {
                 bool was_fusion_up = false;
                 for (size_t in_port = 0; in_port < entry_points.size() && !was_fusion_up; ++in_port) {
                     const auto entry_point = entry_points[in_port];
-                    const auto entry_expr = entry_point.expr;
-                    const auto port = entry_point.port;
+                    const auto entry_expr = entry_point.get_expr_ptr();
+                    const auto port = entry_point.get_index();
                     const auto input_td = entry_expr->get_inputs()[port];
-                    const auto parent_expr_output = linear_ir.get_expr_by_output(input_td);
-                    const auto parent_expr = parent_expr_output.expr;
-                    const auto out_port = parent_expr_output.port;
+                    const auto parent_expr_output = input_td->get_source();
+                    const auto parent_expr = parent_expr_output.get_expr_ptr();
+                    const auto out_port = parent_expr_output.get_index();
                     const auto parent = parent_expr->get_node();
                     if (ov::is_type<opset1::Constant>(parent) ||
                         ov::is_type<opset1::Parameter>(parent) ||
@@ -309,13 +309,13 @@ bool FuseLoops::run(LinearIR& linear_ir) {
                 bool was_fusion_down = false;
                 for (size_t out_port = 0; out_port < exit_points.size() && !was_fusion_down; ++out_port) {
                     const auto exit_point = exit_points[out_port];
-                    const auto exit_expr = exit_point.expr;
-                    const auto port = exit_point.port;
+                    const auto exit_expr = exit_point.get_expr_ptr();
+                    const auto port = exit_point.get_index();
                     const auto output_td = exit_expr->get_outputs()[port];
-                    const auto consumer_exprs_inputs = linear_ir.get_exprs_by_input(output_td);
+                    const auto consumer_exprs_inputs = output_td->get_consumers();
                     for (const auto& consumer_expr_input : consumer_exprs_inputs) {
-                        const auto consumer_expr = consumer_expr_input.expr;
-                        const auto in_port = consumer_expr_input.port;
+                        const auto consumer_expr = consumer_expr_input.get_expr_ptr();
+                        const auto in_port = consumer_expr_input.get_index();
                         const auto consumer = consumer_expr->get_node();
                         if (ov::is_type<opset1::Result>(consumer) ||
                             ov::is_type<op::Buffer>(consumer)) {

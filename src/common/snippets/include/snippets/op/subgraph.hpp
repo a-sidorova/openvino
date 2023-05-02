@@ -172,9 +172,6 @@ private:
         // True if body has operations that don't support plugin-side domain optimizations
         // (e.g. Transpose, Softmax, MatMul in general doesn't support dimensions collapsing)
         bool m_has_domain_sensitive_ops = false;
-        // True if we should go through whole body to check for where loops should be explicitly inserted.
-        // Otherwise, we insert Loops on Parameters and Results - for example, it's optimized out for subgraph with only Eltwise ops
-        bool m_explicit_loop_insertion = false;
     } config;
 };
 

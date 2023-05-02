@@ -16,20 +16,20 @@ namespace pass {
 
 namespace {
 void filter_ports(LinearIR& linear_ir,
-                  std::vector<ExpressionPort>& loop_entries, std::vector<ExpressionPort>& loop_exits) {
-    std::vector<ExpressionPort> new_loop_entries;
-    std::vector<ExpressionPort> new_loop_exits;
+                  std::vector<TensorDescriptor>& loop_entries, std::vector<TensorDescriptor>& loop_exits) {
+    std::vector<TensorDescriptor> new_loop_entries;
+    std::vector<TensorDescriptor> new_loop_exits;
     new_loop_entries.reserve(loop_entries.size());
     new_loop_exits.reserve(loop_exits.size());
 
     std::set<std::shared_ptr<ov::Node>> loop_parents;
     for (const auto& loop_entry_point : loop_entries) {
-        const auto& expr = loop_entry_point.expr;
-        const auto port = loop_entry_point.port;
+        const auto& expr = loop_entry_point.get_expr_ptr();
+        const auto port = loop_entry_point.get_index();
         const auto node = expr->get_node();
         const auto ma = ov::as_type_ptr<op::MemoryAccess>(node);
         if (ma && ma->is_memory_access_input_port(port)) {
-            const auto& parent_expr = linear_ir.get_expr_by_output(expr->get_inputs()[port]).expr;
+            const auto& parent_expr = expr->get_inputs()[port]->get_source().get_expr_ptr();
             const auto& parent = parent_expr->get_node();
             // Todo: Sometimes several Load in one Loop read data from the same Node
             if (loop_parents.find(parent) == loop_parents.end()) {
@@ -40,8 +40,8 @@ void filter_ports(LinearIR& linear_ir,
     }
 
     for (const auto& loop_exit_point : loop_exits) {
-        const auto& expr = loop_exit_point.expr;
-        const auto port = loop_exit_point.port;
+        const auto& expr = loop_exit_point.get_expr_ptr();
+        const auto port = loop_exit_point.get_index();
         const auto ma = ov::as_type_ptr<op::MemoryAccess>(expr->get_node());
         if (ma && ma->is_memory_access_output_port(port)) {
             new_loop_exits.push_back(loop_exit_point);
@@ -52,12 +52,10 @@ void filter_ports(LinearIR& linear_ir,
     loop_exits = new_loop_exits;
 }
 
-int64_t get_dim_stride(const size_t dim, const std::vector<size_t>& layout, const std::vector<size_t>& shape) {
+int64_t get_dim_stride(const size_t dim, const std::vector<size_t>& shape) {
     int64_t stride = 1;
-    for (int i = static_cast<int>(layout.size()) - 1; i >= 0; i--) {
-        if (layout[i] == dim)
-            break;
-        stride *= static_cast<int64_t>(shape[layout[i]]);
+    for (size_t i = dim + 1; i < shape.size(); ++i) {
+        stride *= static_cast<int64_t>(shape[i]);
     }
     return stride;
 }
@@ -65,60 +63,44 @@ int64_t get_dim_stride(const size_t dim, const std::vector<size_t>& layout, cons
 
 InitLoops::InitLoops() : Transformation() {}
 
-std::vector<int64_t> InitLoops::init_ptr_increments(const std::vector<ExpressionPort>& loop_inputs,
-                                                   const std::vector<ExpressionPort>& loop_outputs,
+std::vector<int64_t> InitLoops::init_ptr_increments(const std::vector<TensorDescriptor>& loop_inputs,
+                                                   const std::vector<TensorDescriptor>& loop_outputs,
                                                    size_t dim_idx) const {
-    std::vector<int64_t> ptr_increments;
-    // Note: All loop inputs must have the same layout by definition.
-    // If this doesn't hold, then we're trying to inject loops in the wrong place.
-    const std::vector<size_t> loop_layout{
-            !loop_inputs.empty() ? loop_inputs.front().expr->get_inputs()[0]->get_layout() :
-            !loop_outputs.empty() ? loop_outputs.front().expr->get_outputs()[0]->get_layout() :
-            std::vector<size_t>{}};
+     std::vector<int64_t> ptr_increments;
     // Note: Need to find max relevant dim expr to account for broadcasting, collect relevant_dims as well
-    // Note: At the moment all loop_inputs and loop_outputs - are Load/Store ops in this method.
-    //       So for example, we can call loop_input[i]->get_outputs().front() because Load have one output
-    size_t max_relevant_dim_size = 0;
+    size_t max_relevant_dim_size = 1;
     for (const auto& loop_input : loop_inputs) {
-        const auto& expr = loop_input.expr;
-        const auto out_td = expr->get_outputs().front();
-        const auto& layout = out_td->get_layout();
-        const auto& tensor = out_td->get_tensor();
+        const auto& layout = loop_input.get_layout();
+        const auto& tensor = loop_input.get_tensor();
         const auto& dim = *(layout.rbegin() + dim_idx);
         max_relevant_dim_size = std::max(tensor[dim], max_relevant_dim_size);
     }
     for (const auto& loop_output : loop_outputs) {
-        const auto& expr = loop_output.expr;
-        const auto in_td = expr->get_inputs().front();
-        const auto& layout = in_td->get_layout();
-        const auto& tensor = in_td->get_tensor();
+        const auto& layout = loop_output.get_layout();
+        const auto& tensor = loop_output.get_tensor();
         const auto& dim = *(layout.rbegin() + dim_idx);
         max_relevant_dim_size = std::max(tensor[dim], max_relevant_dim_size);
     }
+
     for (const auto& loop_input : loop_inputs) {
-        const auto& expr = loop_input.expr;
-        const auto out_td = expr->get_outputs().front();
-        const auto& layout = out_td->get_layout();
-        const auto& tensor = out_td->get_tensor();
+        const auto& layout = loop_input.get_layout();
+        const auto& tensor = loop_input.get_tensor();
         const auto& dim = *(layout.rbegin() + dim_idx);
         int64_t ptr_increment = 0;
         // If relevant dim is not broadcasted, then ptr_increment is the dim stride in the new layout
         if (!(tensor[dim] == 1 && max_relevant_dim_size != 1))
-            ptr_increment = get_dim_stride(dim, loop_layout, tensor);
+            ptr_increment = get_dim_stride(dim, tensor);
         ptr_increments.push_back(ptr_increment);
     }
-    // Note: Le already accounted for loop_input vs inside loops layout mismatch. So we need non-dense output
-    // ptr_increments only if loop_input_layout doesn't match loop_output_layout
+
     for (const auto& loop_output : loop_outputs) {
-        const auto& expr = loop_output.expr;
-        const auto in_td = expr->get_inputs().front();
-        const auto& layout = in_td->get_layout();
-        const auto& tensor = in_td->get_tensor();
+        const auto& layout = loop_output.get_layout();
+        const auto& tensor = loop_output.get_tensor();
         const auto& dim = *(layout.rbegin() + dim_idx);
         int64_t ptr_increment = 0;
         // If relevant dim is not broadcasted, then ptr_increment is the dim stride in the new layout
         if (!(tensor[dim] == 1 && max_relevant_dim_size != 1))
-            ptr_increment = get_dim_stride(dim, layout, tensor);
+            ptr_increment = get_dim_stride(dim, tensor);
         ptr_increments.push_back(ptr_increment);
     }
 
@@ -134,15 +116,15 @@ std::vector<int64_t> InitLoops::init_finalization_offsets(const std::vector<int6
     return finalization_offsets;
 }
 
-std::vector<int64_t> InitLoops::init_element_type_sizes(const std::vector<ExpressionPort>& loop_inputs,
-                                                       const std::vector<ExpressionPort>& loop_outputs) {
+std::vector<int64_t> InitLoops::init_element_type_sizes(const std::vector<TensorDescriptor>& loop_inputs,
+                                                        const std::vector<TensorDescriptor>& loop_outputs) {
     std::vector<int64_t> element_types;
     element_types.reserve(loop_inputs.size() + loop_outputs.size());
     for (const auto& in : loop_inputs) {
-        element_types.push_back(in.expr->get_node()->get_input_element_type(in.port).size());
+        element_types.push_back(in.get_expr_ptr()->get_node()->get_input_element_type(in.get_index()).size());
     }
     for (const auto& out : loop_outputs) {
-        element_types.push_back(out.expr->get_node()->get_output_element_type(out.port).size());
+        element_types.push_back(out.get_expr_ptr()->get_node()->get_output_element_type(out.get_index()).size());
     }
     return element_types;
 }
@@ -164,7 +146,7 @@ bool InitLoops::insertion(LinearIR& linear_ir, const LinearIR::LoopManager::Loop
     const auto io_data_sizes = init_element_type_sizes(loop_entries, loop_exits);
 
     const auto& loop_begin = std::make_shared<op::LoopBegin>();
-    const auto& loop_begin_expr = std::make_shared<Expression>(loop_begin);
+    const auto& loop_begin_expr = linear_ir.create_expression(loop_begin, std::vector<TensorPtr>{});
     linear_ir.insert(loop_begin_pos, loop_begin_expr);
 
     const auto& loop_end = std::make_shared<op::LoopEnd>(
@@ -172,14 +154,14 @@ bool InitLoops::insertion(LinearIR& linear_ir, const LinearIR::LoopManager::Loop
             io_data_sizes, loop_entries.size(), loop_exits.size());
     loop_end->has_outer_loop = has_outer_loop;
 
-    std::vector<TensorDescriptorPtr> loop_end_inputs;
+    std::vector<TensorPtr> loop_end_inputs;
     for (const auto& expr_port : loop_entries)
-        loop_end_inputs.push_back(expr_port.expr->get_inputs()[expr_port.port]);
+        loop_end_inputs.push_back(expr_port.get_expr_ptr()->get_inputs()[expr_port.get_index()]);
     for (const auto& expr_port : loop_exits)
-        loop_end_inputs.push_back(expr_port.expr->get_outputs()[expr_port.port]);
-    loop_end_inputs.push_back(linear_ir.get_expr_by_node(loop_begin)->get_outputs().front());
+        loop_end_inputs.push_back(expr_port.get_expr_ptr()->get_outputs()[expr_port.get_index()]);
+    loop_end_inputs.push_back(loop_begin_expr->get_outputs()[0]);
 
-    const auto& loop_end_expr = std::make_shared<Expression>(loop_end, loop_end_inputs, std::vector<TensorDescriptorPtr>{});
+    const auto& loop_end_expr = linear_ir.create_expression(loop_end, loop_end_inputs);
     linear_ir.insert(loop_end_pos, loop_end_expr);
     return true;
 }

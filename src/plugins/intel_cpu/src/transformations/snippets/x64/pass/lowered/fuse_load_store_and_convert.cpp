@@ -20,15 +20,15 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_load_convert(ngraph::snippe
     if (convert->get_destination_type() != ov::element::f32 && convert->get_destination_type() != ov::element::i32)
         return false;
 
-    const auto& load_output = linear_ir.get_expr_by_output(input_td);
-    const auto& load_expr = load_output.expr;
+    const auto& load_output = input_td->get_source();
+    const auto& load_expr = load_output.get_expr_ptr();
     const auto load = ov::as_type_ptr<ngraph::snippets::op::Load>(load_expr->get_node());
     if (!load ||
         ov::is_type<ngraph::snippets::op::LoadReshape>(load_expr->get_node()) ||
         ov::is_type<ngraph::snippets::op::BroadcastLoad>(load_expr->get_node()))
         return false;
 
-    const auto consumers = linear_ir.get_exprs_by_input(input_td);
+    const auto consumers = input_td->get_consumers();
     if (consumers.size() != 1)
         return false;
 
@@ -45,13 +45,21 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_load_convert(ngraph::snippe
         OPENVINO_THROW("Type of Convert op is undefined. Supports only fusing Load and ConvertTruncation or ConvertSaturation ops");
     }
 
-    const auto in_td = std::vector<ngraph::snippets::TensorDescriptorPtr>{ load_expr->get_inputs().front() };
-    const auto out_td = std::vector<ngraph::snippets::TensorDescriptorPtr>{ output_td };
-    const auto mv_expr_it = convert_it;
-    const auto& insertion_pos = std::next(convert_it);
-    linear_ir.erase(std::find(linear_ir.cbegin(), mv_expr_it, load_expr));
-    linear_ir.erase(mv_expr_it);
-    convert_it = linear_ir.insert(insertion_pos, std::make_shared<ngraph::snippets::lowered::Expression>(load_convert, in_td, out_td));
+    const auto convert_out = convert_expr->get_outputs().front();
+    const auto convert_consumers = convert_out->get_consumers();
+    ngraph::snippets::PortManager::set_port_descriptor_ptr(load_convert->output(0),
+                                                           std::make_shared<ngraph::snippets::PortDescriptor>(convert_out->get_tensor(),
+                                                                                                              convert_out->get_subtensor(),
+                                                                                                              convert_out->get_layout()));
+    const auto load_convert_expr = linear_ir.create_expression(load_convert, { load_expr->get_inputs().front() });
+    const auto convert_expr_it = convert_it;
+    const auto insertion_pos = std::next(convert_it);
+    convert_it = linear_ir.insert(insertion_pos, load_convert_expr);
+    linear_ir.erase(std::find(linear_ir.cbegin(), convert_expr_it, load_expr));
+    linear_ir.erase(convert_expr_it);
+    for (const auto& consumer : convert_consumers) {
+        linear_ir.replace_input(consumer, load_convert_expr->get_outputs().front());
+    }
     return true;
 }
 
@@ -64,12 +72,12 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_store_convert(ngraph::snipp
     if (convert->get_input_element_type(0) != ov::element::f32 && convert->get_input_element_type(0) != ov::element::i32)
         return false;
 
-    const auto consumers = linear_ir.get_exprs_by_input(output_td);
+    const auto consumers = output_td->get_consumers();
     if (consumers.size() != 1)
         return false;
 
     const auto store_input = *(consumers.begin());
-    const auto store_expr = store_input.expr;
+    const auto store_expr = store_input.get_expr_ptr();
     const auto store = ov::as_type_ptr<ngraph::snippets::op::Store>(store_expr->get_node());
     if (!store)
         return false;
@@ -87,13 +95,21 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_store_convert(ngraph::snipp
         OPENVINO_THROW("Type of Convert op is undefined. Supports only fusing Store and ConvertTruncation or ConvertSaturation ops");
     }
 
-    const auto in_td = std::vector<ngraph::snippets::TensorDescriptorPtr>{ input_td };
-    const auto out_td = std::vector<ngraph::snippets::TensorDescriptorPtr>{ store_expr->get_outputs().front() };
-    const auto store_it = std::find(convert_it, linear_ir.cend(), store_expr);
-    const auto& insertion_pos = std::next(store_it);
-    linear_ir.erase(store_it);
-    convert_it = linear_ir.erase(convert_it);
-    linear_ir.insert(insertion_pos, std::make_shared<ngraph::snippets::lowered::Expression>(store_convert, in_td, out_td));
+    const auto store_out = store_expr->get_outputs().front();
+    const auto store_consumers = store_out->get_consumers();
+    ngraph::snippets::PortManager::set_port_descriptor_ptr(store_convert->output(0),
+                                                           std::make_shared<ngraph::snippets::PortDescriptor>(store_out->get_tensor(),
+                                                                                                              store_out->get_subtensor(),
+                                                                                                              store_out->get_layout()));
+    const auto store_convert_expr = linear_ir.create_expression(store_convert, { input_td });
+    const auto convert_expr_it = convert_it;
+    const auto insertion_pos = std::next(convert_it);
+    convert_it = linear_ir.insert(insertion_pos, store_convert_expr);
+    linear_ir.erase(std::find(convert_expr_it, linear_ir.cend(), store_expr));
+    linear_ir.erase(convert_expr_it);
+    for (const auto& consumer : store_consumers) {
+        linear_ir.replace_input(consumer, store_convert_expr->get_outputs().front());
+    }
     return true;
 }
 

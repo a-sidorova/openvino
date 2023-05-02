@@ -21,7 +21,7 @@ intel_cpu::BrgemmCopyB::BrgemmCopyB(const Output<Node>& x, const element::Type s
     if (is_with_compensations()) {
         set_output_port_descriptor({0, offset_out1}, 1);
     }
-    constructor_validate_and_infer_types();
+    ctor_validate_and_infer_types();
 }
 
 bool intel_cpu::BrgemmCopyB::visit_attributes(AttributeVisitor& visitor) {
@@ -31,14 +31,27 @@ bool intel_cpu::BrgemmCopyB::visit_attributes(AttributeVisitor& visitor) {
     return true;
 }
 
+void intel_cpu::BrgemmCopyB::ctor_validate_and_infer_types() {
+    INTERNAL_OP_SCOPE(BrgemmRepack_ctor_validate_and_infer_types);
+    // During ctor call, BrgemmCopyB doesn't know his port descriptors.
+    // So we use port descs from source inputs
+    const auto element_type = get_input_element_type(0);
+    const auto pshape = ngraph::snippets::utils::get_port_planar_shape(input_value(0));
+    validate(pshape, element_type);
+}
+
 void intel_cpu::BrgemmCopyB::validate_and_infer_types() {
     INTERNAL_OP_SCOPE(BrgemmRepack_validate_and_infer_types);
 
     const auto element_type = get_input_element_type(0);
-    NGRAPH_CHECK(one_of(element_type, element::bf16, element::i8),
-                 "BrgemmCopyB doesn't support element type" + element_type.get_type_name());
+    const auto pshape = ngraph::snippets::utils::get_port_planar_shape(input(0));
+    validate(pshape, element_type);
+}
 
-    const auto pshape = ngraph::snippets::utils::get_port_planar_shape(input_value(0));
+void intel_cpu::BrgemmCopyB::validate(const ov::PartialShape& pshape, const ov::element::Type& element_type) {
+    NGRAPH_CHECK(one_of(element_type, element::bf16, element::i8),
+             "BrgemmCopyB doesn't support element type" + element_type.get_type_name());
+
     if (pshape.is_dynamic()) {
         set_output_type(0, element_type, ov::PartialShape{ov::Dimension::dynamic()});
         if (is_with_compensations()) {

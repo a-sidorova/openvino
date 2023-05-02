@@ -7,8 +7,8 @@
 #include <snippets/itt.hpp>
 
 #include "snippets/lowered/loop_manager.hpp"
+#include "snippets/lowered/expression_factory.hpp"
 #include <snippets/op/serialization_node.hpp>
-#include "snippets/tensor_descriptor.hpp"
 #include "snippets/utils.hpp"
 
 #include <openvino/core/graph_util.hpp>
@@ -24,39 +24,47 @@ LinearIR::LinearIR(const std::shared_ptr<ov::Model>& model, Config config)
     ExpressionPtr last_param = nullptr;
     for (const auto& n : get_ordered_ops(model)) {
         constExprIt insertion_pos = m_lowered_ops.end();
-        std::shared_ptr<Expression> expr;
-        std::vector<TensorDescriptorPtr> input_tds;
-        for (const auto& in : n->inputs()) {
-            const auto& out = in.get_source_output();
-            const auto& parent_out_tds = m_node2expression_map[out.get_node_shared_ptr()]->get_outputs();
-            input_tds.push_back(parent_out_tds[out.get_index()]);
-        }
-        if (const auto& par = as_type_ptr<opset1::Parameter>(n)) {
-            auto io_expr = std::make_shared<IOExpression>(par, model->get_parameter_index(par));
-            m_io_lowered_ops.push_back(io_expr);
-            expr = io_expr;
-            last_param = expr;
-        } else if (const auto& res = as_type_ptr<opset1::Result>(n)) {
-            auto io_expr = std::make_shared<IOExpression>(res, model->get_result_index(res), input_tds);
-            m_io_lowered_ops.push_back(io_expr);
-            expr = io_expr;
-        } else {
-            if (const auto& scalar = as_type_ptr<op::Scalar>(n)) {
-                // Scalar should be on the Linear IR beginning after Parameters to have valid expression order after Loop passes.
-                // After these passes we must call pass MoveScalarToConsumer() to have a correct accuracy.
-                // For more details, please see the pass description
-                if (scalar_pos == m_lowered_ops.end()) {
-                    OPENVINO_ASSERT(last_param, "Scalars must be executed after Parameters");
-                    scalar_pos = std::find(m_lowered_ops.begin(), m_lowered_ops.end(), last_param);
-                }
-                insertion_pos = std::next(scalar_pos);
+        const auto expr = create_expression(n, model);
+
+        // Scalar should be on the Linear IR beginning after Parameters to have valid expression order after Loop passes.
+        // After these passes we must call pass MoveScalarToConsumer() to have a correct accuracy.
+        // For more details, please see the pass description
+        if (const auto& scalar = as_type_ptr<op::Scalar>(n)) {
+            if (scalar_pos == m_lowered_ops.end()) {
+                OPENVINO_ASSERT(last_param, "Scalars must be executed after Parameters");
+                scalar_pos = std::find(m_lowered_ops.begin(), m_lowered_ops.end(), last_param);
             }
-            // Note that output tds must be empty since they are filled automatically from rt_info and/or tensor shapes
-            expr = std::make_shared<Expression>(n, input_tds);
+            insertion_pos = std::next(scalar_pos);
         }
-        register_expression(expr);
+
+        if (const auto io_expr = std::dynamic_pointer_cast<IOExpression>(expr)) {
+            register_expression(expr);
+            m_io_lowered_ops.push_back(io_expr);
+            if (ov::is_type<ov::op::v0::Parameter>(n))
+                last_param = expr;
+        } else {
+            register_regular_expression(expr);
+        }
+
         m_lowered_ops.insert(insertion_pos, expr);
     }
+}
+
+ExpressionPtr LinearIR::create_expression(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) {
+    const auto factory = BaseExpressionFactory::get(*this, n);
+    return factory->build(n, model);
+}
+
+ExpressionPtr LinearIR::create_expression(const std::shared_ptr<Node>& n, const std::vector<TensorPtr> inputs,
+                                          const std::shared_ptr<ov::Model>& model) {
+    const auto factory = BaseExpressionFactory::get(*this, n);
+    return factory->build(n, model, inputs);
+}
+
+ExpressionPtr LinearIR::create_expression(const std::shared_ptr<Node>& n, const std::vector<TensorPtr> inputs, const std::vector<TensorPtr> outputs,
+                                          const std::shared_ptr<ov::Model>& model) {
+    const auto factory = BaseExpressionFactory::get(*this, n);
+    return factory->build(n, model, inputs, outputs);
 }
 
 ov::NodeVector LinearIR::get_ordered_ops(const std::shared_ptr<ov::Model>& m) {
@@ -125,7 +133,7 @@ void LinearIR::debug_print(bool tds_as_pointers) const {
             std::cerr << i << " ";
         std::cerr << "}";
     };
-    std::map<TensorDescriptorPtr, int> td2int;
+    std::map<TensorPtr, int> td2int;
     int td_counter = 0;
     int counter = 0;
     for (const auto& expr : m_lowered_ops) {
@@ -145,11 +153,11 @@ void LinearIR::debug_print(bool tds_as_pointers) const {
                 std::cerr << td2int.at(out) << ", ";
             }
         } else {
-            for (const auto& in : expr->get_inputs())
-                std::cerr << *in << ", ";
+            for (size_t i = 0; i < expr->get_input_count(); ++i)
+                std::cerr << expr->input_port(i) << ", ";
             std::cerr << "\b\b => ";
-            for (const auto& out : expr->get_outputs())
-                std::cerr << *out << ", ";
+            for (size_t i = 0; i < expr->get_output_count(); ++i)
+                std::cerr << expr->output_port(i) << ", ";
         }
         std::cerr << "\b\b";
         const auto& rinfo = expr->get_reg_info();
@@ -171,59 +179,49 @@ ExpressionPtr LinearIR::get_expr_by_node(const std::shared_ptr<Node>& n) const {
     return found == m_node2expression_map.end() ? nullptr : found->second;
 }
 
-ExpressionPort LinearIR::get_expr_by_output(const TensorDescriptorPtr& td) const {
-    auto found = m_output2expression_map.find(td);
-    if (found == m_output2expression_map.end())
-        OPENVINO_THROW("Failed to find expression by output tensor descriptor");
-    return found->second;
+void LinearIR::replace_input(const std::vector<TensorDescriptor>& consumers, const TensorPtr& to) {
+    for (const auto& consumer_input : consumers) {
+        replace_input(consumer_input, to);
+    }
 }
 
-const std::set<ExpressionPort>& LinearIR::get_exprs_by_input(const TensorDescriptorPtr& td) const {
-    auto found = m_input2expression_map.find(td);
-    if (found == m_input2expression_map.end())
-        OPENVINO_THROW("Failed to find expression by input tensor descriptor");
-    return found->second;
-}
-
-void LinearIR::replace_input(const ExpressionPtr& expr, size_t port, const TensorDescriptorPtr& to) {
+void LinearIR::replace_input(const ExpressionPtr& expr, size_t port, const TensorPtr& to) {
     replace_input(expr->input_port(port), to);
 }
 
-void LinearIR::replace_input(const ExpressionPort& expr_port, const TensorDescriptorPtr& to) {
-    const auto& expr = expr_port.expr;
-    const auto port = expr_port.port;
-    OPENVINO_ASSERT(expr_port.get_type() == ExpressionPort::Type::Input, "Failed to replace: target input port must have Input type");
-    OPENVINO_ASSERT(port < expr->m_inputs.size(), "Failed to replace: target input port must be less than input count!");
-    const auto from = expr->m_inputs[port];
-    auto found = m_input2expression_map.find(from);
-    if (found == m_input2expression_map.end() || found->second.count(expr_port) == 0)
-        OPENVINO_THROW("Invalid expression of input was provided to replace_input");
-    found->second.erase(expr_port);
-    {
-        const auto& res = m_input2expression_map.insert({to, std::set<ExpressionPort>{expr_port}});
-        // If input is already in the map => add ExprPtr to the mapped set
-        if (!res.second) {
-            res.first->second.insert(expr_port);
-        }
+void LinearIR::replace_input(const TensorDescriptor& expr_port, const TensorPtr& to) {
+    const auto port = expr_port.get_index();
+    const auto expr = expr_port.get_expr_ptr();
+
+    OPENVINO_ASSERT(expr_port.get_type() == TensorDescriptor::Type::Input, "Failed to replace: target input port must have Input type");
+    OPENVINO_ASSERT(expr_port.get_index() < expr->get_input_count(), "Failed to replace: target input port must be less than input count!");
+
+    const auto& from = expr->m_inputs[port];
+    if (from.get() == to.get())
+        return;
+
+    if (!to->found_consumer(expr_port)) {
+        to->add_consumer(expr_port);
     }
+    from->remove_consumer(expr_port);
     expr->replace_input(port, std::move(to));
 }
 
-void LinearIR::replace_output(const ExpressionPtr& expr, size_t port, const TensorDescriptorPtr& to) {
+void LinearIR::replace_output(const ExpressionPtr& expr, size_t port, const TensorPtr& to) {
     replace_output(expr->output_port(port), to);
 }
 
-void LinearIR::replace_output(const ExpressionPort& expr_port, const TensorDescriptorPtr& to) {
-    const auto& expr = expr_port.expr;
-    const auto port = expr_port.port;
-    OPENVINO_ASSERT(expr_port.get_type() == ExpressionPort::Type::Output, "Failed to replace: target output port must have Output type");
-    OPENVINO_ASSERT(port < expr->m_outputs.size(), "Failed to replace: target output port must be less than output count!");
-    const auto from = expr->m_outputs[port];
-    auto found = m_output2expression_map.find(from);
-    if (found == m_output2expression_map.end() || found->second != expr_port)
-        OPENVINO_THROW("Invalid expression of output was provided to replace_output");
-    m_output2expression_map.erase(found);
-    m_output2expression_map[to] = expr_port;
+void LinearIR::replace_output(const TensorDescriptor& expr_port, const TensorPtr& to) {
+    const auto port = expr_port.get_index();
+    const auto expr = expr_port.get_expr_ptr();
+
+    OPENVINO_ASSERT(expr_port.get_type() == TensorDescriptor::Type::Output, "Failed to replace: target output port must have Output type");
+    OPENVINO_ASSERT(port < expr->get_output_count(), "Failed to replace: target output port must be less than output count!");
+    const auto to_source_td = to->get_source();
+    OPENVINO_ASSERT(to_source_td.get_expr_ptr().get() == expr.get() && to_source_td.get_index() == port,
+                    "Failed to replace: incorrect new output Tensor. Source expr must be the current expr");
+    if (expr->get_outputs()[port].get() == to.get())
+        return;
     expr->replace_output(port, to);
 }
 
@@ -240,39 +238,12 @@ void LinearIR::register_expression(const ExpressionPtr& expr) {
         if (!res.second)
             OPENVINO_THROW("Duplicate node is detected in linear IR: " + std::string(node->get_friendly_name()));
     }
-    for (size_t i = 0; i < expr->m_outputs.size(); ++i) {
-        const auto& out = expr->m_outputs[i];
-        m_output2expression_map[out] = expr->output_port(i);
-    }
-
-    for (size_t i = 0; i < expr->m_inputs.size(); ++i) {
-        const auto& in = expr->m_inputs[i];
-        const auto expr_port = expr->input_port(i);
-        const auto& res = m_input2expression_map.insert({in, std::set<ExpressionPort>{expr_port}});
-        // If input is already in the map => add ExprPtr to the mapped set
-        if (!res.second) {
-            res.first->second.insert(expr_port);
-        }
-    }
 }
 
 void LinearIR::unregister_expression(const ExpressionPtr& expr) {
-    for (const auto& out : expr->m_outputs)
-        m_output2expression_map.erase(out);
-
-    size_t in_port = 0;
-    for (const auto& in : expr->m_inputs) {
-        const auto& found = m_input2expression_map.find(in);
-        if (found != m_input2expression_map.end()) {
-            // Note: If the input is used by only by this expr => delete the whole entry
-            //       Otherwise delete the expr from the users set
-            auto& users = found->second;
-            if (users.size() == 1)
-                m_input2expression_map.erase(found);
-            else
-                users.erase(expr->input_port(in_port));
-        }
-        ++in_port;
+    for (size_t i = 0; i < expr->get_input_count(); ++i) {
+        const auto& input = expr->get_inputs()[i];
+        input->remove_consumer(expr->input_port(i));
     }
 
     m_node2expression_map.erase(expr->get_node());
@@ -303,14 +274,7 @@ LinearIR::exprIt LinearIR::insert(constExprIt pos, constExprIt begin, constExprI
 LinearIR::exprIt LinearIR::insert(LinearIR::constExprIt pos, const NodeVector& nodes) {
     auto ret = m_lowered_ops.end();
     for (const auto& n : nodes) {
-        std::vector<TensorDescriptorPtr> input_tds;
-        for (const auto& in : n->inputs()) {
-            const auto& out = in.get_source_output();
-            const auto& parent_out_tds = m_node2expression_map[out.get_node_shared_ptr()]->get_outputs();
-            input_tds.push_back(parent_out_tds[out.get_index()]);
-        }
-        // Note that output tds must be empty since they are filled automatically from rt_info and/or tensor shapes
-        const auto& expr = std::make_shared<Expression>(n, input_tds);
+        const auto& expr = create_expression(n);
         register_regular_expression(expr);
         ret = m_lowered_ops.insert(pos, expr);
     }
@@ -319,14 +283,7 @@ LinearIR::exprIt LinearIR::insert(LinearIR::constExprIt pos, const NodeVector& n
 }
 
 LinearIR::exprIt LinearIR::insert(LinearIR::constExprIt pos, const std::shared_ptr<Node>& n) {
-    std::vector<TensorDescriptorPtr> input_tds;
-    for (const auto& in : n->inputs()) {
-        const auto& out = in.get_source_output();
-        const auto& parent_out_tds = m_node2expression_map[out.get_node_shared_ptr()]->get_outputs();
-        input_tds.push_back(parent_out_tds[out.get_index()]);
-    }
-    // Note that output tds must be empty since they are filled automatically from rt_info and/or tensor shapes
-    const auto& expr = std::make_shared<Expression>(n, input_tds);
+    const auto& expr = create_expression(n);
     register_regular_expression(expr);
     return m_lowered_ops.insert(pos, expr);
 }

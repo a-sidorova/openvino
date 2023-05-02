@@ -43,6 +43,9 @@ public:
     std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& new_args) const override;
 
 private:
+    void ctor_validate_and_infer_types();
+    void validate(const ov::PartialShape& pshape, const ov::element::Type& element_type);
+
     Type m_type = Type::OnlyRepacking;
     element::Type m_src_type = ov::element::undefined;  // src element type of the corresponding BRGEMM
 };

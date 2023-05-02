@@ -19,7 +19,7 @@ namespace pass {
 bool AssignRegisters::run(LinearIR& linear_ir) {
     OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::AssignRegisters")
     using Reg = size_t;
-    using tensor = snippets::TensorDescriptorPtr;
+    using tensor = TensorPtr;
     auto& expressions = linear_ir.get_ops();
 
     std::vector<std::pair<Generator::opRegType, ExpressionPtr>> typed_ops;
@@ -66,19 +66,19 @@ bool AssignRegisters::run(LinearIR& linear_ir) {
             // We should manually set the one vector register for VectorBuffer and Max/Sum output to simulate a accumulator
             // TODO [96351]: We should rewrite accumulator pattern using another way
             const auto input_td = expr->get_inputs()[0];
-            const auto& input_expr = linear_ir.get_expr_by_output(input_td).expr;
+            const auto& input_expr = input_td->get_source().get_expr_ptr();
             const auto& input_expr_input_tds = input_expr->get_inputs();
             for (const auto& td : input_expr_input_tds) {
-                if (ov::is_type<op::VectorBuffer>(linear_ir.get_expr_by_output(td).expr->get_node())) {
+                if (ov::is_type<op::VectorBuffer>(td->get_source().get_expr_ptr()->get_node())) {
                     manually_assigned_vecs[td] = static_cast<Reg>(accumulator_reg);
                 }
             }
             const auto output_td = expr->get_outputs()[0];
             manually_assigned_vecs[input_td] = static_cast<Reg>(accumulator_reg);
             manually_assigned_vecs[output_td] = static_cast<Reg>(accumulator_reg);
-            for (const auto& child_expr_input : linear_ir.get_exprs_by_input(output_td)) {
-                if (ov::is_type<op::BroadcastMove>(child_expr_input.expr->get_node())) {
-                    manually_assigned_vecs[child_expr_input.expr->get_outputs()[0]] =
+            for (const auto& child_expr_input : output_td->get_consumers()) {
+                if (ov::is_type<op::BroadcastMove>(child_expr_input.get_expr_ptr()->get_node())) {
+                    manually_assigned_vecs[child_expr_input.get_expr_ptr()->get_outputs()[0]] =
                             static_cast<Reg>(accumulator_reg);
                 }
             }
@@ -86,11 +86,11 @@ bool AssignRegisters::run(LinearIR& linear_ir) {
             // TODO: Fix via common pipeline using LoopEnd:
             //       All operations `outside loop` after Horizon ops should have the same register to avoid using it in the next Loop
             const auto current_loops_ids = expr->get_loop_ids();
-            auto next_expr = linear_ir.get_exprs_by_input(output_td).begin()->expr;
+            auto next_expr = output_td->get_consumers().begin()->get_expr_ptr();
             while (next_expr->get_loop_ids() == current_loops_ids) {
                 manually_assigned_vecs[next_expr->get_outputs()[0]] =
                         static_cast<Reg>(accumulator_reg);
-                next_expr = linear_ir.get_exprs_by_input(next_expr->get_outputs()[0]).begin()->expr;
+                next_expr = next_expr->get_outputs()[0]->get_consumers().begin()->get_expr_ptr();
             }
 
             accumulator_reg++;
@@ -192,8 +192,8 @@ bool AssignRegisters::run(LinearIR& linear_ir) {
             if (is_type<op::LoopEnd>(expr->get_node()) || is_type<opset1::Result>(expr->get_node()))
                 continue;
             for (const auto& out : expr->get_outputs()) {
-                for (const auto& child_expr_input : linear_ir.get_exprs_by_input(out)) {
-                    const auto& child_expr = child_expr_input.expr;
+                for (const auto& child_expr_input : out->get_consumers()) {
+                    const auto& child_expr = child_expr_input.get_expr_ptr();
                     auto child_it = linear_ir.begin();
                     std::advance(child_it, n);
                     size_t k = n;
@@ -304,8 +304,7 @@ bool AssignRegisters::run(LinearIR& linear_ir) {
 
     std::map<tensor, Reg> assigned_regs(std::move(manually_assigned_gprs));
     assigned_regs.insert(manually_assigned_vecs.begin(), manually_assigned_vecs.end());
-    auto register_assigned_regs = [=, &assigned_regs](const std::map<tensor, Reg>& unique_regs,
-                                                                              const std::map<Reg, Reg>& unique2reused) {
+    auto register_assigned_regs = [=, &assigned_regs](const std::map<tensor, Reg>& unique_regs, const std::map<Reg, Reg>& unique2reused) {
         for (const auto& reg : unique_regs) {
             if (reg.second == IS_MANUALLY_ALLOCATED_REG)
                 continue;

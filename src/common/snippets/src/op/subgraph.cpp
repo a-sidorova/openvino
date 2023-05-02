@@ -17,7 +17,7 @@
 #include "snippets/pass/matmul_to_brgemm.hpp"
 #include "snippets/pass/fuse_transpose_brgemm.hpp"
 #include "snippets/utils.hpp"
-#include "snippets/tensor_descriptor.hpp"
+#include "snippets/port_descriptor.hpp"
 
 #include "transformations/common_optimizations/nop_elimination.hpp"
 #include "transformations/utils/utils.hpp"
@@ -64,8 +64,6 @@ void snippets::op::Subgraph::init_config() {
         config.m_has_domain_sensitive_ops = config.m_has_domain_sensitive_ops ||
             is_domain_sensitive_op(op);
     }
-    // Domain sensitive ops are decomposed with explicit Loops. So, we should explicitly insert Loops in Subgraph if it contains these ops
-    config.m_explicit_loop_insertion = config.m_has_domain_sensitive_ops;
 }
 
 auto snippets::op::Subgraph::get_estimated_buffer_count(const ov::NodeVector& ops) -> size_t {
@@ -529,7 +527,6 @@ snippets::Schedule snippets::op::Subgraph::generate(
     lowering_config.m_need_fill_tail_register = config.m_has_domain_sensitive_ops;
     lowering_config.m_loop_depth = tileRank;
     lowering_config.m_master_shape = master_shape;
-    lowering_config.m_explicit_loop_insertion = config.m_explicit_loop_insertion;
     const auto& lowering_result = m_generator->generate(body_ptr(), lowering_config, compile_params);
     ngraph::snippets::code ptr = lowering_result.binary_code;
     m_buffer_scratchpad = lowering_result.buffer_scratchpad_size;

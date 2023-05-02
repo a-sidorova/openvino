@@ -106,20 +106,29 @@ ov::PartialShape get_reordered_planar_shape(const ov::PartialShape& shape, const
     return reordered_shape;
 }
 
-ov::PartialShape get_port_planar_shape(const Output<Node>& out) {
-    const auto& td = ngraph::snippets::get_tensor_descriptor_ptr(out);
+ov::Shape get_reordered_shape(const ov::Shape& shape, const std::vector<size_t>& layout) {
+    if (layout.empty())
+        return shape;
+    ov::Shape reordered_shape(layout.size());
+    const size_t rank = shape.size();
+    if (layout.size() > rank)
+        OPENVINO_THROW("Layout rank can't be larger than tensor rank");
+    // Note that it can be smaller though, for example tensor shape can be prepended with 1 for scheduling purposes
+    if (std::any_of(layout.begin(), layout.end(), [=](size_t x) {return x >= rank;}))
+        OPENVINO_THROW("Invalid layout detected: all layout indexes must be smaller than the tensor rank");
+    for (size_t i = 0; i < layout.size(); i++)
+        reordered_shape[i] = shape[layout[i]];
+    return reordered_shape;
+}
+
+ov::PartialShape get_port_planar_shape(const Input<Node>& in) {
+    const auto& td = PortManager::get_port_descriptor_ptr(in);
     return utils::get_reordered_planar_shape(ov::Shape{td->get_tensor()}, td->get_layout());
 }
 
-void set_transpose_output_layout(const ov::Output<Node>& port, const std::shared_ptr<opset1::Transpose>& node) {
-    const auto& const_order = as_type_ptr<opset1::Constant>(node->get_input_node_shared_ptr(1));
-    OPENVINO_ASSERT(const_order != nullptr, "Transpose order must be Constant to set layout!");
-    set_output_layout(port, const_order->cast_vector<size_t>());
-}
-
-void set_output_layout(const ov::Output<Node>& port, const std::vector<size_t>& layout) {
-    auto& rt_info = port.get_node_shared_ptr()->get_rt_info();
-    rt_info["Layout"] = layout;
+ov::PartialShape get_port_planar_shape(const Output<Node>& out) {
+    const auto& td = PortManager::get_port_descriptor_ptr(out);
+    return utils::get_reordered_planar_shape(ov::Shape{td->get_tensor()}, td->get_layout());
 }
 
 bool get_outside_loop_value(const std::shared_ptr<Node>& node) {

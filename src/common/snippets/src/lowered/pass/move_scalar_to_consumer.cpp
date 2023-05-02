@@ -26,10 +26,10 @@ bool MoveScalarToConsumer::run(LinearIR& linear_ir) {
         const auto expr = expr_it->get();
         if (ov::is_type<op::Scalar>(expr->get_node())) {
             const auto& output = expr->get_outputs().front();
-            const auto& consumers = linear_ir.get_exprs_by_input(output);
+            const auto& consumers = output->get_consumers();
             OPENVINO_ASSERT(consumers.size() == 1, "Scalar expression is expected to have a single consumer");
 
-            const auto& consumer_expr = consumers.begin()->expr;
+            const auto& consumer_expr = consumers.begin()->get_expr_ptr();
             // Move something only if consumer is not already the next one (previous since the iterator is a reverse one)
             auto forward_it = std::prev(expr_it.base());
             if (consumer_expr != *std::next(forward_it)) {

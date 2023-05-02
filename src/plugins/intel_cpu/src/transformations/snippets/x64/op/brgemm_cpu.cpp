@@ -5,7 +5,7 @@
 #include "brgemm_cpu.hpp"
 #include "snippets/itt.hpp"
 #include "snippets/utils.hpp"
-#include "snippets/tensor_descriptor.hpp"
+#include "snippets/port_descriptor.hpp"
 #include "utils/general_utils.h"
 
 
@@ -22,7 +22,7 @@ BrgemmCPU::BrgemmCPU(const Output<Node>& A, const Output<Node>& B, const Type ty
     set_input_port_descriptor({0, offset_a}, 0);
     set_input_port_descriptor({0, offset_b}, 1);
     set_output_port_descriptor({0, offset_c}, 0);
-    constructor_validate_and_infer_types();
+    ctor_validate_and_infer_types();
 }
 
 BrgemmCPU::BrgemmCPU(const Output<Node>& A, const Output<Node>& B, const Output<Node>& scratch, const Type type,
@@ -35,25 +35,41 @@ BrgemmCPU::BrgemmCPU(const Output<Node>& A, const Output<Node>& B, const Output<
     set_input_port_descriptor({0, offset_b}, 1);
     set_output_port_descriptor({0, offset_c}, 0);
     set_input_port_descriptor({0, offset_scratch}, 2);
-    constructor_validate_and_infer_types();
+    ctor_validate_and_infer_types();
+}
+
+void BrgemmCPU::ctor_validate_and_infer_types() {
+    INTERNAL_OP_SCOPE(BrgemmCPU_ctor_validate_and_infer_types);
+    validate_inputs();
+
+    // During ctor call, BrgemmCPU doesn't know his port descriptors.
+    // So we use port descs from source inputs
+    const auto brgemm_copy = is_with_data_repacking() ? get_brgemm_copy() : nullptr;
+    const auto planar_input_shapes =
+        std::vector<ov::PartialShape>{ ngraph::snippets::utils::get_port_planar_shape(input_value(0)),
+                                       brgemm_copy ? ngraph::snippets::utils::get_port_planar_shape(brgemm_copy->input(0))
+                                                   : ngraph::snippets::utils::get_port_planar_shape(input_value(1)) };
+    auto output_shape = get_output_partial_shape(planar_input_shapes);
+    set_output_type(0, get_output_type(), get_planar_output_shape(output_shape));
+
+    //Additional check for 3rd input
+    validate_with_scratchpad(planar_input_shapes[1].get_shape());
 }
 
 void BrgemmCPU::validate_and_infer_types() {
     INTERNAL_OP_SCOPE(BrgemmCPU_validate_and_infer_types);
-    // If no leading dimensions are provided, assume dense row-major inputs-outputs
-    NODE_VALIDATION_CHECK(this, get_input_partial_shape(0).is_static() && get_input_partial_shape(1).is_static(),
-                          "BrgemmCPU currently supports only static shapes.");
-
-    OPENVINO_ASSERT(implication(one_of(m_type, Type::Floating, Type::WithDataRepacking), get_input_size() == 2),
-                    "BrgemmCPU expects 2 inputs in cases, when input precisions are f32|f32, u8|i8 or bf16|bf16 (non-AMX system)");
-    OPENVINO_ASSERT(implication(one_of(m_type, Type::WithCompensations, Type::AMX), get_input_size() == 3),
-                    "BrgemmCPU expects 3 inputs with input precisions i8|i8 and bf16|bf16 on AMX system");
+    validate_inputs();
 
     const auto brgemm_copy = is_with_data_repacking() ? get_brgemm_copy() : nullptr;
-    const auto planar_input_shapes = get_planar_input_shapes({input_value(0), brgemm_copy ? brgemm_copy->input_value(0) : input_value(1)});
+    const auto planar_input_shapes = get_planar_input_shapes({input(0), brgemm_copy ? brgemm_copy->input(0) : input(1)});
     auto output_shape = get_output_partial_shape(planar_input_shapes);
     set_output_type(0, get_output_type(), get_planar_output_shape(output_shape));
 
+    //Additional check for 3rd input
+    validate_with_scratchpad(planar_input_shapes[1].get_shape());
+}
+
+void BrgemmCPU::validate_with_scratchpad(const ov::Shape& shape_b) const {
     //Additional check for 3rd input
     if (one_of(m_type, Type::WithCompensations, Type::AMX)) {
         const auto shape = get_input_partial_shape(2);
@@ -61,7 +77,6 @@ void BrgemmCPU::validate_and_infer_types() {
         const auto type = get_input_element_type(2);
         if (is_with_compensations()) {
             const auto element_type_b = get_input_element_type(0);
-            const auto shape_b = planar_input_shapes[1].get_shape();
             const auto N = *shape_b.rbegin();
             const auto N_blk = element_type_b == element::f32 ? N :
                                element_type_b == element::bf16 ? 32 : 64;
@@ -74,6 +89,16 @@ void BrgemmCPU::validate_and_infer_types() {
                          "BRGEMM Scratch for space workplace must be static, have U8 element type and size is equal to " + std::to_string(SCRATCH_BYTE_SIZE));
         }
     }
+}
+
+void BrgemmCPU::validate_inputs() const {
+    // If no leading dimensions are provided, assume dense row-major inputs-outputs
+    NODE_VALIDATION_CHECK(this, get_input_partial_shape(0).is_static() && get_input_partial_shape(1).is_static(),
+                          "BrgemmCPU currently supports only static shapes.");
+    OPENVINO_ASSERT(implication(one_of(m_type, Type::Floating, Type::WithDataRepacking), get_input_size() == 2),
+                    "BrgemmCPU expects 2 inputs in cases, when input precisions are f32|f32, u8|i8 or bf16|bf16 (non-AMX system)");
+    OPENVINO_ASSERT(implication(one_of(m_type, Type::WithCompensations, Type::AMX), get_input_size() == 3),
+                    "BrgemmCPU expects 3 inputs with input precisions i8|i8 and bf16|bf16 on AMX system");
 }
 
 std::shared_ptr<Node> BrgemmCPU::clone_with_new_inputs(const OutputVector& new_args) const {

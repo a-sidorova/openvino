@@ -9,7 +9,7 @@
 #include <openvino/core/node.hpp>
 #include <openvino/opsets/opset1.hpp>
 
-#include "snippets/tensor_descriptor.hpp"
+#include "snippets/port_descriptor.hpp"
 
 namespace ngraph {
 namespace snippets {
@@ -23,8 +23,8 @@ public:
     public:
         LoopInfo() = default;
         LoopInfo(size_t work_amount, size_t increment,
-                 const std::vector<ExpressionPort>& entries,
-                 const std::vector<ExpressionPort>& exits)
+                 const std::vector<TensorDescriptor>& entries,
+                 const std::vector<TensorDescriptor>& exits)
             : work_amount(work_amount), increment(increment), entry_exprs(entries), exit_exprs(exits) {}
         size_t work_amount = 0;
         size_t increment = 0;
@@ -32,8 +32,8 @@ public:
         //     - The position before first entry expr is Loop Begin position
         //     - The position after last exit expr is Loop End position
         // Note: Scalars aren't entry expressions but can be before first entry expr in Linear IR
-        std::vector<ExpressionPort> entry_exprs = {};
-        std::vector<ExpressionPort> exit_exprs = {};
+        std::vector<TensorDescriptor> entry_exprs = {};
+        std::vector<TensorDescriptor> exit_exprs = {};
     };
     using LoopInfoPtr = std::shared_ptr<LoopInfo>;
 
@@ -46,26 +46,24 @@ public:
     static void skipped_mark(LinearIR::constExprIt loop_begin_pos,
                              LinearIR::constExprIt loop_end_pos,
                              size_t loop_depth);
-    void mark_loop(LinearIR& linear_ir,
-                   LinearIR::constExprIt loop_begin_pos,
+    void mark_loop(LinearIR::constExprIt loop_begin_pos,
                    LinearIR::constExprIt loop_end_pos,
                    size_t loop_depth, size_t vector_size);
-    void mark_loop(LinearIR& linear_ir,
-                   LinearIR::constExprIt loop_begin_pos,
+    void mark_loop(LinearIR::constExprIt loop_begin_pos,
                    LinearIR::constExprIt loop_end_pos,
                    size_t idx,
                    size_t work_amount,
                    size_t work_amount_increment,
-                   const std::vector<ExpressionPort>& entries,
-                   const std::vector<ExpressionPort>& exits);
+                   const std::vector<TensorDescriptor>& entries,
+                   const std::vector<TensorDescriptor>& exits);
 
     void get_loop_bounds(const LinearIR& linear_ir,
                          size_t loop_id,
                          LinearIR::constExprIt& loop_begin_pos,
                          LinearIR::constExprIt& loop_end_pos) const;
     static void get_loop_bounds(const LinearIR& linear_ir,
-                                const std::vector<ExpressionPort>& entries,
-                                const std::vector<ExpressionPort>& exits,
+                                const std::vector<TensorDescriptor>& entries,
+                                const std::vector<TensorDescriptor>& exits,
                                 LinearIR::constExprIt& loop_begin_pos,
                                 LinearIR::constExprIt& loop_end_pos,
                                 size_t loop_id = Expression::LOOP_NULL_ID);
@@ -74,11 +72,10 @@ private:
     static void exprs_marking(LinearIR::constExprIt loop_begin_pos,
                               LinearIR::constExprIt loop_end_pos,
                               size_t loop_id, size_t idx);
-    static void get_io_loop_ports(LinearIR& linear_ir,
-                                  LinearIR::constExprIt loop_begin_pos,
+    static void get_io_loop_ports(LinearIR::constExprIt loop_begin_pos,
                                   LinearIR::constExprIt loop_end_pos,
-                                  std::vector<ExpressionPort>& entries,
-                                  std::vector<ExpressionPort>& exits);
+                                  std::vector<TensorDescriptor>& entries,
+                                  std::vector<TensorDescriptor>& exits);
 
     std::map<size_t, LoopInfoPtr> m_map = {};
     size_t next_id = 0;

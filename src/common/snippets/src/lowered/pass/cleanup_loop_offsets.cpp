@@ -35,7 +35,7 @@ bool CleanupLoopOffsets::run(LinearIR& linear_ir) {
                 }
                 if (auto outer_loop_end = as_type_ptr<op::LoopEnd>(next_node)) {
                     auto fin_offsets = loop_end->get_finalization_offsets();
-                    std::unordered_map<TensorDescriptorPtr, size_t> per_tensor_offset;
+                    std::unordered_map<TensorPtr, size_t> per_tensor_offset;
                     const auto& loop_inputs = expr_it->get()->get_inputs();
                     for (size_t i = 0; i < fin_offsets.size(); i++)
                         per_tensor_offset[loop_inputs[i]] = i;

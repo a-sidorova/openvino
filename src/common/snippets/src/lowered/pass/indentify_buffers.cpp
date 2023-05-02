@@ -60,9 +60,9 @@ std::vector<bool> IdentifyBuffers::create_adjacency_matrix(const LinearIR& linea
         const auto buffer = ov::as_type_ptr<op::Buffer>(buffer_expr->get_node());
 
         const auto& buffer_td = buffer_input_tds.front();
-        const auto buffer_siblings = linear_ir.get_exprs_by_input(buffer_td);
+        const auto buffer_siblings = buffer_td->get_consumers();
         for (const auto& buffer_sibling : buffer_siblings) {
-            const auto& sibling_expr = buffer_sibling.expr;
+            const auto& sibling_expr = buffer_sibling.get_expr_ptr();
             // Skip myself
             if (sibling_expr == buffer_expr) {
                 continue;
@@ -76,7 +76,7 @@ std::vector<bool> IdentifyBuffers::create_adjacency_matrix(const LinearIR& linea
 
                 // Verify Buffers on Loop inputs:
                 for (size_t input_idx = 0; input_idx < input_count; ++input_idx) {
-                    const auto loop_in = linear_ir.get_expr_by_output(loop_tds[input_idx]).expr;
+                    const auto loop_in = loop_tds[input_idx]->get_source().get_expr_ptr();
                     if (const auto& neighbour_buffer = is_intermediate_buffer(loop_in->get_node())) {
                         const auto neighbour_buffer_loop_port = input_idx;
                         update_adj_matrix(buffer, buffer_idx, neighbour_buffer,
@@ -91,9 +91,9 @@ std::vector<bool> IdentifyBuffers::create_adjacency_matrix(const LinearIR& linea
                     if (buffer_td == loop_tds[input_count + output_idx])
                         continue;
 
-                    const auto& consumer_inputs = linear_ir.get_exprs_by_input(loop_tds[input_count + output_idx]);
+                    const auto& consumer_inputs = loop_tds[input_count + output_idx]->get_consumers();
                     for (const auto& consumer_input : consumer_inputs) {
-                        const auto& child_node = consumer_input.expr->get_node();
+                        const auto& child_node = consumer_input.get_expr_ptr()->get_node();
                         if (const auto& neighbour_buffer = is_intermediate_buffer(child_node)) {
                             const auto neighbour_buffer_loop_port = input_count + output_idx;
                             update_adj_matrix(buffer, buffer_idx, neighbour_buffer,

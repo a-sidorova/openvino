@@ -7,6 +7,8 @@
 #include "snippets/op/brgemm.hpp"
 #include "brgemm_copy_b.hpp"
 
+#include "snippets/port_descriptor.hpp"
+
 namespace ov {
 namespace intel_cpu {
 
@@ -48,7 +50,11 @@ public:
     constexpr static size_t SCRATCH_BYTE_SIZE = 32 * 1024;
 
 private:
-   Type m_type = Type::Floating;
+    void ctor_validate_and_infer_types();
+    void validate_with_scratchpad(const ov::Shape& shape_b) const;
+    void validate_inputs() const;
+
+    Type m_type = Type::Floating;
 };
 
 } // namespace intel_cpu
