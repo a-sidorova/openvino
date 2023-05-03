@@ -26,14 +26,14 @@ bool PropagateLayout::run(LinearIR& linear_ir) {
             continue;
 
         const bool is_input = io_expr->get_type() == IOExpression::io_type::INPUT;
-        const auto& tds = is_input ? expr->get_outputs() : expr->get_inputs();
+        const auto& tds = is_input ? expr->outputs() : expr->inputs();
         if (tds.size() != 1)
             OPENVINO_THROW("Parameter/Results should have exactly one output/input");
 
         // If input - we should be looking downstream, if output - upstream
         const auto& target_td = tds.front();
         if (is_input) {
-            const auto& consumer_inputs = target_td->get_consumers();
+            const auto consumer_inputs = target_td->get_consumers();
             // Note that here we consider only the first child (which is usually load),
             // but often there is another child - LoopEnd
             std::set<std::vector<size_t>> child_layouts;
@@ -47,9 +47,9 @@ bool PropagateLayout::run(LinearIR& linear_ir) {
                 }
             }
             OPENVINO_ASSERT(child_layouts.size() == 1, "All children of an input expression must have the same layout");
-            target_td->get_source().set_layout(*child_layouts.begin());
+            target_td->set_layout(*child_layouts.begin());
         } else {
-            const auto& consumer_inputs = target_td->get_consumers();
+            const auto consumer_inputs = target_td->get_consumers();
             // Note that here we consider only the first child (which is usually Store),
             // but often there is another child - LoopEnd
             TensorDescriptor result_td;
@@ -58,7 +58,7 @@ bool PropagateLayout::run(LinearIR& linear_ir) {
                 if (ov::is_type<op::LoopEnd>(child->get_node())) {
                     continue;
                 }
-                if (child.get() == io_expr.get()) {
+                if (child == io_expr) {
                     result_td = child_input;
                     continue;
                 }

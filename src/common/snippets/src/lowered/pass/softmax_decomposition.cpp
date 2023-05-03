@@ -35,8 +35,8 @@ bool SoftmaxDecomposition::run(LinearIR& linear_ir) {
             const auto& pm = matcher->get_pattern_map();
             const auto softmax = pm.at(match_softmax);
             const auto softmax_expr = *expr_it;
-            const auto input_td = softmax_expr->get_inputs().front();
-            const auto output_td = softmax_expr->get_outputs().front();
+            const auto& input_td = softmax_expr->input(0);
+            const auto& output_td = softmax_expr->output(0);
             const auto tensor_out = output_td->get_tensor();
             const auto subtensor_in = input_td->get_subtensor();
             const auto inner_work_amount = *(tensor_out.rbegin());
@@ -100,7 +100,7 @@ bool SoftmaxDecomposition::run(LinearIR& linear_ir) {
             // Transfer original TensorDescriptors
             linear_ir.replace_input(*max.first, 0, input_td);
             linear_ir.replace_input(*sub.first, 0, input_td);
-            linear_ir.replace_input(output_td->get_consumers(), (*mul.first)->get_outputs().front());
+            linear_ir.replace_input(output_td->get_consumers(), (*mul.first)->output(0));
 
             // Markup of Mul Loop
             loop_manager->mark_loop(mul.first, expr_it, 1, inner_work_amount, m_vector_size,

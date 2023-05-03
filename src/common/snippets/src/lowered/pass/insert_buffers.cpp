@@ -63,7 +63,7 @@ void InsertBuffers::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPt
         const auto expr = entry_point.get_expr_ptr();
         const auto port = entry_point.get_index();
         const auto node = expr->get_node();
-        const auto input_td = expr->get_inputs()[port];
+        const auto input_td = expr->input(port);
         const auto parent_expr_output = input_td->get_source();
         const auto& parent_expr = parent_expr_output.get_expr_ptr();
         const auto parent_port = parent_expr_output.get_index();
@@ -109,7 +109,7 @@ void InsertBuffers::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPt
             // Output td is automatically filled from PortDescriptor
             const auto buffer_expr = linear_ir.create_expression(buffer, {input_td});
             linear_ir.insert(pos, buffer_expr);
-            linear_ir.replace_input(expr, port, buffer_expr->get_outputs()[0]);
+            linear_ir.replace_input(expr, port, buffer_expr->output(0));
         }
     }
 
@@ -117,7 +117,7 @@ void InsertBuffers::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPt
         const auto expr = exit_point.get_expr_ptr();
         const auto port = exit_point.get_index();
         const auto node = expr->get_node();
-        const auto output_td = expr->get_outputs()[port];
+        const auto output_td = expr->output(port);
         const auto child_exprs_inputs = output_td->get_consumers();
         const auto current_loops = expr->get_loop_ids();
         const auto current_loop_count = current_loops.size();
@@ -163,7 +163,7 @@ void InsertBuffers::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPt
             // we should remove them to insert one common Buffer on one common port
             if (!buffers.empty()) {
                 for (const auto& buffer : buffers) {
-                    const auto buffer_out = buffer->get_outputs().front();
+                    const auto& buffer_out = buffer->output(0);
                     const auto buffer_consumers_inputs = buffer_out->get_consumers();
                     linear_ir.replace_input(buffer_consumers_inputs, output_td);
                     potential_consumers.insert(potential_consumers.end(), buffer_consumers_inputs.begin(), buffer_consumers_inputs.end());
@@ -193,7 +193,7 @@ void InsertBuffers::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPt
             // Output td is automatically filled from PortDescriptor
             const auto buffer_expr = linear_ir.create_expression(buffer, node_outs);
             linear_ir.insert(pos, buffer_expr);
-            linear_ir.replace_input(potential_consumers, buffer_expr->get_outputs().front());
+            linear_ir.replace_input(potential_consumers, buffer_expr->output(0));
         }
     }
 }

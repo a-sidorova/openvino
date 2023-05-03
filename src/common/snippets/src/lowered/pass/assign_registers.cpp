@@ -47,38 +47,38 @@ bool AssignRegisters::run(LinearIR& linear_ir) {
         auto op = expr->get_node();
         if (const auto io_expr = std::dynamic_pointer_cast<IOExpression>(expr)) {
             if (io_expr->get_type() == IOExpression::io_type::INPUT)
-                manually_assigned_gprs[expr->get_outputs()[0]] = io_expr->get_index();
+                manually_assigned_gprs[expr->output(0)] = io_expr->get_index();
             else if (io_expr->get_type() == IOExpression::io_type::OUTPUT)
-                manually_assigned_gprs[expr->get_inputs()[0]] = num_parameters + io_expr->get_index();
+                manually_assigned_gprs[expr->input(0)] = num_parameters + io_expr->get_index();
             else
                 OPENVINO_THROW("Unsupported io_type detected");
         } else if (const auto& buffer = ov::as_type_ptr<op::Buffer>(op)) {
             const auto buffer_id = buffer->get_id();
             // All buffers have one common data pointer
             if (buffer->is_intermediate_memory()) {
-                manually_assigned_gprs[expr->get_inputs()[0]] =
+                manually_assigned_gprs[expr->input(0)] =
                         static_cast<Reg>(num_results + num_parameters + buffer_id);
             }
-            manually_assigned_gprs[expr->get_outputs()[0]] =
+            manually_assigned_gprs[expr->output(0)] =
                     static_cast<Reg>(num_results + num_parameters + buffer_id);
         } else if (ov::is_type<op::HorizonMax>(op) || ov::is_type<op::HorizonSum>(op)) {
             // Only in SoftmaxDecomposition ReduceMax and ReduceSum use HorizonMax/HorizonSum and VectorBuffer.
             // We should manually set the one vector register for VectorBuffer and Max/Sum output to simulate a accumulator
             // TODO [96351]: We should rewrite accumulator pattern using another way
-            const auto input_td = expr->get_inputs()[0];
+            const auto input_td = expr->input(0);
             const auto& input_expr = input_td->get_source().get_expr_ptr();
-            const auto& input_expr_input_tds = input_expr->get_inputs();
+            const auto& input_expr_input_tds = input_expr->inputs();
             for (const auto& td : input_expr_input_tds) {
                 if (ov::is_type<op::VectorBuffer>(td->get_source().get_expr_ptr()->get_node())) {
                     manually_assigned_vecs[td] = static_cast<Reg>(accumulator_reg);
                 }
             }
-            const auto output_td = expr->get_outputs()[0];
+            const auto output_td = expr->output(0);
             manually_assigned_vecs[input_td] = static_cast<Reg>(accumulator_reg);
             manually_assigned_vecs[output_td] = static_cast<Reg>(accumulator_reg);
             for (const auto& child_expr_input : output_td->get_consumers()) {
                 if (ov::is_type<op::BroadcastMove>(child_expr_input.get_expr_ptr()->get_node())) {
-                    manually_assigned_vecs[child_expr_input.get_expr_ptr()->get_outputs()[0]] =
+                    manually_assigned_vecs[child_expr_input.get_expr_ptr()->output(0)] =
                             static_cast<Reg>(accumulator_reg);
                 }
             }
@@ -88,9 +88,9 @@ bool AssignRegisters::run(LinearIR& linear_ir) {
             const auto current_loops_ids = expr->get_loop_ids();
             auto next_expr = output_td->get_consumers().begin()->get_expr_ptr();
             while (next_expr->get_loop_ids() == current_loops_ids) {
-                manually_assigned_vecs[next_expr->get_outputs()[0]] =
+                manually_assigned_vecs[next_expr->output(0)] =
                         static_cast<Reg>(accumulator_reg);
-                next_expr = next_expr->get_outputs()[0]->get_consumers().begin()->get_expr_ptr();
+                next_expr = next_expr->output(0)->get_consumers().begin()->get_expr_ptr();
             }
 
             accumulator_reg++;
@@ -103,7 +103,7 @@ bool AssignRegisters::run(LinearIR& linear_ir) {
                                                               decltype(regs_vec)& reg_map,
                                                               const std::map<tensor, Reg>& manually_assigned_regs,
                                                               size_t& counter) {
-        for (const auto& out_td : expr->get_outputs()) {
+        for (const auto& out_td : expr->outputs()) {
             // Note that some ops might have identical input&output tensors (Result and Tile* for ex.)
             // so we have to check that the tensor has not been enumerated already
             if (reg_map.count(out_td) == 0) {
@@ -143,9 +143,9 @@ bool AssignRegisters::run(LinearIR& linear_ir) {
     for (size_t i = 0; i < typed_ops.size(); i++) {
         const auto& t_op = typed_ops[i];
         std::vector<tensor> used_tensors, defined_tensors;
-        for (const auto& in : t_op.second->get_inputs())
+        for (const auto& in : t_op.second->inputs())
             used_tensors.push_back(in);
-        for (const auto& out : t_op.second->get_outputs())
+        for (const auto& out : t_op.second->outputs())
             defined_tensors.push_back(out);
         switch (t_op.first) {
             case Generator::opRegType::vec2vec:
@@ -191,7 +191,7 @@ bool AssignRegisters::run(LinearIR& linear_ir) {
             const auto& expr = typed_ops[n].second;
             if (is_type<op::LoopEnd>(expr->get_node()) || is_type<opset1::Result>(expr->get_node()))
                 continue;
-            for (const auto& out : expr->get_outputs()) {
+            for (const auto& out : expr->outputs()) {
                 for (const auto& child_expr_input : out->get_consumers()) {
                     const auto& child_expr = child_expr_input.get_expr_ptr();
                     auto child_it = linear_ir.begin();
@@ -319,10 +319,10 @@ bool AssignRegisters::run(LinearIR& linear_ir) {
     for (auto& t_op : typed_ops) {
         RegInfo rinfo;
         const auto& expr = t_op.second;
-        for (const auto& in : expr->get_inputs()) {
+        for (const auto& in : expr->inputs()) {
             rinfo.first.push_back(assigned_regs[in]);
         }
-        for (const auto& out : expr->get_outputs()) {
+        for (const auto& out : expr->outputs()) {
             rinfo.second.push_back(assigned_regs[out]);
         }
         t_op.second->set_reg_info(rinfo);

@@ -23,8 +23,8 @@ bool SetScalarCountForLoadStore::run(LinearIR& linear_ir) {
         const auto load = ov::as_type_ptr<op::Load>(op);
         const auto store = ov::as_type_ptr<op::Store>(op);
         if (load || store) {
-            const auto td = load ? (*expr_it)->get_inputs().front() :
-                                   (*expr_it)->get_outputs().front();
+            const auto& td = load ? (*expr_it)->input(0)
+                                  : (*expr_it)->output(0);
             const auto& layout = td->get_layout();
             const auto& tensor_shape = td->get_tensor();
             // Find last dimension by layout

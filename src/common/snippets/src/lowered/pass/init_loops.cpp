@@ -29,7 +29,7 @@ void filter_ports(LinearIR& linear_ir,
         const auto node = expr->get_node();
         const auto ma = ov::as_type_ptr<op::MemoryAccess>(node);
         if (ma && ma->is_memory_access_input_port(port)) {
-            const auto& parent_expr = expr->get_inputs()[port]->get_source().get_expr_ptr();
+            const auto& parent_expr = expr->input(port)->get_source().get_expr_ptr();
             const auto& parent = parent_expr->get_node();
             // Todo: Sometimes several Load in one Loop read data from the same Node
             if (loop_parents.find(parent) == loop_parents.end()) {
@@ -156,10 +156,10 @@ bool InitLoops::insertion(LinearIR& linear_ir, const LinearIR::LoopManager::Loop
 
     std::vector<TensorPtr> loop_end_inputs;
     for (const auto& expr_port : loop_entries)
-        loop_end_inputs.push_back(expr_port.get_expr_ptr()->get_inputs()[expr_port.get_index()]);
+        loop_end_inputs.push_back(expr_port.get_expr_ptr()->input(expr_port.get_index()));
     for (const auto& expr_port : loop_exits)
-        loop_end_inputs.push_back(expr_port.get_expr_ptr()->get_outputs()[expr_port.get_index()]);
-    loop_end_inputs.push_back(loop_begin_expr->get_outputs()[0]);
+        loop_end_inputs.push_back(expr_port.get_expr_ptr()->output(expr_port.get_index()));
+    loop_end_inputs.push_back(loop_begin_expr->output(0));
 
     const auto& loop_end_expr = linear_ir.create_expression(loop_end, loop_end_inputs);
     linear_ir.insert(loop_end_pos, loop_end_expr);

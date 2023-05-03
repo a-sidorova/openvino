@@ -15,8 +15,8 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_load_convert(ngraph::snippe
                                                                   ngraph::snippets::lowered::LinearIR::constExprIt& convert_it) {
     const auto& convert_expr = *convert_it;
     const auto& convert = ov::as_type_ptr<ov::op::v0::Convert>(convert_expr->get_node());
-    const auto input_td = convert_expr->get_inputs().front();
-    const auto output_td = convert_expr->get_outputs().front();
+    const auto input_td = convert_expr->inputs().front();
+    const auto output_td = convert_expr->outputs().front();
     if (convert->get_destination_type() != ov::element::f32 && convert->get_destination_type() != ov::element::i32)
         return false;
 
@@ -45,21 +45,19 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_load_convert(ngraph::snippe
         OPENVINO_THROW("Type of Convert op is undefined. Supports only fusing Load and ConvertTruncation or ConvertSaturation ops");
     }
 
-    const auto convert_out = convert_expr->get_outputs().front();
+    const auto convert_out = convert_expr->outputs().front();
     const auto convert_consumers = convert_out->get_consumers();
     ngraph::snippets::PortManager::set_port_descriptor_ptr(load_convert->output(0),
                                                            std::make_shared<ngraph::snippets::PortDescriptor>(convert_out->get_tensor(),
                                                                                                               convert_out->get_subtensor(),
                                                                                                               convert_out->get_layout()));
-    const auto load_convert_expr = linear_ir.create_expression(load_convert, { load_expr->get_inputs().front() });
+    const auto load_convert_expr = linear_ir.create_expression(load_convert, { load_expr->inputs().front() });
     const auto convert_expr_it = convert_it;
     const auto insertion_pos = std::next(convert_it);
     convert_it = linear_ir.insert(insertion_pos, load_convert_expr);
     linear_ir.erase(std::find(linear_ir.cbegin(), convert_expr_it, load_expr));
     linear_ir.erase(convert_expr_it);
-    for (const auto& consumer : convert_consumers) {
-        linear_ir.replace_input(consumer, load_convert_expr->get_outputs().front());
-    }
+    linear_ir.replace_input(convert_consumers, load_convert_expr->output(0));
     return true;
 }
 
@@ -67,8 +65,8 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_store_convert(ngraph::snipp
                                                                    ngraph::snippets::lowered::LinearIR::constExprIt& convert_it) {
     const auto& convert_expr = *convert_it;
     const auto& convert = convert_expr->get_node();
-    const auto input_td = convert_expr->get_inputs().front();
-    const auto output_td = convert_expr->get_outputs().front();
+    const auto input_td = convert_expr->inputs().front();
+    const auto output_td = convert_expr->outputs().front();
     if (convert->get_input_element_type(0) != ov::element::f32 && convert->get_input_element_type(0) != ov::element::i32)
         return false;
 
@@ -95,7 +93,7 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_store_convert(ngraph::snipp
         OPENVINO_THROW("Type of Convert op is undefined. Supports only fusing Store and ConvertTruncation or ConvertSaturation ops");
     }
 
-    const auto store_out = store_expr->get_outputs().front();
+    const auto store_out = store_expr->outputs().front();
     const auto store_consumers = store_out->get_consumers();
     ngraph::snippets::PortManager::set_port_descriptor_ptr(store_convert->output(0),
                                                            std::make_shared<ngraph::snippets::PortDescriptor>(store_out->get_tensor(),
@@ -107,9 +105,7 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_store_convert(ngraph::snipp
     convert_it = linear_ir.insert(insertion_pos, store_convert_expr);
     linear_ir.erase(std::find(convert_expr_it, linear_ir.cend(), store_expr));
     linear_ir.erase(convert_expr_it);
-    for (const auto& consumer : store_consumers) {
-        linear_ir.replace_input(consumer, store_convert_expr->get_outputs().front());
-    }
+    linear_ir.replace_input(store_consumers, store_convert_expr->output(0));
     return true;
 }
 

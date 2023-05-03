@@ -68,10 +68,10 @@ bool MarkLoops::run(LinearIR& linear_ir) {
             bool is_connected = false;
             bool is_conflicted = false;
             for (size_t i = 0; i < prev_expr->get_output_count(); ++i) {
-                const auto& loop_td = prev_expr->get_outputs()[i];
-                const auto& consumers = loop_td->get_consumers();
+                const auto& loop_td = prev_expr->output(i);
+                const auto consumers = loop_td->get_consumers();
                 const auto found = std::find_if(consumers.begin(), consumers.end(), [&loop_end_pos](const TensorDescriptor& consumer) {
-                    return consumer.get_expr_ptr().get() == loop_end_pos->get();
+                    return consumer.get_expr_ptr() == *loop_end_pos;
                 });
                 if (found != consumers.end()) {
                     if (loop_td->is_conflicted_consumer(*found)) {

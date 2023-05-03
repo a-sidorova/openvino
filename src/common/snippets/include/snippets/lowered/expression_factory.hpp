@@ -4,8 +4,6 @@
 
 #pragma once
 
-#include <list>
-
 #include "linear_ir.hpp"
 
 namespace ngraph {
@@ -19,16 +17,20 @@ public:
 
     virtual ExpressionPtr build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model);
     virtual ExpressionPtr build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                                const std::vector<TensorPtr> inputs);
+                                const std::vector<TensorPtr>& inputs);
     virtual ExpressionPtr build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                                const std::vector<TensorPtr> inputs, const std::vector<TensorPtr> outputs);
+                                const std::vector<TensorPtr>& inputs, const std::vector<TensorPtr>& outputs);
 
     static std::shared_ptr<LinearIR::BaseExpressionFactory> get(const LinearIR& linear_ir, const std::shared_ptr<Node>& n);
 
 protected:
     virtual ExpressionPtr create(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) = 0;
+    // Creates inputs for expression using parent output tensors
     virtual std::vector<TensorPtr> create_expression_inputs(const ExpressionPtr& expr);
+    // Creates new output tensors
     virtual std::vector<TensorPtr> create_expression_outputs(const ExpressionPtr& expr);
+    // The method verifies of input tensors to availability of the expression as consumer and add it if missed
+    virtual void validate_inputs(const ExpressionPtr& expr, const std::vector<TensorPtr>& inputs);
 
     LinearIR m_linear_ir;
 };
@@ -40,9 +42,9 @@ public:
 
     ExpressionPtr build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) override;
     ExpressionPtr build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                        const std::vector<TensorPtr> inputs) override;
+                        const std::vector<TensorPtr>& inputs) override;
     ExpressionPtr build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                        const std::vector<TensorPtr> inputs, const std::vector<TensorPtr> outputs) override;
+                        const std::vector<TensorPtr>& inputs, const std::vector<TensorPtr>& outputs) override;
 
 protected:
     ExpressionPtr create(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) override;
@@ -76,7 +78,7 @@ public:
     LoopBeginExpressionFactory(const LinearIR& linear_ir) : BaseExpressionFactory(linear_ir) {}
 
     ExpressionPtr build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                        const std::vector<TensorPtr> inputs) override;
+                        const std::vector<TensorPtr>& inputs) override;
 
 protected:
     ExpressionPtr create(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) override;
@@ -88,10 +90,11 @@ public:
     LoopEndExpressionFactory(const LinearIR& linear_ir) : BaseExpressionFactory(linear_ir) {}
 
     ExpressionPtr build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                        const std::vector<TensorPtr> inputs) override;
+                        const std::vector<TensorPtr>& inputs) override;
 
 protected:
     ExpressionPtr create(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) override;
+    void validate_inputs(const ExpressionPtr& expr, const std::vector<TensorPtr>& inputs) override;
 };
 
 } // namespace lowered

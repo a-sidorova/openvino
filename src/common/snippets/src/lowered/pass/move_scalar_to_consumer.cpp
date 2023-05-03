@@ -25,8 +25,8 @@ bool MoveScalarToConsumer::run(LinearIR& linear_ir) {
     for (auto expr_it = linear_ir.rbegin(); expr_it != linear_ir.rend(); expr_it++) {
         const auto expr = expr_it->get();
         if (ov::is_type<op::Scalar>(expr->get_node())) {
-            const auto& output = expr->get_outputs().front();
-            const auto& consumers = output->get_consumers();
+            const auto& output = expr->output(0);
+            const auto consumers = output->get_consumers();
             OPENVINO_ASSERT(consumers.size() == 1, "Scalar expression is expected to have a single consumer");
 
             const auto& consumer_expr = consumers.begin()->get_expr_ptr();

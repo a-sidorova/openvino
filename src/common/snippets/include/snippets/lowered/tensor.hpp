@@ -36,7 +36,7 @@ public:
     std::vector<size_t> get_tensor() const { return m_port_desc->get_tensor(); }
     std::vector<size_t> get_layout() const { return m_port_desc->get_layout(); }
     std::vector<size_t> get_subtensor() const { return m_port_desc->get_subtensor(); }
-    PortDescriptorPtr get_port_descriptor() const { return m_port_desc; }
+    const PortDescriptorPtr& get_port_descriptor() const { return m_port_desc; }
 
     void set_tensor(const std::vector<size_t>& tensor) { m_port_desc->set_tensor(tensor); }
     void set_layout(const std::vector<size_t>& layout) { m_port_desc->set_layout(layout); }
@@ -60,9 +60,8 @@ public:
     Tensor() = default;
     explicit Tensor(const TensorDescriptor& source_descriptor, const std::vector<TensorDescriptor>& consumer_descriptors = {});
 
-    TensorDescriptor& get_source() { return m_source_port; }
     const TensorDescriptor& get_source() const { return m_source_port; }
-    const std::vector<TensorDescriptor>& get_consumers() const { return m_consumer_ports; }
+    std::vector<TensorDescriptor> get_consumers() const { return m_consumer_ports; }
 
     void add_consumer(const TensorDescriptor& consumer);
     void remove_consumer(const TensorDescriptor& consumer);
@@ -77,6 +76,11 @@ public:
     std::vector<size_t> get_tensor() const { return m_source_port.get_tensor(); }
     std::vector<size_t> get_layout() const { return m_source_port.get_layout(); }
     std::vector<size_t> get_subtensor() const { return m_source_port.get_subtensor(); }
+
+    void set_tensor(const std::vector<size_t>& tensor) { m_source_port.set_tensor(tensor); }
+    void set_layout(const std::vector<size_t>& layout) { m_source_port.set_layout(layout); }
+    void set_subtensor(const std::vector<size_t>& subtensor) { m_source_port.set_subtensor(subtensor); }
+    void set_port_descriptor(const PortDescriptorPtr& desc) { m_source_port.set_port_descriptor(desc); }
 
 private:
     TensorDescriptor m_source_port;

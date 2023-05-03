@@ -37,7 +37,7 @@ public:
     void set_subtensor(const std::vector<size_t>& subtensor) { m_subtensor_shape = subtensor; }
 
     static PortDescriptor deserialize(const std::string& serialized_info);
-    std::string  serialize() const;
+    std::string serialize() const;
     bool empty() const { return m_layout.empty() && m_subtensor_shape.empty();}
 
     friend bool operator==(const PortDescriptor& lhs, const PortDescriptor& rhs);

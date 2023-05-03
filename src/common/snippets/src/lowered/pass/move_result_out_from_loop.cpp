@@ -31,7 +31,7 @@ bool MoveResultOutOfLoop::run(LinearIR& linear_ir) {
             continue;
         }
 
-        const auto input_td = expr->get_inputs().front();
+        const auto& input_td = expr->input(0);
         const auto parent_expr = input_td->get_source().get_expr_ptr();
         const auto parent_loop_ids = parent_expr->get_loop_ids();
         int outer_loop_id = static_cast<int>(parent_loop_ids.size()) - 1;

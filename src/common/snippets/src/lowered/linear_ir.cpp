@@ -141,13 +141,13 @@ void LinearIR::debug_print(bool tds_as_pointers) const {
         std::cerr << counter++ << " : " <<
                   node->get_friendly_name() << " :  ";
         if (tds_as_pointers) {
-            for (const auto& in : expr->get_inputs()) {
+            for (const auto& in : expr->inputs()) {
                 if (td2int.count(in) == 0)
                     OPENVINO_THROW("Undefined input descriptor for op");
                 std::cerr << td2int.at(in) << ", ";
             }
             std::cerr << "\b\b => ";
-            for (const auto& out : expr->get_outputs()) {
+            for (const auto& out : expr->outputs()) {
                 if (td2int.count(out) == 0)
                     td2int.insert({out, td_counter++});
                 std::cerr << td2int.at(out) << ", ";
@@ -176,7 +176,8 @@ void LinearIR::init_emitters(const std::shared_ptr<TargetMachine>& target) {
 
 ExpressionPtr LinearIR::get_expr_by_node(const std::shared_ptr<Node>& n) const {
     auto found = m_node2expression_map.find(n);
-    return found == m_node2expression_map.end() ? nullptr : found->second;
+    OPENVINO_ASSERT(found != m_node2expression_map.end(), "The node " + n->get_friendly_name() + " hasn't been found in Linear IR");
+    return found->second;
 }
 
 void LinearIR::replace_input(const std::vector<TensorDescriptor>& consumers, const TensorPtr& to) {
@@ -196,8 +197,8 @@ void LinearIR::replace_input(const TensorDescriptor& expr_port, const TensorPtr&
     OPENVINO_ASSERT(expr_port.get_type() == TensorDescriptor::Type::Input, "Failed to replace: target input port must have Input type");
     OPENVINO_ASSERT(expr_port.get_index() < expr->get_input_count(), "Failed to replace: target input port must be less than input count!");
 
-    const auto& from = expr->m_inputs[port];
-    if (from.get() == to.get())
+    const auto& from = expr->input(port);
+    if (from == to)
         return;
 
     if (!to->found_consumer(expr_port)) {
@@ -218,9 +219,9 @@ void LinearIR::replace_output(const TensorDescriptor& expr_port, const TensorPtr
     OPENVINO_ASSERT(expr_port.get_type() == TensorDescriptor::Type::Output, "Failed to replace: target output port must have Output type");
     OPENVINO_ASSERT(port < expr->get_output_count(), "Failed to replace: target output port must be less than output count!");
     const auto to_source_td = to->get_source();
-    OPENVINO_ASSERT(to_source_td.get_expr_ptr().get() == expr.get() && to_source_td.get_index() == port,
+    OPENVINO_ASSERT(to_source_td.get_expr_ptr() == expr && to_source_td.get_index() == port,
                     "Failed to replace: incorrect new output Tensor. Source expr must be the current expr");
-    if (expr->get_outputs()[port].get() == to.get())
+    if (expr->output(port) == to)
         return;
     expr->replace_output(port, to);
 }
@@ -242,7 +243,7 @@ void LinearIR::register_expression(const ExpressionPtr& expr) {
 
 void LinearIR::unregister_expression(const ExpressionPtr& expr) {
     for (size_t i = 0; i < expr->get_input_count(); ++i) {
-        const auto& input = expr->get_inputs()[i];
+        const auto& input = expr->input(i);
         input->remove_consumer(expr->input_port(i));
     }
 

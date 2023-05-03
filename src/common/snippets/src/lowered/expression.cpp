@@ -19,6 +19,15 @@ size_t Expression::LOOP_NULL_ID = SIZE_MAX;
 Expression::Expression(const std::shared_ptr<Node>& n)
     : m_source_node{n}, m_emitter{nullptr}, m_inputs{}, m_outputs{}, m_reg_info{{}, {}}, m_is_outside_loop(utils::get_outside_loop_value(n)) {}
 
+const TensorPtr& Expression::input(size_t i) const {
+    OPENVINO_ASSERT(i < m_inputs.size(), "Failed to get input: target input port must be less than input count!");
+    return m_inputs[i];
+}
+const TensorPtr& Expression::output(size_t i) const {
+    OPENVINO_ASSERT(i < m_outputs.size(), "Failed to get output: target output port must be less than output count!");
+    return m_outputs[i];
+}
+
 std::shared_ptr<Node> Expression::get_node() const {
     if (!m_source_node)
         OPENVINO_THROW("An attempt to get uninitialized node from lowered expression");
@@ -58,34 +67,13 @@ void Expression::remove_loop_id(size_t id) {
     *it = Expression::LOOP_NULL_ID;
 }
 
-void Expression::init_inputs_with_validation(const std::vector<TensorPtr>& inputs) {
-    auto is_service_expr = [&](){
-        return ov::is_type<op::LoopEnd>(m_source_node);
-    };
-    for (size_t i = 0; i < inputs.size(); ++i) {
-        const auto& input = inputs[i];
-        const auto consumers = input->get_consumers();
-        const auto found = std::find_if(consumers.begin(), consumers.end(),
-                                        [&](const TensorDescriptor& desc) {
-                                            return desc.get_index() == i && desc.get_expr_ptr().get() == this->shared_from_this().get();
-                                        });
-        if (found == consumers.end()) {
-            const auto port_desc = is_service_expr() ? input->get_source().get_port_descriptor()
-                                                     : PortManager::get_port_descriptor_ptr(m_source_node->input(i));
-            const auto tensor_desc = TensorDescriptor(this->shared_from_this(), TensorDescriptor::Type::Input, i, port_desc);
-            input->add_consumer(tensor_desc);
-        }
-    }
-    m_inputs = inputs;
-}
-
 TensorDescriptor Expression::input_port(size_t i) {
     OPENVINO_ASSERT(i < m_inputs.size(), "Failed to get input port: target input port must be less than input count!");
     const auto& input = m_inputs[i];
-    const auto& consumers = input->get_consumers();
+    const auto consumers = input->get_consumers();
     const auto found = std::find_if(consumers.begin(), consumers.end(),
                                     [&](const TensorDescriptor& desc) {
-                                                return desc.get_index() == i && desc.get_expr_ptr().get() == this->shared_from_this().get();
+                                                return desc.get_index() == i && desc.get_expr_ptr() == this->shared_from_this();
                                           });
     OPENVINO_ASSERT(found != consumers.end(), "Input TensorDescriptor for Expression hasn't found in input Tensor!");
     return *found;

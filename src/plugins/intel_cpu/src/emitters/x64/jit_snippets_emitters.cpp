@@ -125,14 +125,14 @@ KernelEmitter::KernelEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl:
         element::Type etype;
         switch (expr->get_type()) {
             case ngraph::snippets::lowered::IOExpression::io_type::INPUT: {
-                td = expr->get_outputs()[0];
+                td = expr->outputs()[0];
                 etype = expr->get_node()->get_output_element_type(0);
                 num_inputs++;
                 break;
             }
             case ngraph::snippets::lowered::IOExpression::io_type::OUTPUT: {
                 num_outputs++;
-                td = expr->get_inputs()[0];
+                td = expr->inputs()[0];
                 etype = expr->get_node()->get_input_element_type(0);
                 break;
             } default : {

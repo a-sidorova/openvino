@@ -45,7 +45,7 @@ std::vector<TensorDescriptor>::const_iterator Tensor::find_consumer(const Tensor
     // Note: Find by shared ptr and index port is enough since these parameters must be unique
     return std::find_if(m_consumer_ports.begin(), m_consumer_ports.end(),
                         [&consumer](const TensorDescriptor& td) {
-                            return consumer.get_expr_ptr().get() == td.get_expr_ptr().get() && consumer.get_index() == td.get_index();
+                            return consumer.get_expr_ptr() == td.get_expr_ptr() && consumer.get_index() == td.get_index();
                         });
 }
 
@@ -53,7 +53,7 @@ std::vector<TensorDescriptor>::iterator Tensor::find_consumer(const TensorDescri
     // Note: Find by shared ptr and index port is enough since these parameters must be unique
     return std::find_if(m_consumer_ports.begin(), m_consumer_ports.end(),
                         [&consumer](const TensorDescriptor& td) {
-                            return consumer.get_expr_ptr().get() == td.get_expr_ptr().get() && consumer.get_index() == td.get_index();
+                            return consumer.get_expr_ptr() == td.get_expr_ptr() && consumer.get_index() == td.get_index();
                         });
 }
 
@@ -83,6 +83,7 @@ std::vector<TensorDescriptor> Tensor::get_conflicted_consumers() const {
 }
 
 bool Tensor::is_conflicted_consumer(const TensorDescriptor& consumer) const {
+    OPENVINO_ASSERT(found_consumer(consumer), "Failed check for conflicted consumer: it's not a consumer fot the Tensor");
     return get_tensor() != consumer.get_tensor() ||
            get_layout() != consumer.get_layout() ||
            get_subtensor() != consumer.get_subtensor();
@@ -92,7 +93,7 @@ bool operator==(const TensorDescriptor& lhs, const TensorDescriptor& rhs) {
     if (&rhs == &lhs)
         return true;
     return lhs.m_type == rhs.m_type &&
-           lhs.m_expr.lock().get() == rhs.m_expr.lock().get() &&
+           lhs.m_expr.lock() == rhs.m_expr.lock() &&
            lhs.m_port_index == rhs.m_port_index &&
            lhs.m_port_desc == rhs.m_port_desc;
 }
@@ -102,7 +103,7 @@ bool operator!=(const TensorDescriptor& lhs, const TensorDescriptor& rhs) {
 bool operator<(const TensorDescriptor& lhs, const TensorDescriptor& rhs) {
     OPENVINO_ASSERT(lhs.get_type() == rhs.get_type(), "TensorDescriptors must be of the same type for comparison!");
     return lhs.get_index() < rhs.get_index() &&
-           lhs.get_expr_ptr().get() < rhs.get_expr_ptr().get() &&
+           lhs.get_expr_ptr() < rhs.get_expr_ptr() &&
            lhs.get_tensor() < rhs.get_tensor() &&
            lhs.get_layout() < rhs.get_layout() &&
            lhs.get_subtensor() < rhs.get_subtensor();

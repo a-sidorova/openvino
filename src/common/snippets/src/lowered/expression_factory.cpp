@@ -14,11 +14,11 @@ ExpressionPtr LinearIR::BaseExpressionFactory::build(const std::shared_ptr<Node>
     OPENVINO_THROW("The Factory doesn't support default builder");
 }
 ExpressionPtr LinearIR::BaseExpressionFactory::build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                                                     const std::vector<TensorPtr> inputs) {
+                                                     const std::vector<TensorPtr>& inputs) {
     OPENVINO_THROW("The Factory doesn't support builder with just input tensors");
 }
 ExpressionPtr LinearIR::BaseExpressionFactory::build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                                                     const std::vector<TensorPtr> inputs, const std::vector<TensorPtr> outputs) {
+                                                     const std::vector<TensorPtr>& inputs, const std::vector<TensorPtr>& outputs) {
     OPENVINO_THROW("The Factory doesn't support builder with input and outputs tensors");
 }
 
@@ -46,10 +46,8 @@ std::vector<TensorPtr> LinearIR::BaseExpressionFactory::create_expression_inputs
     for (const auto& input : node->inputs()) {
         const auto input_source = input.get_source_output();
         const auto in_index = input.get_index();
-        const auto out_index = input_source.get_index();
-        const auto parent = input_source.get_node_shared_ptr();
-        const auto parent_expr = m_linear_ir.get_expr_by_node(parent);
-        const auto tensor = parent_expr->get_outputs()[out_index];
+        const auto& parent_expr = m_linear_ir.get_expr_by_node(input_source.get_node_shared_ptr());
+        const auto& tensor = parent_expr->output(input_source.get_index());
         const auto tensor_desc = TensorDescriptor(expr, TensorDescriptor::Type::Input, in_index, PortManager::get_port_descriptor_ptr(input));
         tensor->add_consumer(tensor_desc);
         inputs[in_index] = tensor;
@@ -70,6 +68,22 @@ std::vector<TensorPtr> LinearIR::BaseExpressionFactory::create_expression_output
     return outputs;
 }
 
+void LinearIR::BaseExpressionFactory::validate_inputs(const ExpressionPtr& expr, const std::vector<TensorPtr>& inputs) {
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        const auto& input = inputs[i];
+        const auto consumers = input->get_consumers();
+        const auto found = std::find_if(consumers.begin(), consumers.end(),
+                                        [&](const TensorDescriptor& desc) {
+                                            return desc.get_index() == i && desc.get_expr_ptr() == expr;
+                                        });
+        if (found == consumers.end()) {
+            const auto port_desc = PortManager::get_port_descriptor_ptr(expr->get_node()->input(i));
+            const auto tensor_desc = TensorDescriptor(expr, TensorDescriptor::Type::Input, i, port_desc);
+            input->add_consumer(tensor_desc);
+        }
+    }
+}
+
 ExpressionPtr LinearIR::ExpressionFactory::create(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) {
     // Note: ctor of shared_ptr isn't friend class for Expression
     return std::make_shared<Expression>(Expression(n));
@@ -83,17 +97,19 @@ ExpressionPtr LinearIR::ExpressionFactory::build(const std::shared_ptr<Node>& n,
 }
 
 ExpressionPtr LinearIR::ExpressionFactory::build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                                                 const std::vector<TensorPtr> inputs) {
+                                                 const std::vector<TensorPtr>& inputs) {
     const auto expr = create(n, model);
-    expr->init_inputs_with_validation(inputs);
+    validate_inputs(expr, inputs);
+    expr->init_inputs(inputs);
     expr->init_outputs(create_expression_outputs(expr));
     return expr;
 }
 
 ExpressionPtr LinearIR::ExpressionFactory::build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                                                 const std::vector<TensorPtr> inputs, const std::vector<TensorPtr> outputs) {
+                                                 const std::vector<TensorPtr>& inputs, const std::vector<TensorPtr>& outputs) {
     const auto expr = create(n, model);
-    expr->init_inputs_with_validation(inputs);
+    validate_inputs(expr, inputs);
+    expr->init_inputs(inputs);
     expr->init_outputs(outputs);
     return expr;
 }
@@ -139,7 +155,7 @@ ExpressionPtr LinearIR::LoopBeginExpressionFactory::create(const std::shared_ptr
 }
 
 ExpressionPtr LinearIR::LoopBeginExpressionFactory::build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                                                          const std::vector<TensorPtr> inputs) {
+                                                          const std::vector<TensorPtr>& inputs) {
     OPENVINO_ASSERT(inputs.empty(), "LoopBegin cannot have inputs");
     const auto expr = create(n, model);
     expr->init_inputs(inputs);
@@ -156,11 +172,29 @@ ExpressionPtr LinearIR::LoopEndExpressionFactory::create(const std::shared_ptr<N
 }
 
 ExpressionPtr LinearIR::LoopEndExpressionFactory::build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                                                        const std::vector<TensorPtr> inputs) {
+                                                        const std::vector<TensorPtr>& inputs) {
     const auto expr = create(n, model);
-    expr->init_inputs_with_validation(inputs);
+    validate_inputs(expr, inputs);
+    expr->init_inputs(inputs);
     expr->init_outputs({});
     return expr;
+}
+
+void LinearIR::LoopEndExpressionFactory::validate_inputs(const ExpressionPtr& expr, const std::vector<TensorPtr>& inputs) {
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        const auto& input = inputs[i];
+        const auto consumers = input->get_consumers();
+        const auto found = std::find_if(consumers.begin(), consumers.end(),
+                                        [&](const TensorDescriptor& desc) {
+                                            return desc.get_index() == i && desc.get_expr_ptr()== expr;
+                                        });
+        if (found == consumers.end()) {
+            // LoopEnd doesn't have input ports. So consumer for the Tensor should have the same Port Descriptor like source
+            const auto& port_desc = input->get_source().get_port_descriptor();
+            const auto tensor_desc = TensorDescriptor(expr, TensorDescriptor::Type::Input, i, port_desc);
+            input->add_consumer(tensor_desc);
+        }
+    }
 }
 
 

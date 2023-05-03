@@ -21,11 +21,28 @@ Brgemm::Brgemm(const Output<Node>& A, const Output<Node>& B,
     constructor_validate_and_infer_types();
 }
 
-void Brgemm::validate_and_infer_types() {
-    INTERNAL_OP_SCOPE(Brgemm_validate_and_infer_types);
+void Brgemm::constructor_validate_and_infer_types() {
+    INTERNAL_OP_SCOPE(BrgemmCPU_constructor_validate_and_infer_types);
+    validate_inputs();
+
+    // During ctor call, Brgemm doesn't know his port descriptors.
+    // So we use port descs from source inputs
+    const auto planar_input_shapes =
+            std::vector<ov::PartialShape>{ ngraph::snippets::utils::get_port_planar_shape(input_value(0)),
+                                           ngraph::snippets::utils::get_port_planar_shape(input_value(1)) };
+    auto output_shape = get_output_partial_shape(planar_input_shapes);
+    set_output_type(0, get_output_type(), get_planar_output_shape(output_shape));
+}
+
+void Brgemm::validate_inputs() const {
     // If no leading dimensions are provided, assume dense row-major inputs-outputs
     NODE_VALIDATION_CHECK(this, get_input_partial_shape(0).is_static() && get_input_partial_shape(1).is_static(),
                           "Brgemm currently supports only static shapes.");
+}
+
+void Brgemm::validate_and_infer_types() {
+    INTERNAL_OP_SCOPE(Brgemm_validate_and_infer_types);
+    validate_inputs();
 
     const auto planar_input_shapes = get_planar_input_shapes(inputs());
     auto output_shape = get_output_partial_shape(planar_input_shapes);

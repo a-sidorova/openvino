@@ -55,7 +55,7 @@ void LinearIR::LoopManager::get_loop_bounds(const LinearIR &linear_ir,
                                             size_t loop_id) {
     OPENVINO_ASSERT(!entries.empty(), "Loop must have entry points");
     OPENVINO_ASSERT(!exits.empty(), "Loop must have entry points");
-    const auto& entry_expr = entries.front().get_expr_ptr();
+    const auto entry_expr = entries.front().get_expr_ptr();
     loop_begin_pos = std::find(linear_ir.begin(), linear_ir.end(), entry_expr);
     OPENVINO_ASSERT(loop_begin_pos != linear_ir.end(), "Loop begin hasn't been found!");
 
@@ -81,8 +81,8 @@ void LinearIR::LoopManager::get_io_loop_ports(LinearIR::constExprIt loop_begin_p
     exits.clear();
     for (auto expr_it = loop_begin_pos; expr_it != loop_end_pos; ++expr_it) {
         const auto& expr = *expr_it;
-        const auto inputs = expr->get_inputs();
-        const auto outputs = expr->get_outputs();
+        const auto inputs = expr->inputs();
+        const auto outputs = expr->outputs();
 
         for (size_t in_port = 0; in_port < inputs.size(); ++in_port) {
             const auto in_td = inputs[in_port];
@@ -141,7 +141,7 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
 
     auto found_port = [](const std::vector<TensorDescriptor>& ports, const TensorDescriptor& target) {
         return std::find_if(ports.begin(), ports.end(), [&target](const TensorDescriptor& port) {
-            return port.get_expr_ptr().get() == target.get_expr_ptr().get() &&
+            return port.get_expr_ptr() == target.get_expr_ptr() &&
                    port.get_index() == target.get_index() &&
                    port.get_type() == target.get_type();
         }) != ports.end();
@@ -160,7 +160,7 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
         const auto& expr = exit_point.get_expr_ptr();
         for (size_t i = 0; i < expr->get_input_count(); ++i) {
             const auto port = expr->input_port(i);
-            const auto parent = expr->get_inputs()[port.get_index()]->get_source().get_expr_ptr()->get_node();
+            const auto parent = expr->input(port.get_index())->get_source().get_expr_ptr()->get_node();
             if (!found_port(loop_entry_points, port) && !ov::is_type<ov::op::v0::Constant>(parent)) {
                 if (loop_subtensor.empty())
                     loop_subtensor = port.get_subtensor();

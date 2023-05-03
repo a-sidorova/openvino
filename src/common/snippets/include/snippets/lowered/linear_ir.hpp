@@ -106,8 +106,7 @@ public:
 
 private:
     // Default ctor - can be called only from Linear IR initialization as default way
-    ExpressionPtr create_expression(const std::shared_ptr<Node>& n,
-                                    const std::shared_ptr<ov::Model>& model = nullptr);
+    ExpressionPtr create_expression(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model = nullptr);
 
     void register_expression(const ExpressionPtr& expr);
     // Like register_expression, but doesn't allow Parameter or Result registration. You can do it only through ctor

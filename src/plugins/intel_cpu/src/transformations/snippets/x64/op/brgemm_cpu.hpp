@@ -50,7 +50,7 @@ public:
     constexpr static size_t SCRATCH_BYTE_SIZE = 32 * 1024;
 
 private:
-    void ctor_validate_and_infer_types();
+    void constructor_validate_and_infer_types();
     void validate_with_scratchpad(const ov::Shape& shape_b) const;
     void validate_inputs() const;
 

@@ -41,7 +41,7 @@ void InsertTailLoop::tail_transformations(LinearIR& linear_ir,
              ov::is_type<ov::op::v1::Add>(op))) {
             for (size_t i = 0; i < op->inputs().size(); ++i) {
                 if (auto fill = insertFill(op->input(i))) {
-                    std::vector<TensorPtr> inputs{expr_it->get()->get_inputs()[i]};
+                    std::vector<TensorPtr> inputs{expr_it->get()->input(i)};
                     // Note: inputs == outputs, since we want to modify vector reg inplace
                     auto fill_expr = linear_ir.create_expression(fill, inputs, inputs);
                     auto reg = expr_it->get()->get_reg_info().first[i];
@@ -100,13 +100,13 @@ bool InsertTailLoop::run(LinearIR& linear_ir) {
             return ov::is_type<op::Buffer>(parent_expr->get_node());
         };
         auto is_buffer_output = [&linear_ir](const TensorPtr& output) {
-            const auto& child_exprs_inputs = output->get_consumers();
+            const auto child_exprs_inputs = output->get_consumers();
             return std::any_of(child_exprs_inputs.begin(), child_exprs_inputs.end(),
                                [](const TensorDescriptor& lp) {return ov::is_type<op::Buffer>(lp.get_expr_ptr()->get_node());});
         };
 
         const auto loop_end_expr = linear_ir.get_expr_by_node(loop_end);
-        const auto inputs = loop_end_expr->get_inputs();
+        const auto inputs = loop_end_expr->inputs();
         const auto in_num = loop_end->get_input_num();
         const auto out_num = loop_end->get_output_num();
         OPENVINO_ASSERT(inputs.size() == (in_num + out_num + 1),

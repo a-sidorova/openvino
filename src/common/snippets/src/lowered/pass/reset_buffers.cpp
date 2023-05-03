@@ -18,7 +18,7 @@ bool ResetBuffers::reuse_buffer_increments(const LinearIR& linear_ir, const Expr
     if (!loop_end)
         return false;
 
-    const auto loop_tds = loop_end_expr->get_inputs();
+    const auto loop_tds = loop_end_expr->inputs();
     const auto input_count = loop_end->get_input_num();
     const auto output_count = loop_end->get_output_num();
 

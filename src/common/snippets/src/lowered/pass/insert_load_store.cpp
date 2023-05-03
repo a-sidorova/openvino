@@ -54,7 +54,7 @@ bool InsertLoadStore::insert_load(LinearIR& linear_ir, const LinearIR::constExpr
     const auto& loop_manager = linear_ir.get_loop_manager();
     const auto& data_expr = *data_expr_it;
     const auto& data_node = data_expr->get_node();
-    const auto& output_td = data_expr->get_outputs().front();
+    const auto& output_td = data_expr->output(0);
     const auto consumer_inputs = output_td->get_consumers();
 
     bool was_inserted = false;
@@ -77,7 +77,7 @@ bool InsertLoadStore::insert_load(LinearIR& linear_ir, const LinearIR::constExpr
                                                                                                output_td->get_layout()));
         const auto load_expr = linear_ir.create_expression(load, {output_td});
         linear_ir.insert(std::find(data_expr_it, linear_ir.cend(), consumer_expr), load_expr);
-        linear_ir.replace_input(consumer_expr, port, load_expr->get_outputs()[0]);
+        linear_ir.replace_input(consumer_expr, port, load_expr->output(0));
         // Copy Loop identifies
         load_expr->set_loop_ids(loop_ids);
 
@@ -94,7 +94,7 @@ bool InsertLoadStore::insert_load(LinearIR& linear_ir, const LinearIR::constExpr
 bool InsertLoadStore::insert_store(LinearIR& linear_ir, const LinearIR::constExprIt& data_expr_it) {
     const auto& loop_manager = linear_ir.get_loop_manager();
     const auto& data_expr = *data_expr_it;
-    const auto& input_td = data_expr->get_inputs().front();
+    const auto& input_td = data_expr->input(0);
     const auto parent_output = input_td->get_source();
     const auto& parent_expr = parent_output.get_expr_ptr();
     const auto port = parent_output.get_index();
@@ -116,7 +116,7 @@ bool InsertLoadStore::insert_store(LinearIR& linear_ir, const LinearIR::constExp
     const auto& reverse_insertion_pos = std::find(std::reverse_iterator<LinearIR::constExprIt>(data_expr_it), linear_ir.crend(), parent_expr);
     const auto& insertion_pos = reverse_insertion_pos.base();
     linear_ir.insert(insertion_pos, store_expr);
-    linear_ir.replace_input(data_expr, 0, store_expr->get_outputs()[0]);
+    linear_ir.replace_input(data_expr, 0, store_expr->output(0));
     // Copy Loop identifies
     store_expr->set_loop_ids(loop_ids);
 

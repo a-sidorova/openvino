@@ -35,7 +35,7 @@ void FuseLoops::fuse_points(std::vector<TensorDescriptor>& exit_points, std::vec
     for (const auto& exit_point : exit_points) {
         const auto expr = exit_point.get_expr_ptr();
         const auto port = exit_point.get_index();
-        const auto output_td = expr->get_outputs()[port];
+        const auto output_td = expr->output(port);
         const auto consumers_inputs = output_td->get_consumers();
 
         std::vector<TensorDescriptor> mapped_entry_points;
@@ -91,7 +91,7 @@ bool FuseLoops::fuse_upper_into_current(LinearIR& linear_ir, const LinearIR::Loo
         const auto target_exit_point = loop_target->exit_exprs[i];
         const auto target_exit_expr = target_exit_point.get_expr_ptr();
         const auto port = target_exit_point.get_index();
-        const auto output_td = target_exit_expr->get_outputs()[port];
+        const auto output_td = target_exit_expr->output(port);
         const auto consumer_inputs = output_td->get_consumers();
         for (const auto& consumer_input : consumer_inputs) {
             const auto consumer = consumer_input.get_expr_ptr();
@@ -162,7 +162,7 @@ bool FuseLoops::fuse_lower_into_current(LinearIR& linear_ir, const LinearIR::Loo
         const auto target_entry_point = loop_target->entry_exprs[i];
         const auto target_entry_expr = target_entry_point.get_expr_ptr();
         const auto port = target_entry_point.get_index();
-        const auto input_td = target_entry_expr->get_inputs()[port];
+        const auto input_td = target_entry_expr->input(port);
         const auto parent_expr_output = input_td->get_source();
         const auto parent_expr = parent_expr_output.get_expr_ptr();
         if (ov::is_type<opset1::Parameter>(parent_expr->get_node()) || parent_expr == current_exit_point.get_expr_ptr())
@@ -270,7 +270,7 @@ bool FuseLoops::run(LinearIR& linear_ir) {
                     const auto entry_point = entry_points[in_port];
                     const auto entry_expr = entry_point.get_expr_ptr();
                     const auto port = entry_point.get_index();
-                    const auto input_td = entry_expr->get_inputs()[port];
+                    const auto input_td = entry_expr->input(port);
                     const auto parent_expr_output = input_td->get_source();
                     const auto parent_expr = parent_expr_output.get_expr_ptr();
                     const auto out_port = parent_expr_output.get_index();
@@ -311,7 +311,7 @@ bool FuseLoops::run(LinearIR& linear_ir) {
                     const auto exit_point = exit_points[out_port];
                     const auto exit_expr = exit_point.get_expr_ptr();
                     const auto port = exit_point.get_index();
-                    const auto output_td = exit_expr->get_outputs()[port];
+                    const auto output_td = exit_expr->output(port);
                     const auto consumer_exprs_inputs = output_td->get_consumers();
                     for (const auto& consumer_expr_input : consumer_exprs_inputs) {
                         const auto consumer_expr = consumer_expr_input.get_expr_ptr();
