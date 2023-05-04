@@ -35,20 +35,21 @@ bool SoftmaxDecomposition::run(LinearIR& linear_ir) {
             const auto& pm = matcher->get_pattern_map();
             const auto softmax = pm.at(match_softmax);
             const auto softmax_expr = *expr_it;
+            const auto softmax_loop_ids = softmax_expr->get_loop_ids();
             const auto& input_td = softmax_expr->input(0);
             const auto& output_td = softmax_expr->output(0);
             const auto tensor_out = output_td->get_tensor();
-            const auto subtensor_in = input_td->get_subtensor();
             const auto inner_work_amount = *(tensor_out.rbegin());
-            const auto outer_work_amount = *(tensor_out.rbegin() + 1);
 
             expr_it = linear_ir.erase(expr_it);   // Remove Softmax
 
             std::vector<ExpressionPtr> outer_exprs;
 
             // We need an iterator to the inserted element
-            auto push_node = [&linear_ir, &expr_it](const std::shared_ptr<Node>& n) {
-                return std::make_pair(linear_ir.insert(expr_it, n), n);
+            auto push_node = [&linear_ir, &expr_it, &softmax_loop_ids](const std::shared_ptr<Node>& n) {
+                const auto expr = linear_ir.insert(expr_it, n);
+                (*expr)->set_loop_ids(softmax_loop_ids);
+                return std::make_pair(expr, n);
             };
 
             // Note: VectorBuffer is a special case, since it should go before the initial Load. So we handle it separately
@@ -113,11 +114,26 @@ bool SoftmaxDecomposition::run(LinearIR& linear_ir) {
                 expr->set_loop_id(Expression::LOOP_NULL_ID, 1);
             }
 
-            // Outer Loop
-            loop_manager->mark_loop(vector_buffer_max.first, expr_it, 0, outer_work_amount, 1,
-                                    std::vector<TensorDescriptor>{(*max.first)->input_port(0),
-                                                                  (*sub.first)->input_port(0)},
-                                    std::vector<TensorDescriptor>{(*mul.first)->output_port(0)});
+            auto update_loop_bounds = [&softmax_expr](std::vector<TensorDescriptor>& points,
+                                                     const std::vector<TensorDescriptor>& new_points,
+                                                     const LinearIR::LoopManager::LoopInfoPtr& loop_info) {
+                auto entry_found = std::find_if(points.begin(), points.end(), [&softmax_expr](const TensorDescriptor& desc) {
+                    return desc.get_expr_ptr() == softmax_expr;
+                });
+                if (entry_found != points.end()) {
+                    entry_found = points.erase(entry_found);
+                    points.insert(entry_found, new_points.begin(), new_points.end());
+                }
+            };
+
+            // Update Loop info for outer loops
+            for (auto loop_id : softmax_loop_ids) {
+                if (loop_id == Expression::LOOP_NULL_ID)
+                    continue;
+                const auto loop_info = loop_manager->get_loop_info(loop_id);
+                update_loop_bounds(loop_info->entry_exprs, std::vector<TensorDescriptor>{(*max.first)->input_port(0), (*sub.first)->input_port(0)}, loop_info);
+                update_loop_bounds(loop_info->exit_exprs, std::vector<TensorDescriptor>{(*mul.first)->output_port(0)}, loop_info);
+            }
 
             /* =========================================== */
 

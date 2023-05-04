@@ -9,6 +9,8 @@
 namespace ngraph {
 namespace snippets {
 
+size_t PortDescriptor::Scheduling::FULL_DIM = SIZE_MAX;
+
 PortDescriptor::PortDescriptor(const ov::Input<ov::Node>& in, std::vector<size_t> subtensor_shape, std::vector<size_t> layout)
         : PortDescriptor(ov::Input<const Node>(in.get_node(), in.get_index()), std::move(subtensor_shape), std::move(layout)) {}
 PortDescriptor::PortDescriptor(const ov::Input<const ov::Node>& in, std::vector<size_t> subtensor_shape, std::vector<size_t> layout)

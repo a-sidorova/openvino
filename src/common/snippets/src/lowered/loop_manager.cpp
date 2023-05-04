@@ -123,77 +123,51 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
     std::vector<TensorDescriptor> loop_entry_points, loop_exit_points;
     LoopManager::get_io_loop_ports(loop_begin_pos, loop_end_pos, loop_entry_points, loop_exit_points);
 
-    auto broadcast = [](std::vector<size_t> &lhs, const std::vector<size_t> &rhs) -> void {
+    auto broadcast = [](std::vector<size_t> &lhs, const std::vector<size_t> &rhs, size_t index) -> void {
         if (rhs == lhs)
             return;
         const auto lhs_size = lhs.size();
         const auto rhs_size = rhs.size();
         const auto size = std::max(lhs_size, rhs_size);
         lhs.resize(size, 1);
-        for (size_t i = 0; i < size; ++i) {
-            const auto lhs_value = i < lhs_size ? *(lhs.crbegin() + i) : 1;
-            const auto rhs_value = i < rhs_size ? *(rhs.crbegin() + i) : 1;
-            OPENVINO_ASSERT(lhs_value == rhs_value || lhs_value == 1 || rhs_value == 1,
-                            "Output shapes of Loop must be broadcastable!");
-            *(lhs.rbegin() + i) = std::max(lhs_value, rhs_value);
-        }
-    };
-
-    auto found_port = [](const std::vector<TensorDescriptor>& ports, const TensorDescriptor& target) {
-        return std::find_if(ports.begin(), ports.end(), [&target](const TensorDescriptor& port) {
-            return port.get_expr_ptr() == target.get_expr_ptr() &&
-                   port.get_index() == target.get_index() &&
-                   port.get_type() == target.get_type();
-        }) != ports.end();
+        OPENVINO_ASSERT(index < size, "Incorrect index for broadcasting");
+        const auto lhs_value = index < lhs_size ? *(lhs.crbegin() + index) : 1;
+        const auto rhs_value = index < rhs_size ? *(rhs.crbegin() + index) : 1;
+        OPENVINO_ASSERT(lhs_value == rhs_value || lhs_value == 1 || rhs_value == 1,
+                        "Output shapes of Loop must be broadcastable!");
+        *(lhs.rbegin() + index) = std::max(lhs_value, rhs_value);
     };
 
     std::vector<size_t> loop_subtensor;
-    std::vector<size_t> loop_layout;
-    std::vector<size_t> loop_tensor(1, 1);  // Scalar
+    std::vector<size_t> loop_tensor(loop_depth, 1);
     for (const auto& exit_point : loop_exit_points) {
-        const auto out_tensor = utils::get_reordered_shape(exit_point.get_tensor(), exit_point.get_layout());
-        broadcast(loop_tensor, out_tensor);
-
-        // SubTensor and Layout inside Loops must be the same.
-        // We have to verify that input of exit point isn't entry point or Constant to check for subtensor and layout because of
-        // then this input is not inside Loop
-        const auto& expr = exit_point.get_expr_ptr();
-        for (size_t i = 0; i < expr->get_input_count(); ++i) {
-            const auto port = expr->input_port(i);
-            const auto parent = expr->input(port.get_index())->get_source().get_expr_ptr()->get_node();
-            if (!found_port(loop_entry_points, port) && !ov::is_type<ov::op::v0::Constant>(parent)) {
-                if (loop_subtensor.empty())
-                    loop_subtensor = port.get_subtensor();
-                if (loop_layout.empty())
-                    loop_layout = port.get_layout();
-                OPENVINO_ASSERT(loop_subtensor == port.get_subtensor(), "SubTensor inside Loop must be the same");
-                OPENVINO_ASSERT(loop_layout == port.get_layout(), "Layout inside Loop must be the same");
-            }
+        const auto tensor = utils::get_reordered_shape(exit_point.get_tensor(), exit_point.get_layout());
+        auto subtensor = exit_point.get_subtensor();
+        if (subtensor.empty()) {
+            subtensor.resize(loop_depth, 1);
+            subtensor[subtensor.size() - 1] = vector_size;
         }
-    }
+        while (subtensor.size() < loop_depth)
+            subtensor.insert(subtensor.begin(), 1);
+        if (loop_subtensor.empty())
+            loop_subtensor = subtensor;
+        OPENVINO_ASSERT(loop_subtensor == subtensor, "Incorrect scheduling parameters for loop");
 
-    for (const auto& entry_point : loop_entry_points) {
-        const auto in_tensor = utils::get_reordered_shape(entry_point.get_tensor(), entry_point.get_layout());
-        broadcast(loop_tensor, in_tensor);
-
-        // SubTensor and Layout inside Loops must be the same.
-        // We have to verify that output of entry point isn't exit point to check for subtensor and layout because of
-        // then this output is not inside Loop
-        const auto& expr = entry_point.get_expr_ptr();
-        for (size_t i = 0; i < expr->get_output_count(); ++i) {
-            const auto port = expr->output_port(i);
-            if (!found_port(loop_exit_points, port)) {
-                if (loop_subtensor.empty())
-                    loop_subtensor = port.get_subtensor();
-                if (loop_layout.empty())
-                    loop_layout = port.get_layout();
-                OPENVINO_ASSERT(loop_subtensor == port.get_subtensor(), "SubTensor inside Loop must be the same");
-                OPENVINO_ASSERT(loop_layout == port.get_layout(), "Layout inside Loop must be the same");
+        for (size_t dim_idx = 0; dim_idx < loop_depth; ++dim_idx) {
+            if (*(subtensor.rbegin() + dim_idx) == PortDescriptor::Scheduling::FULL_DIM) {
+                *(loop_tensor.rbegin() + dim_idx) = PortDescriptor::Scheduling::FULL_DIM;
+            } else {
+                broadcast(loop_tensor, tensor, dim_idx);
             }
         }
     }
 
     for (size_t dim_idx = 0; dim_idx < loop_depth; ++dim_idx) {
+        if (*(loop_subtensor.rbegin() + dim_idx) == PortDescriptor::Scheduling::FULL_DIM) {
+            exprs_marking(loop_begin_pos, loop_end_pos, Expression::LOOP_NULL_ID, loop_depth - dim_idx - 1);
+            continue;
+        }
+
         OPENVINO_ASSERT(dim_idx < loop_tensor.size(), "Incorrect indexes of Loop for markup");
         const auto work_amount =
                 loop_tensor.size() > dim_idx ? *(loop_tensor.rbegin() + dim_idx)
@@ -201,7 +175,6 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
         const auto work_amount_increment =
                 loop_subtensor.size() > dim_idx ? *(loop_subtensor.rbegin() + dim_idx)
                                                 : (dim_idx == 0 ? vector_size : 1);
-
         mark_loop(loop_begin_pos, loop_end_pos, loop_depth - dim_idx - 1, work_amount,
                   work_amount_increment, loop_entry_points, loop_exit_points);
     }

@@ -29,8 +29,7 @@ bool MarkLoops::run(LinearIR& linear_ir) {
     auto is_not_start_point = [](const std::shared_ptr<ov::Node>& node) {
         return ov::is_type<opset1::Result>(node) ||
                ov::is_type<opset1::Constant>(node) ||
-               ov::is_type<opset1::Parameter>(node) ||
-               ov::is_type<opset1::Softmax>(node);  // Softmax is decomposed operation. The marking is in decomposition pass
+               ov::is_type<opset1::Parameter>(node);
     };
 
     for (auto expr_it = linear_ir.cbegin(); expr_it != linear_ir.cend(); expr_it++) {
@@ -57,8 +56,7 @@ bool MarkLoops::run(LinearIR& linear_ir) {
             // If iterator is the last, we should finish Loop
             const auto& current_expr = *loop_end_pos;
             const auto& current_node = current_expr->get_node();
-            if (ov::is_type<opset1::Softmax>(current_node) ||  // Softmax is marked in decomposition
-                ov::is_type<opset1::Result>(current_node) ||
+            if (ov::is_type<opset1::Result>(current_node) ||
                 ov::is_type<opset1::Constant>(current_node))
                 break;
 

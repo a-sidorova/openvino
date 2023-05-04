@@ -53,8 +53,10 @@ void Expression::replace_output(size_t port, TensorPtr to) {
 }
 
 void Expression::set_loop_id(size_t id, size_t idx) {
-    OPENVINO_ASSERT((std::find(m_loop_ids.begin(), m_loop_ids.end(), id) == m_loop_ids.end()),
-                    "Expression cannot have several the same Loops");
+    if (id != LOOP_NULL_ID) {
+        OPENVINO_ASSERT((std::find(m_loop_ids.begin(), m_loop_ids.end(), id) == m_loop_ids.end()),
+                        "Expression cannot have several the same Loops");
+    }
     if (m_loop_ids.size() <= idx) {
         m_loop_ids.resize(idx + 1, LOOP_NULL_ID);
     }

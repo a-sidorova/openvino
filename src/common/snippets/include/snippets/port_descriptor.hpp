@@ -13,6 +13,12 @@ namespace snippets {
 
 class PortDescriptor {
 public:
+    // The structure with service values for scheduling parameters
+    struct Scheduling {
+        // The value for the subtensor that means that scheduling should be by full dimension
+        static size_t FULL_DIM;
+    };
+
     explicit PortDescriptor(const ov::Input<ov::Node>& node,
                             std::vector<size_t> subtensor_shape = {},
                             std::vector<size_t> layout = {});
