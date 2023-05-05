@@ -23,12 +23,7 @@ public:
 };
 
 class LinearIR {
-    class BaseExpressionFactory;
     class ExpressionFactory;
-    class ParameterExpressionFactory;
-    class ResultExpressionFactory;
-    class LoopBeginExpressionFactory;
-    class LoopEndExpressionFactory;
 public:
     using container = std::list<ExpressionPtr>;
     using io_container = std::list<std::shared_ptr<IOExpression>>;
@@ -38,10 +33,8 @@ public:
     LinearIR() = default;
     explicit LinearIR(const std::shared_ptr<ov::Model>& m, Config config = {});
 
-    ExpressionPtr create_expression(const std::shared_ptr<Node>& n, const std::vector<TensorPtr> inputs,
-                                    const std::shared_ptr<ov::Model>& model = nullptr);
-    ExpressionPtr create_expression(const std::shared_ptr<Node>& n, const std::vector<TensorPtr> inputs, const std::vector<TensorPtr> outputs,
-                                    const std::shared_ptr<ov::Model>& model = nullptr);
+    ExpressionPtr create_expression(const std::shared_ptr<Node>& n, const std::vector<TensorPtr> inputs);
+    ExpressionPtr create_expression(const std::shared_ptr<Node>& n, const std::vector<TensorPtr> inputs, const std::vector<TensorPtr> outputs);
 
     LinearIR deep_copy() const;
     static LinearIR::container deep_copy_range(LinearIR::container::const_iterator begin, LinearIR::container::const_iterator end);

@@ -10,35 +10,7 @@ namespace ngraph {
 namespace snippets {
 namespace lowered {
 
-ExpressionPtr LinearIR::BaseExpressionFactory::build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) {
-    OPENVINO_THROW("The Factory doesn't support default builder");
-}
-ExpressionPtr LinearIR::BaseExpressionFactory::build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                                                     const std::vector<TensorPtr>& inputs) {
-    OPENVINO_THROW("The Factory doesn't support builder with just input tensors");
-}
-ExpressionPtr LinearIR::BaseExpressionFactory::build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                                                     const std::vector<TensorPtr>& inputs, const std::vector<TensorPtr>& outputs) {
-    OPENVINO_THROW("The Factory doesn't support builder with input and outputs tensors");
-}
-
-std::shared_ptr<LinearIR::BaseExpressionFactory> LinearIR::BaseExpressionFactory::get(const LinearIR& linear_ir, const std::shared_ptr<Node>& n) {
-    if (ov::is_type<ov::op::v0::Parameter>(n)) {
-        return std::make_shared<LinearIR::ParameterExpressionFactory>(linear_ir);
-    }
-    if (ov::is_type<ov::op::v0::Result>(n)) {
-        return std::make_shared<LinearIR::ResultExpressionFactory>(linear_ir);
-    }
-    if (ov::is_type<op::LoopBegin>(n)) {
-        return std::make_shared<LinearIR::LoopBeginExpressionFactory>(linear_ir);
-    }
-    if (ov::is_type<op::LoopEnd>(n)) {
-        return std::make_shared<LinearIR::LoopEndExpressionFactory>(linear_ir);
-    }
-    return std::make_shared<LinearIR::ExpressionFactory>(linear_ir);
-}
-
-std::vector<TensorPtr> LinearIR::BaseExpressionFactory::create_expression_inputs(const ExpressionPtr& expr) {
+std::vector<TensorPtr> LinearIR::ExpressionFactory::create_expression_inputs(const LinearIR& linear_ir, const ExpressionPtr& expr) {
     OPENVINO_ASSERT(expr != nullptr, "Failed expression inputs creation: expression is null");
     const auto& node = expr->get_node();
 
@@ -46,7 +18,7 @@ std::vector<TensorPtr> LinearIR::BaseExpressionFactory::create_expression_inputs
     for (const auto& input : node->inputs()) {
         const auto input_source = input.get_source_output();
         const auto in_index = input.get_index();
-        const auto& parent_expr = m_linear_ir.get_expr_by_node(input_source.get_node_shared_ptr());
+        const auto& parent_expr = linear_ir.get_expr_by_node(input_source.get_node_shared_ptr());
         const auto& tensor = parent_expr->output(input_source.get_index());
         const auto tensor_desc = ExpressionPort(expr, ExpressionPort::Type::Input, in_index, PortManager::get_port_descriptor_ptr(input));
         tensor->add_consumer(tensor_desc);
@@ -55,7 +27,7 @@ std::vector<TensorPtr> LinearIR::BaseExpressionFactory::create_expression_inputs
     return inputs;
 }
 
-std::vector<TensorPtr> LinearIR::BaseExpressionFactory::create_expression_outputs(const ExpressionPtr& expr) {
+std::vector<TensorPtr> LinearIR::ExpressionFactory::create_expression_outputs(const LinearIR& linear_ir, const ExpressionPtr& expr) {
     OPENVINO_ASSERT(expr != nullptr, "Failed expression outputs creation: expression is null");
     const auto& node = expr->get_node();
 
@@ -68,7 +40,8 @@ std::vector<TensorPtr> LinearIR::BaseExpressionFactory::create_expression_output
     return outputs;
 }
 
-void LinearIR::BaseExpressionFactory::validate_inputs(const ExpressionPtr& expr, const std::vector<TensorPtr>& inputs) {
+// The method verifies of input tensors to availability of the expression as consumer and add it if missed
+void LinearIR::ExpressionFactory::validate_inputs(const ExpressionPtr& expr, const std::vector<TensorPtr>& inputs) {
     for (size_t i = 0; i < inputs.size(); ++i) {
         const auto& input = inputs[i];
         const auto consumers = input->get_consumers();
@@ -77,126 +50,93 @@ void LinearIR::BaseExpressionFactory::validate_inputs(const ExpressionPtr& expr,
                                             return desc.get_index() == i && desc.get_expr_ptr() == expr;
                                         });
         if (found == consumers.end()) {
-            const auto port_desc = PortManager::get_port_descriptor_ptr(expr->get_node()->input(i));
+            PortDescriptorPtr port_desc = nullptr;
+            // LoopEnd doesn't have many input ports, so LoopEnd cannot initialize PortDescriptor for ports himself.
+            // The expression should have the same PortDescriptor as sources
+            if (ov::is_type<op::LoopEnd>(expr->get_node())) {
+                port_desc = input->get_source().get_port_descriptor();
+            } else {
+                port_desc = PortManager::get_port_descriptor_ptr(expr->get_node()->input(i));
+            }
             const auto tensor_desc = ExpressionPort(expr, ExpressionPort::Type::Input, i, port_desc);
             input->add_consumer(tensor_desc);
         }
     }
 }
 
-ExpressionPtr LinearIR::ExpressionFactory::create(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) {
-    // Note: ctor of shared_ptr isn't friend class for Expression
-    return std::make_shared<Expression>(Expression(n));
-}
-
-ExpressionPtr LinearIR::ExpressionFactory::build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) {
-    const auto expr = create(n, model);
-    expr->init_inputs(create_expression_inputs(expr));
-    expr->init_outputs(create_expression_outputs(expr));
+ExpressionPtr LinearIR::ExpressionFactory::create(const std::shared_ptr<ngraph::op::v0::Parameter>& par,
+                                                  const LinearIR& linear_ir, const std::shared_ptr<ov::Model>& model) {
+    // Note: ctor of shared_ptr isn't friend class for Expression -> we cannot use directly make_shared<Expression>(args)
+    OPENVINO_ASSERT(model != nullptr, "To create IOExpression from Parameter there must be inited model!");
+    const auto expr = std::make_shared<IOExpression>(IOExpression(par, model->get_parameter_index(par)));
+    expr->init_inputs({});
+    expr->init_outputs(create_expression_outputs(linear_ir, expr));
     return expr;
 }
 
-ExpressionPtr LinearIR::ExpressionFactory::build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                                                 const std::vector<TensorPtr>& inputs) {
-    const auto expr = create(n, model);
+ExpressionPtr LinearIR::ExpressionFactory::create(const std::shared_ptr<ngraph::op::v0::Result>& res,
+                                                  const LinearIR& linear_ir, const std::shared_ptr<ov::Model>& model) {
+    // Note: ctor of shared_ptr isn't friend class for Expression -> we cannot use directly make_shared<Expression>(args)
+    OPENVINO_ASSERT(model != nullptr, "To create IOExpression from Result there must be inited model!");
+    const auto expr = std::make_shared<IOExpression>(IOExpression(res, model->get_result_index(res)));
+    expr->init_inputs(create_expression_inputs(linear_ir, expr));
+    expr->init_outputs({});
+    return expr;
+}
+
+ExpressionPtr LinearIR::ExpressionFactory::create(const std::shared_ptr<ov::Node>& n, const LinearIR& linear_ir,
+                                                  const std::shared_ptr<ov::Model>& model) {
+    OPENVINO_ASSERT(!ov::is_type<op::LoopBase>(n), "Default expression builder doesn't support LoopBegin and LoopEnd");
+    // Note: ctor of shared_ptr isn't friend class for Expression
+    const auto expr = std::make_shared<Expression>(Expression(n));
+    expr->init_inputs(create_expression_inputs(linear_ir, expr));
+    expr->init_outputs(create_expression_outputs(linear_ir, expr));
+    return expr;
+}
+
+ExpressionPtr LinearIR::ExpressionFactory::create(const std::shared_ptr<op::LoopBegin>& n, const LinearIR& linear_ir,
+                                                  const std::vector<TensorPtr>& inputs) {
+    OPENVINO_ASSERT(inputs.empty(), "LoopBegin cannot have inputs");
+    const auto expr = std::make_shared<Expression>(Expression(n));
+    validate_inputs(expr, inputs);
+    expr->init_inputs({});
+    expr->init_outputs(create_expression_outputs(linear_ir, expr));
+    return expr;
+}
+
+ExpressionPtr LinearIR::ExpressionFactory::create(const std::shared_ptr<op::LoopEnd>& n, const LinearIR& linear_ir,
+                                                  const std::vector<TensorPtr>& inputs) {
+    const auto expr = std::make_shared<Expression>(Expression(n));
     validate_inputs(expr, inputs);
     expr->init_inputs(inputs);
-    expr->init_outputs(create_expression_outputs(expr));
+    expr->init_outputs({});
     return expr;
 }
 
-ExpressionPtr LinearIR::ExpressionFactory::build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                                                 const std::vector<TensorPtr>& inputs, const std::vector<TensorPtr>& outputs) {
-    const auto expr = create(n, model);
+ExpressionPtr LinearIR::ExpressionFactory::create(const std::shared_ptr<ov::Node>& n, const LinearIR& linear_ir,
+                     const std::vector<TensorPtr>& inputs) {
+    OPENVINO_ASSERT(!ov::is_type<ngraph::op::v0::Parameter>(n) &&
+                    !ov::is_type<ngraph::op::v0::Result>(n),
+                    "Expression builder with inputs doesn't support Result and Parameter");
+    const auto expr = std::make_shared<Expression>(Expression(n));
+    validate_inputs(expr, inputs);
+    expr->init_inputs(inputs);
+    expr->init_outputs(create_expression_outputs(linear_ir, expr));
+    return expr;
+}
+
+ExpressionPtr LinearIR::ExpressionFactory::create(const std::shared_ptr<ov::Node>& n, const LinearIR& linear_ir,
+                                                  const std::vector<TensorPtr>& inputs, const std::vector<TensorPtr>& outputs) {
+    OPENVINO_ASSERT(!ov::is_type<ngraph::op::v0::Parameter>(n) &&
+                    !ov::is_type<ngraph::op::v0::Result>(n) &&
+                    !ov::is_type<op::LoopBase>(n),
+                            "Expression builder with inputs and outputs doesn't support service Nodes: Parameter, Result and LoopBegin, LoopEnd");
+    const auto expr = std::make_shared<Expression>(Expression(n));
     validate_inputs(expr, inputs);
     expr->init_inputs(inputs);
     expr->init_outputs(outputs);
     return expr;
 }
-
-ExpressionPtr LinearIR::ParameterExpressionFactory::create(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) {
-    // Note: ctor of shared_ptr isn't friend class for Expression -> we cannot use directly make_shared<Expression>(args)
-    if (const auto& par = as_type_ptr<opset1::Parameter>(n)) {
-        OPENVINO_ASSERT(model != nullptr, "To create IOExpression from Parameter there must be inited model!");
-        return std::make_shared<IOExpression>(IOExpression(par, model->get_parameter_index(par)));
-    }
-    OPENVINO_THROW("ParameterExpressionFactory support only Parameter node");
-}
-
-ExpressionPtr LinearIR::ParameterExpressionFactory::build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) {
-    const auto expr = create(n, model);
-    expr->init_inputs({});
-    expr->init_outputs(create_expression_outputs(expr));
-    return expr;
-}
-
-ExpressionPtr LinearIR::ResultExpressionFactory::create(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) {
-    // Note: ctor of shared_ptr isn't friend class for Expression -> we cannot use directly make_shared<Expression>(args)
-    if (const auto& res = as_type_ptr<opset1::Result>(n)) {
-        OPENVINO_ASSERT(model != nullptr, "To create IOExpression from Result there must be inited model!");
-        return std::make_shared<IOExpression>(IOExpression(res, model->get_result_index(res)));
-    }
-    OPENVINO_THROW("ResultExpressionFactory support only Result node");
-}
-
-ExpressionPtr LinearIR::ResultExpressionFactory::build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) {
-    const auto expr = create(n, model);
-    expr->init_inputs(create_expression_inputs(expr));
-    expr->init_outputs({});
-    return expr;
-}
-
-ExpressionPtr LinearIR::LoopBeginExpressionFactory::create(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) {
-    // Note: ctor of shared_ptr isn't friend class for Expression -> we cannot use directly make_shared<Expression>(args)
-    if (const auto& op = as_type_ptr<op::LoopBegin>(n)) {
-        return std::make_shared<Expression>(Expression(op));
-    }
-    OPENVINO_THROW("LoopBeginExpressionFactory support only LoopBegin node");
-}
-
-ExpressionPtr LinearIR::LoopBeginExpressionFactory::build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                                                          const std::vector<TensorPtr>& inputs) {
-    OPENVINO_ASSERT(inputs.empty(), "LoopBegin cannot have inputs");
-    const auto expr = create(n, model);
-    expr->init_inputs(inputs);
-    expr->init_outputs(create_expression_outputs(expr));
-    return expr;
-}
-
-ExpressionPtr LinearIR::LoopEndExpressionFactory::create(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) {
-    // Note: ctor of shared_ptr isn't friend class for Expression -> we cannot use directly make_shared<Expression>(args)
-    if (const auto& op = as_type_ptr<op::LoopEnd>(n)) {
-        return std::make_shared<Expression>(Expression(op));
-    }
-    OPENVINO_THROW("LoopEndExpressionFactory support only LoopEnd node");
-}
-
-ExpressionPtr LinearIR::LoopEndExpressionFactory::build(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model,
-                                                        const std::vector<TensorPtr>& inputs) {
-    const auto expr = create(n, model);
-    validate_inputs(expr, inputs);
-    expr->init_inputs(inputs);
-    expr->init_outputs({});
-    return expr;
-}
-
-void LinearIR::LoopEndExpressionFactory::validate_inputs(const ExpressionPtr& expr, const std::vector<TensorPtr>& inputs) {
-    for (size_t i = 0; i < inputs.size(); ++i) {
-        const auto& input = inputs[i];
-        const auto consumers = input->get_consumers();
-        const auto found = std::find_if(consumers.begin(), consumers.end(),
-                                        [&](const ExpressionPort& desc) {
-                                            return desc.get_index() == i && desc.get_expr_ptr()== expr;
-                                        });
-        if (found == consumers.end()) {
-            // LoopEnd doesn't have input ports. So consumer for the Tensor should have the same Port Descriptor like source
-            const auto& port_desc = input->get_source().get_port_descriptor();
-            const auto tensor_desc = ExpressionPort(expr, ExpressionPort::Type::Input, i, port_desc);
-            input->add_consumer(tensor_desc);
-        }
-    }
-}
-
 
 }// namespace lowered
 }// namespace snippets

@@ -51,20 +51,15 @@ LinearIR::LinearIR(const std::shared_ptr<ov::Model>& model, Config config)
 }
 
 ExpressionPtr LinearIR::create_expression(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) {
-    const auto factory = BaseExpressionFactory::get(*this, n);
-    return factory->build(n, model);
+    return ExpressionFactory::build(n, *this, model);
 }
 
-ExpressionPtr LinearIR::create_expression(const std::shared_ptr<Node>& n, const std::vector<TensorPtr> inputs,
-                                          const std::shared_ptr<ov::Model>& model) {
-    const auto factory = BaseExpressionFactory::get(*this, n);
-    return factory->build(n, model, inputs);
+ExpressionPtr LinearIR::create_expression(const std::shared_ptr<Node>& n, const std::vector<TensorPtr> inputs) {
+    return ExpressionFactory::build(n, *this, inputs);
 }
 
-ExpressionPtr LinearIR::create_expression(const std::shared_ptr<Node>& n, const std::vector<TensorPtr> inputs, const std::vector<TensorPtr> outputs,
-                                          const std::shared_ptr<ov::Model>& model) {
-    const auto factory = BaseExpressionFactory::get(*this, n);
-    return factory->build(n, model, inputs, outputs);
+ExpressionPtr LinearIR::create_expression(const std::shared_ptr<Node>& n, const std::vector<TensorPtr> inputs, const std::vector<TensorPtr> outputs) {
+    return ExpressionFactory::build(n, *this, inputs, outputs);
 }
 
 ov::NodeVector LinearIR::get_ordered_ops(const std::shared_ptr<ov::Model>& m) {
