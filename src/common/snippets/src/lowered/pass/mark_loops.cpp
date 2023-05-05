@@ -64,7 +64,7 @@ bool MarkLoops::run(LinearIR& linear_ir) {
             for (size_t i = 0; i < prev_expr->get_output_count(); ++i) {
                 const auto& loop_td = prev_expr->output(i);
                 const auto consumers = loop_td->get_consumers();
-                const auto found = std::find_if(consumers.begin(), consumers.end(), [&loop_end_pos](const TensorDescriptor& consumer) {
+                const auto found = std::find_if(consumers.begin(), consumers.end(), [&loop_end_pos](const ExpressionPort& consumer) {
                     return consumer.get_expr_ptr() == *loop_end_pos;
                 });
                 if (found != consumers.end()) {

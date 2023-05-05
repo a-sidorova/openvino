@@ -10,6 +10,7 @@
 #include "snippets/emitter.hpp"
 #include "snippets/target_machine.hpp"
 #include "snippets/lowered/tensor.hpp"
+#include "snippets/lowered/expression_port.hpp"
 
 
 namespace ngraph {
@@ -47,8 +48,8 @@ public:
 
     void init_emitter(const std::shared_ptr<const TargetMachine>& target);
 
-    TensorDescriptor input_port(size_t i);
-    TensorDescriptor output_port(size_t i);
+    ExpressionPort input_port(size_t i);
+    ExpressionPort output_port(size_t i);
 
 protected:
     // Note: The constructor and tensor initialization are private since an expression can be created only by Linear IR.

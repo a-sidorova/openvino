@@ -23,8 +23,8 @@ public:
     public:
         LoopInfo() = default;
         LoopInfo(size_t work_amount, size_t increment,
-                 const std::vector<TensorDescriptor>& entries,
-                 const std::vector<TensorDescriptor>& exits)
+                 const std::vector<ExpressionPort>& entries,
+                 const std::vector<ExpressionPort>& exits)
             : work_amount(work_amount), increment(increment), entry_exprs(entries), exit_exprs(exits) {}
         size_t work_amount = 0;
         size_t increment = 0;
@@ -32,8 +32,8 @@ public:
         //     - The position before first entry expr is Loop Begin position
         //     - The position after last exit expr is Loop End position
         // Note: Scalars aren't entry expressions but can be before first entry expr in Linear IR
-        std::vector<TensorDescriptor> entry_exprs = {};
-        std::vector<TensorDescriptor> exit_exprs = {};
+        std::vector<ExpressionPort> entry_exprs = {};
+        std::vector<ExpressionPort> exit_exprs = {};
     };
     using LoopInfoPtr = std::shared_ptr<LoopInfo>;
 
@@ -51,16 +51,16 @@ public:
                    size_t idx,
                    size_t work_amount,
                    size_t work_amount_increment,
-                   const std::vector<TensorDescriptor>& entries,
-                   const std::vector<TensorDescriptor>& exits);
+                   const std::vector<ExpressionPort>& entries,
+                   const std::vector<ExpressionPort>& exits);
 
     void get_loop_bounds(const LinearIR& linear_ir,
                          size_t loop_id,
                          LinearIR::constExprIt& loop_begin_pos,
                          LinearIR::constExprIt& loop_end_pos) const;
     static void get_loop_bounds(const LinearIR& linear_ir,
-                                const std::vector<TensorDescriptor>& entries,
-                                const std::vector<TensorDescriptor>& exits,
+                                const std::vector<ExpressionPort>& entries,
+                                const std::vector<ExpressionPort>& exits,
                                 LinearIR::constExprIt& loop_begin_pos,
                                 LinearIR::constExprIt& loop_end_pos,
                                 size_t loop_id = Expression::LOOP_NULL_ID);
@@ -71,8 +71,8 @@ private:
                               size_t loop_id, size_t idx);
     static void get_io_loop_ports(LinearIR::constExprIt loop_begin_pos,
                                   LinearIR::constExprIt loop_end_pos,
-                                  std::vector<TensorDescriptor>& entries,
-                                  std::vector<TensorDescriptor>& exits);
+                                  std::vector<ExpressionPort>& entries,
+                                  std::vector<ExpressionPort>& exits);
 
     std::map<size_t, LoopInfoPtr> m_map = {};
     size_t next_id = 0;

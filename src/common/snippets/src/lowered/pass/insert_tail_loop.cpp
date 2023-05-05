@@ -102,7 +102,7 @@ bool InsertTailLoop::run(LinearIR& linear_ir) {
         auto is_buffer_output = [&linear_ir](const TensorPtr& output) {
             const auto child_exprs_inputs = output->get_consumers();
             return std::any_of(child_exprs_inputs.begin(), child_exprs_inputs.end(),
-                               [](const TensorDescriptor& lp) {return ov::is_type<op::Buffer>(lp.get_expr_ptr()->get_node());});
+                               [](const ExpressionPort& lp) {return ov::is_type<op::Buffer>(lp.get_expr_ptr()->get_node());});
         };
 
         const auto loop_end_expr = linear_ir.get_expr_by_node(loop_end);

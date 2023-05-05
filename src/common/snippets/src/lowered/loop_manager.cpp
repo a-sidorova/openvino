@@ -48,8 +48,8 @@ void LinearIR::LoopManager::get_loop_bounds(const LinearIR &linear_ir,
 }
 
 void LinearIR::LoopManager::get_loop_bounds(const LinearIR &linear_ir,
-                                            const std::vector<TensorDescriptor> &entries,
-                                            const std::vector<TensorDescriptor> &exits,
+                                            const std::vector<ExpressionPort> &entries,
+                                            const std::vector<ExpressionPort> &exits,
                                             LinearIR::constExprIt &loop_begin_pos,
                                             LinearIR::constExprIt &loop_end_pos,
                                             size_t loop_id) {
@@ -75,8 +75,8 @@ void LinearIR::LoopManager::get_loop_bounds(const LinearIR &linear_ir,
 
 void LinearIR::LoopManager::get_io_loop_ports(LinearIR::constExprIt loop_begin_pos,
                                               LinearIR::constExprIt loop_end_pos,
-                                              std::vector<TensorDescriptor> &entries,
-                                              std::vector<TensorDescriptor> &exits) {
+                                              std::vector<ExpressionPort> &entries,
+                                              std::vector<ExpressionPort> &exits) {
     entries.clear();
     exits.clear();
     for (auto expr_it = loop_begin_pos; expr_it != loop_end_pos; ++expr_it) {
@@ -110,7 +110,7 @@ void LinearIR::LoopManager::get_io_loop_ports(LinearIR::constExprIt loop_begin_p
 void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
                                       LinearIR::constExprIt loop_end_pos,
                                       size_t loop_depth, size_t vector_size) {
-    std::vector<TensorDescriptor> loop_entry_points, loop_exit_points;
+    std::vector<ExpressionPort> loop_entry_points, loop_exit_points;
     LoopManager::get_io_loop_ports(loop_begin_pos, loop_end_pos, loop_entry_points, loop_exit_points);
 
     auto broadcast = [](std::vector<size_t> &lhs, const std::vector<size_t> &rhs, size_t index) -> void {
@@ -181,8 +181,8 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
                                       size_t idx,
                                       size_t work_amount,
                                       size_t work_amount_increment,
-                                      const std::vector<TensorDescriptor> &entries,
-                                      const std::vector<TensorDescriptor> &exits) {
+                                      const std::vector<ExpressionPort> &entries,
+                                      const std::vector<ExpressionPort> &exits) {
     const auto loop_info = std::make_shared<LoopManager::LoopInfo>(work_amount, work_amount_increment, entries, exits);
     const auto loop_id = this->add_loop_info(loop_info);
     exprs_marking(loop_begin_pos, loop_end_pos, loop_id, idx);

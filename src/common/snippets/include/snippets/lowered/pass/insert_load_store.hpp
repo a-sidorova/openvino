@@ -30,9 +30,9 @@ private:
     bool insert_load(LinearIR& linear_ir, const LinearIR::constExprIt& data_expr_it);
     bool insert_store(LinearIR& linear_ir, const LinearIR::constExprIt& data_expr_it);
     void update_loops(const LinearIR::LoopManagerPtr& loop_manager, const std::vector<size_t>& loop_ids,
-                      const TensorDescriptor& actual_port, const std::vector<TensorDescriptor>& target_ports, bool is_entry = true);
+                      const ExpressionPort& actual_port, const std::vector<ExpressionPort>& target_ports, bool is_entry = true);
     void update_loop(const LinearIR::LoopManager::LoopInfoPtr& loop_info,
-                     const TensorDescriptor& actual_port, const std::vector<TensorDescriptor>& target_ports, bool is_entry = true);
+                     const ExpressionPort& actual_port, const std::vector<ExpressionPort>& target_ports, bool is_entry = true);
     std::vector<size_t> get_loops_for_update(const std::vector<size_t>& loop_ids, size_t loop_id);
 
     size_t m_vector_size;

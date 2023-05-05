@@ -180,7 +180,7 @@ ExpressionPtr LinearIR::get_expr_by_node(const std::shared_ptr<Node>& n) const {
     return found->second;
 }
 
-void LinearIR::replace_input(const std::vector<TensorDescriptor>& consumers, const TensorPtr& to) {
+void LinearIR::replace_input(const std::vector<ExpressionPort>& consumers, const TensorPtr& to) {
     for (const auto& consumer_input : consumers) {
         replace_input(consumer_input, to);
     }
@@ -190,11 +190,11 @@ void LinearIR::replace_input(const ExpressionPtr& expr, size_t port, const Tenso
     replace_input(expr->input_port(port), to);
 }
 
-void LinearIR::replace_input(const TensorDescriptor& expr_port, const TensorPtr& to) {
+void LinearIR::replace_input(const ExpressionPort& expr_port, const TensorPtr& to) {
     const auto port = expr_port.get_index();
     const auto expr = expr_port.get_expr_ptr();
 
-    OPENVINO_ASSERT(expr_port.get_type() == TensorDescriptor::Type::Input, "Failed to replace: target input port must have Input type");
+    OPENVINO_ASSERT(expr_port.get_type() == ExpressionPort::Type::Input, "Failed to replace: target input port must have Input type");
     OPENVINO_ASSERT(expr_port.get_index() < expr->get_input_count(), "Failed to replace: target input port must be less than input count!");
 
     const auto& from = expr->input(port);
@@ -212,11 +212,11 @@ void LinearIR::replace_output(const ExpressionPtr& expr, size_t port, const Tens
     replace_output(expr->output_port(port), to);
 }
 
-void LinearIR::replace_output(const TensorDescriptor& expr_port, const TensorPtr& to) {
+void LinearIR::replace_output(const ExpressionPort& expr_port, const TensorPtr& to) {
     const auto port = expr_port.get_index();
     const auto expr = expr_port.get_expr_ptr();
 
-    OPENVINO_ASSERT(expr_port.get_type() == TensorDescriptor::Type::Output, "Failed to replace: target output port must have Output type");
+    OPENVINO_ASSERT(expr_port.get_type() == ExpressionPort::Type::Output, "Failed to replace: target output port must have Output type");
     OPENVINO_ASSERT(port < expr->get_output_count(), "Failed to replace: target output port must be less than output count!");
     const auto to_source_td = to->get_source();
     OPENVINO_ASSERT(to_source_td.get_expr_ptr() == expr && to_source_td.get_index() == port,

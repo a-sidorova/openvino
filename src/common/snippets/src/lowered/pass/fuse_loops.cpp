@@ -29,16 +29,16 @@ bool FuseLoops::can_be_fused(const LoopInfoPtr& loop_current, const LoopInfoPtr&
     return supported_work_amount && supported_increment;
 }
 
-void FuseLoops::fuse_points(std::vector<TensorDescriptor>& exit_points, std::vector<TensorDescriptor>& entry_points,
+void FuseLoops::fuse_points(std::vector<ExpressionPort>& exit_points, std::vector<ExpressionPort>& entry_points,
                             LinearIR::constExprIt loop_begin_pos, LinearIR::constExprIt loop_end_pos) {
-    std::vector<TensorDescriptor> new_exit_points;
+    std::vector<ExpressionPort> new_exit_points;
     for (const auto& exit_point : exit_points) {
         const auto expr = exit_point.get_expr_ptr();
         const auto port = exit_point.get_index();
         const auto output_td = expr->output(port);
         const auto consumers_inputs = output_td->get_consumers();
 
-        std::vector<TensorDescriptor> mapped_entry_points;
+        std::vector<ExpressionPort> mapped_entry_points;
         std::vector<ExpressionPtr> outside_consumers;
         for (const auto& consumer_input : consumers_inputs) {
             const auto consumer = consumer_input.get_expr_ptr();
@@ -73,7 +73,7 @@ void FuseLoops::fuse_points(std::vector<TensorDescriptor>& exit_points, std::vec
 }
 
 bool FuseLoops::fuse_upper_into_current(LinearIR& linear_ir, const LinearIR::LoopManagerPtr& loop_manager,
-                                        const TensorDescriptor& current_entry_point, const TensorDescriptor& target_exit_point,
+                                        const ExpressionPort& current_entry_point, const ExpressionPort& target_exit_point,
                                         size_t current_loop_id, size_t target_loop_id, size_t dim_idx,
                                         LinearIR::constExprIt& current_loop_begin_pos, LinearIR::constExprIt& current_loop_end_pos) {
     const auto& loop_current = loop_manager->get_loop_info(current_loop_id);
@@ -135,9 +135,9 @@ bool FuseLoops::fuse_upper_into_current(LinearIR& linear_ir, const LinearIR::Loo
     // Update work_amount for Loop (increment is constant because increments must be the identical for fusion):
     loop_current->work_amount = std::max(loop_current->work_amount, loop_target->work_amount);
 
-    std::vector<TensorDescriptor> new_entries = target_entry_points;
+    std::vector<ExpressionPort> new_entries = target_entry_points;
     new_entries.insert(new_entries.end(), current_entry_points.begin(), current_entry_points.end());
-    std::vector<TensorDescriptor> new_exits = target_exit_points;
+    std::vector<ExpressionPort> new_exits = target_exit_points;
     new_exits.insert(new_exits.end(), current_exit_points.begin(), current_exit_points.end());
 
     loop_current->entry_exprs = new_entries;
@@ -147,7 +147,7 @@ bool FuseLoops::fuse_upper_into_current(LinearIR& linear_ir, const LinearIR::Loo
 }
 
 bool FuseLoops::fuse_lower_into_current(LinearIR& linear_ir, const LinearIR::LoopManagerPtr& loop_manager,
-                                        const TensorDescriptor& current_exit_point, const TensorDescriptor& target_entry_point,
+                                        const ExpressionPort& current_exit_point, const ExpressionPort& target_entry_point,
                                         size_t current_loop_id, size_t target_loop_id, size_t dim_idx,
                                         LinearIR::constExprIt& current_loop_begin_pos, LinearIR::constExprIt& current_loop_end_pos) {
     const auto& loop_current = loop_manager->get_loop_info(current_loop_id);
@@ -205,9 +205,9 @@ bool FuseLoops::fuse_lower_into_current(LinearIR& linear_ir, const LinearIR::Loo
     // Update work_amount for Loop (increment is constant because increments must be the identical for fusion):
     loop_current->work_amount = std::max(loop_current->work_amount, loop_target->work_amount);
 
-    std::vector<TensorDescriptor>& new_entries = current_entry_points;
+    std::vector<ExpressionPort>& new_entries = current_entry_points;
     new_entries.insert(new_entries.end(), target_entry_points.begin(), target_entry_points.end());
-    std::vector<TensorDescriptor>& new_exits = current_exit_points;
+    std::vector<ExpressionPort>& new_exits = current_exit_points;
     new_exits.insert(new_exits.end(), target_exit_points.begin(), target_exit_points.end());
 
     loop_current->entry_exprs = new_entries;

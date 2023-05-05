@@ -69,19 +69,19 @@ void Expression::remove_loop_id(size_t id) {
     *it = Expression::LOOP_NULL_ID;
 }
 
-TensorDescriptor Expression::input_port(size_t i) {
+ExpressionPort Expression::input_port(size_t i) {
     OPENVINO_ASSERT(i < m_inputs.size(), "Failed to get input port: target input port must be less than input count!");
     const auto& input = m_inputs[i];
     const auto consumers = input->get_consumers();
     const auto found = std::find_if(consumers.begin(), consumers.end(),
-                                    [&](const TensorDescriptor& desc) {
+                                    [&](const ExpressionPort& desc) {
                                                 return desc.get_index() == i && desc.get_expr_ptr() == this->shared_from_this();
                                           });
-    OPENVINO_ASSERT(found != consumers.end(), "Input TensorDescriptor for Expression hasn't found in input Tensor!");
+    OPENVINO_ASSERT(found != consumers.end(), "Input ExpressionPort for Expression hasn't found in input Tensor!");
     return *found;
 }
 
-TensorDescriptor Expression::output_port(size_t i) {
+ExpressionPort Expression::output_port(size_t i) {
     OPENVINO_ASSERT(i < m_outputs.size(), "Failed to get output port: target output port must be less than output count!");
     return m_outputs[i]->get_source();
 }

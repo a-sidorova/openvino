@@ -16,9 +16,9 @@ namespace pass {
 
 namespace {
 void filter_ports(LinearIR& linear_ir,
-                  std::vector<TensorDescriptor>& loop_entries, std::vector<TensorDescriptor>& loop_exits) {
-    std::vector<TensorDescriptor> new_loop_entries;
-    std::vector<TensorDescriptor> new_loop_exits;
+                  std::vector<ExpressionPort>& loop_entries, std::vector<ExpressionPort>& loop_exits) {
+    std::vector<ExpressionPort> new_loop_entries;
+    std::vector<ExpressionPort> new_loop_exits;
     new_loop_entries.reserve(loop_entries.size());
     new_loop_exits.reserve(loop_exits.size());
 
@@ -63,8 +63,8 @@ int64_t get_dim_stride(const size_t dim, const std::vector<size_t>& shape) {
 
 InitLoops::InitLoops() : Transformation() {}
 
-std::vector<int64_t> InitLoops::init_ptr_increments(const std::vector<TensorDescriptor>& loop_inputs,
-                                                   const std::vector<TensorDescriptor>& loop_outputs,
+std::vector<int64_t> InitLoops::init_ptr_increments(const std::vector<ExpressionPort>& loop_inputs,
+                                                   const std::vector<ExpressionPort>& loop_outputs,
                                                    size_t dim_idx) const {
      std::vector<int64_t> ptr_increments;
     // Note: Need to find max relevant dim expr to account for broadcasting, collect relevant_dims as well
@@ -116,8 +116,8 @@ std::vector<int64_t> InitLoops::init_finalization_offsets(const std::vector<int6
     return finalization_offsets;
 }
 
-std::vector<int64_t> InitLoops::init_element_type_sizes(const std::vector<TensorDescriptor>& loop_inputs,
-                                                        const std::vector<TensorDescriptor>& loop_outputs) {
+std::vector<int64_t> InitLoops::init_element_type_sizes(const std::vector<ExpressionPort>& loop_inputs,
+                                                        const std::vector<ExpressionPort>& loop_outputs) {
     std::vector<int64_t> element_types;
     element_types.reserve(loop_inputs.size() + loop_outputs.size());
     for (const auto& in : loop_inputs) {

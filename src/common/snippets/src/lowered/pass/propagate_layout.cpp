@@ -52,7 +52,7 @@ bool PropagateLayout::run(LinearIR& linear_ir) {
             const auto consumer_inputs = target_td->get_consumers();
             // Note that here we consider only the first child (which is usually Store),
             // but often there is another child - LoopEnd
-            TensorDescriptor result_td;
+            ExpressionPort result_td;
             for (const auto& child_input : consumer_inputs) {
                 const auto child = child_input.get_expr_ptr();
                 if (ov::is_type<op::LoopEnd>(child->get_node())) {

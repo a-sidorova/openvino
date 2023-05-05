@@ -58,7 +58,7 @@ LinearIR::constExprIt InsertBuffers::insertion_position(const LinearIR& linear_i
 }
 
 void InsertBuffers::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPtr& loop_manager, size_t loop_id,
-                              const std::vector<TensorDescriptor>& loop_entries, const std::vector<TensorDescriptor>& loop_exits) {
+                              const std::vector<ExpressionPort>& loop_entries, const std::vector<ExpressionPort>& loop_exits) {
     for (const auto& entry_point : loop_entries) {
         const auto expr = entry_point.get_expr_ptr();
         const auto port = entry_point.get_index();
@@ -123,7 +123,7 @@ void InsertBuffers::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPt
         const auto current_loop_count = current_loops.size();
         const std::vector<TensorPtr> node_outs = {output_td};
 
-        std::vector<TensorDescriptor> potential_consumers;
+        std::vector<ExpressionPort> potential_consumers;
         std::set<ExpressionPtr> buffers;
         const auto current_loop_lvl = std::distance(current_loops.begin(), std::find(current_loops.begin(), current_loops.end(), loop_id));
         for (const auto& child_expr_input : child_exprs_inputs) {
@@ -223,7 +223,7 @@ bool InsertBuffers::run(LinearIR& linear_ir) {
 
         const auto input_ports = ma->get_memory_access_input_ports();
         const auto output_ports = ma->get_memory_access_output_ports();
-        std::vector<TensorDescriptor> loop_entries(input_ports.size()), loop_exits(output_ports.size());
+        std::vector<ExpressionPort> loop_entries(input_ports.size()), loop_exits(output_ports.size());
         // C++17: for (auto const& [loop_id, loop_info] : loop_data_map)
         for (const auto& p : input_ports) {
             loop_entries[p.first] = expr->input_port(p.first);

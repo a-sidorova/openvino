@@ -48,7 +48,7 @@ std::vector<TensorPtr> LinearIR::BaseExpressionFactory::create_expression_inputs
         const auto in_index = input.get_index();
         const auto& parent_expr = m_linear_ir.get_expr_by_node(input_source.get_node_shared_ptr());
         const auto& tensor = parent_expr->output(input_source.get_index());
-        const auto tensor_desc = TensorDescriptor(expr, TensorDescriptor::Type::Input, in_index, PortManager::get_port_descriptor_ptr(input));
+        const auto tensor_desc = ExpressionPort(expr, ExpressionPort::Type::Input, in_index, PortManager::get_port_descriptor_ptr(input));
         tensor->add_consumer(tensor_desc);
         inputs[in_index] = tensor;
     }
@@ -62,7 +62,7 @@ std::vector<TensorPtr> LinearIR::BaseExpressionFactory::create_expression_output
     std::vector<TensorPtr> outputs(node->get_output_size(), nullptr);
     for (const auto& output : node->outputs()) {
         const auto out_index = output.get_index();
-        const auto tensor_desc = TensorDescriptor(expr, TensorDescriptor::Type::Output, out_index, PortManager::get_port_descriptor_ptr(output));
+        const auto tensor_desc = ExpressionPort(expr, ExpressionPort::Type::Output, out_index, PortManager::get_port_descriptor_ptr(output));
         outputs[out_index] = std::make_shared<Tensor>(tensor_desc);
     }
     return outputs;
@@ -73,12 +73,12 @@ void LinearIR::BaseExpressionFactory::validate_inputs(const ExpressionPtr& expr,
         const auto& input = inputs[i];
         const auto consumers = input->get_consumers();
         const auto found = std::find_if(consumers.begin(), consumers.end(),
-                                        [&](const TensorDescriptor& desc) {
+                                        [&](const ExpressionPort& desc) {
                                             return desc.get_index() == i && desc.get_expr_ptr() == expr;
                                         });
         if (found == consumers.end()) {
             const auto port_desc = PortManager::get_port_descriptor_ptr(expr->get_node()->input(i));
-            const auto tensor_desc = TensorDescriptor(expr, TensorDescriptor::Type::Input, i, port_desc);
+            const auto tensor_desc = ExpressionPort(expr, ExpressionPort::Type::Input, i, port_desc);
             input->add_consumer(tensor_desc);
         }
     }
@@ -185,13 +185,13 @@ void LinearIR::LoopEndExpressionFactory::validate_inputs(const ExpressionPtr& ex
         const auto& input = inputs[i];
         const auto consumers = input->get_consumers();
         const auto found = std::find_if(consumers.begin(), consumers.end(),
-                                        [&](const TensorDescriptor& desc) {
+                                        [&](const ExpressionPort& desc) {
                                             return desc.get_index() == i && desc.get_expr_ptr()== expr;
                                         });
         if (found == consumers.end()) {
             // LoopEnd doesn't have input ports. So consumer for the Tensor should have the same Port Descriptor like source
             const auto& port_desc = input->get_source().get_port_descriptor();
-            const auto tensor_desc = TensorDescriptor(expr, TensorDescriptor::Type::Input, i, port_desc);
+            const auto tensor_desc = ExpressionPort(expr, ExpressionPort::Type::Input, i, port_desc);
             input->add_consumer(tensor_desc);
         }
     }

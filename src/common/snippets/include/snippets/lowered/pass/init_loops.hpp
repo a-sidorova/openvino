@@ -27,12 +27,12 @@ public:
 private:
     bool insertion(LinearIR& linear_ir, const LinearIR::LoopManager::LoopInfoPtr& loop_info,
                    size_t loop_id, size_t dim_idx, bool has_outer_loop);
-    std::vector<int64_t> init_ptr_increments(const std::vector<TensorDescriptor>& loop_inputs,
-                                             const std::vector<TensorDescriptor>& loop_outputs,
+    std::vector<int64_t> init_ptr_increments(const std::vector<ExpressionPort>& loop_inputs,
+                                             const std::vector<ExpressionPort>& loop_outputs,
                                              size_t dim_idx) const;
     std::vector<int64_t> init_finalization_offsets(const std::vector<int64_t>& finalization_offsets, size_t work_amount) const;
-    std::vector<int64_t> init_element_type_sizes(const std::vector<TensorDescriptor>& loop_inputs,
-                                                 const std::vector<TensorDescriptor>& loop_outputs);
+    std::vector<int64_t> init_element_type_sizes(const std::vector<ExpressionPort>& loop_inputs,
+                                                 const std::vector<ExpressionPort>& loop_outputs);
 };
 
 } // namespace pass

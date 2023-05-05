@@ -33,7 +33,7 @@ using LoopInfoPtr = LoopManager::LoopInfoPtr;
 InsertLoadStore::InsertLoadStore(size_t vector_size) : m_vector_size(vector_size) {}
 
 void InsertLoadStore::update_loops(const LinearIR::LoopManagerPtr& loop_manager, const std::vector<size_t>& loop_ids,
-                                   const TensorDescriptor& actual_port, const std::vector<TensorDescriptor>& target_ports, bool is_entry) {
+                                   const ExpressionPort& actual_port, const std::vector<ExpressionPort>& target_ports, bool is_entry) {
     for (auto loop_id : loop_ids) {
         if (loop_id != Expression::LOOP_NULL_ID)
             update_loop(loop_manager->get_loop_info(loop_id), actual_port, target_ports, is_entry);
@@ -41,7 +41,7 @@ void InsertLoadStore::update_loops(const LinearIR::LoopManagerPtr& loop_manager,
 }
 
 void InsertLoadStore::update_loop(const LinearIR::LoopManager::LoopInfoPtr& loop_info,
-                                  const TensorDescriptor& actual_port, const std::vector<TensorDescriptor>& target_ports, bool is_entry) {
+                                  const ExpressionPort& actual_port, const std::vector<ExpressionPort>& target_ports, bool is_entry) {
     auto& ports = is_entry ? loop_info->entry_exprs : loop_info->exit_exprs;
     auto port_it = std::find(ports.begin(), ports.end(), actual_port);
     if (port_it == ports.end())
@@ -126,13 +126,13 @@ bool InsertLoadStore::insert_store(LinearIR& linear_ir, const LinearIR::constExp
     // So we should verify on the possible future exit points
     const auto consumer_inputs = input_td->get_consumers();
     const auto should_be_saved = std::any_of(consumer_inputs.begin(), consumer_inputs.end(),
-                                [](const TensorDescriptor& input_port) {
+                                [](const ExpressionPort& input_port) {
                                     const auto& node = input_port.get_expr_ptr()->get_node();
                                     return ov::is_type<opset1::Result>(node) || ov::is_type<op::Buffer>(node);
                                 });
     const auto new_exit_point = store_expr->output_port(0);
-    const auto new_exit_points = should_be_saved ? std::vector<TensorDescriptor>{prev_exit_point, new_exit_point}
-                                                 : std::vector<TensorDescriptor>{new_exit_point};
+    const auto new_exit_points = should_be_saved ? std::vector<ExpressionPort>{prev_exit_point, new_exit_point}
+                                                 : std::vector<ExpressionPort>{new_exit_point};
     update_loops(loop_manager, loop_ids, prev_exit_point, new_exit_points, false);
     return true;
 }

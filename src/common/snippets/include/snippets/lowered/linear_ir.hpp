@@ -52,10 +52,10 @@ public:
 
     ExpressionPtr get_expr_by_node(const std::shared_ptr<Node>& n) const;
 
-    void replace_input(const std::vector<TensorDescriptor>& consumers, const TensorPtr& to);
-    void replace_input(const TensorDescriptor& expr_port, const TensorPtr& to);
+    void replace_input(const std::vector<ExpressionPort>& consumers, const TensorPtr& to);
+    void replace_input(const ExpressionPort& expr_port, const TensorPtr& to);
     void replace_input(const ExpressionPtr& expr, size_t port, const TensorPtr& to);
-    void replace_output(const TensorDescriptor& expr_port, const TensorPtr& to);
+    void replace_output(const ExpressionPort& expr_port, const TensorPtr& to);
     void replace_output(const ExpressionPtr& expr, size_t port, const TensorPtr& to);
 
     /**
