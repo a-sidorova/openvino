@@ -44,7 +44,6 @@ public:
     void set_loop_ids(const std::vector<size_t>& loops) { m_loop_ids = loops; }
     void set_loop_id(size_t id, size_t idx);
     void remove_loop_id(size_t id);
-    bool is_outside_loop() const { return m_is_outside_loop; }
 
     void init_emitter(const std::shared_ptr<const TargetMachine>& target);
 
@@ -69,7 +68,6 @@ protected:
     RegInfo m_reg_info{{}, {}};
     // The order Loops identifies: Outer ---> Inner
     std::vector<size_t> m_loop_ids;
-    bool m_is_outside_loop = false;
 };
 using ExpressionPtr = std::shared_ptr<Expression>;
 

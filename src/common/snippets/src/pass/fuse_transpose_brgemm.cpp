@@ -64,10 +64,9 @@ FuseTransposeBrgemm::FuseTransposeBrgemm() {
             const auto& brgemm_out = brgemm->output(0);
             const auto& transpose_out = m.get_match_value();
             const auto& const_order = ov::as_type_ptr<ov::op::v0::Constant>(transpose_out.get_node_shared_ptr()->get_input_node_shared_ptr(1));
-            ngraph::snippets::PortManager::set_port_descriptor_ptr(brgemm_out,
-                                                                   std::make_shared<PortDescriptor>(transpose_out.get_shape(),
-                                                                                                    std::vector<size_t>{},
-                                                                                                    const_order->cast_vector<size_t>()));
+            const auto& original_port = ngraph::snippets::PortManager::get_port_descriptor_ptr(brgemm_out);
+            original_port->set_tensor(transpose_out.get_shape());
+            original_port->set_layout(const_order->cast_vector<size_t>());
             for (const auto& in : transpose_out.get_target_inputs())
                 in.replace_source_output(brgemm->output(0));
         }
@@ -79,11 +78,10 @@ FuseTransposeBrgemm::FuseTransposeBrgemm() {
                 const auto& transpose = as_type_ptr<opset1::Transpose>(in_value.get_node_shared_ptr());
                 const auto& const_order = ov::as_type_ptr<ov::op::v0::Constant>(transpose->get_input_node_shared_ptr(1));
                 brgemm->set_argument(i, transpose->input_value(0));
-                ngraph::snippets::PortManager::set_port_descriptor_ptr(in,
-                                                                       std::make_shared<PortDescriptor>(transpose->get_input_shape(0),
-                                                                                                        std::vector<size_t>{},
-                                                                                                        const_order->cast_vector<size_t>()));
-                // At the moment we support fused Transpose only after Parameter -> we can update port descriptor for Paramarer as well.
+                const auto& original_port = ngraph::snippets::PortManager::get_port_descriptor_ptr(in);
+                original_port->set_tensor(transpose->get_input_shape(0));
+                original_port->set_layout(const_order->cast_vector<size_t>());
+                // At the moment we support fused Transpose only after Parameter -> we can update port descriptor for Parameter as well.
                 // Note: It's needed for BrgemmCPU
                 ngraph::snippets::PortManager::set_port_descriptor_ptr(transpose->input_value(0),
                                                                        std::make_shared<PortDescriptor>(transpose->get_input_shape(0),

@@ -131,19 +131,6 @@ ov::PartialShape get_port_planar_shape(const Output<Node>& out) {
     return utils::get_reordered_planar_shape(ov::Shape{td->get_tensor()}, td->get_layout());
 }
 
-bool get_outside_loop_value(const std::shared_ptr<Node>& node) {
-    auto& rt_info = node->get_rt_info();
-    const auto& found = rt_info.find("snippets::is_outside_loop");
-    if (found == rt_info.end()) {
-        return false;  // Default value: Expression should be executed inside
-    }
-    return found->second.as<bool>();
-}
-void set_outside_loop_value(const std::shared_ptr<Node>& node, bool is_outside) {
-    auto& rt_info = node->get_rt_info();
-    rt_info["snippets::is_outside_loop"] = is_outside;
-}
-
 } // namespace utils
 } // namespace snippets
 } // namespace ngraph

@@ -31,9 +31,6 @@ ov::Shape get_reordered_shape(const ov::Shape& shape, const std::vector<size_t>&
 std::vector<size_t> get_node_output_layout(const std::shared_ptr<Node>& node);
 std::vector<size_t> get_node_output_layout(const Node* node);
 
-bool get_outside_loop_value(const std::shared_ptr<Node>& node);
-void set_outside_loop_value(const std::shared_ptr<Node>& node, bool is_outside = true);
-
 inline auto normalize_rank(int32_t allocation_rank, const size_t shape_rank) -> int32_t {
     return allocation_rank < 0 ? allocation_rank + static_cast<int32_t>(shape_rank) + 1 : allocation_rank;
 }

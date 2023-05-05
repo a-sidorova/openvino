@@ -19,7 +19,7 @@ namespace pass {
 
 void MatMulToBrgemm::init_ports(const std::shared_ptr<op::Brgemm>& brgemm) const {
     auto get_subtensor = [](const ov::Shape& shape) {
-        return std::vector<size_t>{shape[shape.size() - 2], shape[shape.size() - 1]};
+        return std::vector<size_t>{ PortDescriptor::Scheduling::FULL_DIM, PortDescriptor::Scheduling::FULL_DIM };
     };
     for (const auto& input : brgemm->inputs()) {
         const auto tensor = input.get_shape();
@@ -52,8 +52,6 @@ MatMulToBrgemm::MatMulToBrgemm() {
         ngraph::copy_runtime_info(matmul, nodes);
         ngraph::replace_node(matmul, nodes.back());
         init_ports(brgemm);
-        // TODO: At the moment Brgemm is executed outside Loop. When Blocking is supported, remove it
-        utils::set_outside_loop_value(brgemm, true);
         return true;
     };
 

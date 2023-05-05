@@ -107,16 +107,6 @@ void LinearIR::LoopManager::get_io_loop_ports(LinearIR::constExprIt loop_begin_p
     }
 }
 
-void LinearIR::LoopManager::skipped_mark(LinearIR::constExprIt loop_begin_pos,
-                                         LinearIR::constExprIt loop_end_pos,
-                                         size_t loop_depth) {
-    const auto loop_ids = std::vector<size_t>(loop_depth, Expression::LOOP_NULL_ID);
-    for (auto& expr_it = loop_begin_pos; expr_it != loop_end_pos; ++expr_it) {
-        const auto expr = *expr_it;
-        expr->set_loop_ids(loop_ids);
-    }
-}
-
 void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
                                       LinearIR::constExprIt loop_end_pos,
                                       size_t loop_depth, size_t vector_size) {
@@ -138,6 +128,10 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
         *(lhs.rbegin() + index) = std::max(lhs_value, rhs_value);
     };
 
+    auto is_outside_loop = [](const std::vector<size_t>& subtensor) {
+        return std::all_of(subtensor.begin(), subtensor.end(), [](size_t lhs) { return lhs == PortDescriptor::Scheduling::FULL_DIM; });
+    };
+
     std::vector<size_t> loop_subtensor;
     std::vector<size_t> loop_tensor(loop_depth, 1);
     for (const auto& exit_point : loop_exit_points) {
@@ -147,16 +141,18 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
             subtensor.resize(loop_depth, 1);
             subtensor[subtensor.size() - 1] = vector_size;
         }
+
+        const size_t resizing_value = is_outside_loop(subtensor) ? PortDescriptor::Scheduling::FULL_DIM : 1;
         while (subtensor.size() < loop_depth)
-            subtensor.insert(subtensor.begin(), 1);
+            subtensor.insert(subtensor.begin(), resizing_value);
         if (loop_subtensor.empty())
             loop_subtensor = subtensor;
-        OPENVINO_ASSERT(loop_subtensor == subtensor, "Incorrect scheduling parameters for loop");
+
+        OPENVINO_ASSERT(std::equal(loop_subtensor.crbegin(), loop_subtensor.crbegin() + loop_depth, subtensor.crbegin()),
+                        "Incorrect scheduling parameters for loop");
 
         for (size_t dim_idx = 0; dim_idx < loop_depth; ++dim_idx) {
-            if (*(subtensor.rbegin() + dim_idx) == PortDescriptor::Scheduling::FULL_DIM) {
-                *(loop_tensor.rbegin() + dim_idx) = PortDescriptor::Scheduling::FULL_DIM;
-            } else {
+            if (*(subtensor.rbegin() + dim_idx) != PortDescriptor::Scheduling::FULL_DIM) {
                 broadcast(loop_tensor, tensor, dim_idx);
             }
         }

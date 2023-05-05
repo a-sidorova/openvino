@@ -43,9 +43,6 @@ public:
     size_t get_loop_count() const { return m_map.size(); }
     const std::map<size_t, LoopInfoPtr>& get_map() const;
 
-    static void skipped_mark(LinearIR::constExprIt loop_begin_pos,
-                             LinearIR::constExprIt loop_end_pos,
-                             size_t loop_depth);
     void mark_loop(LinearIR::constExprIt loop_begin_pos,
                    LinearIR::constExprIt loop_end_pos,
                    size_t loop_depth, size_t vector_size);

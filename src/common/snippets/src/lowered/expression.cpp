@@ -17,7 +17,7 @@ namespace lowered {
 size_t Expression::LOOP_NULL_ID = SIZE_MAX;
 
 Expression::Expression(const std::shared_ptr<Node>& n)
-    : m_source_node{n}, m_emitter{nullptr}, m_inputs{}, m_outputs{}, m_reg_info{{}, {}}, m_is_outside_loop(utils::get_outside_loop_value(n)) {}
+    : m_source_node{n}, m_emitter{nullptr}, m_inputs{}, m_outputs{}, m_reg_info{{}, {}} {}
 
 const TensorPtr& Expression::input(size_t i) const {
     OPENVINO_ASSERT(i < m_inputs.size(), "Failed to get input: target input port must be less than input count!");

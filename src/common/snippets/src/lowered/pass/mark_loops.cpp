@@ -41,11 +41,7 @@ bool MarkLoops::run(LinearIR& linear_ir) {
         auto loop_begin_pos = expr_it;
         auto loop_end_pos = loop_begin_pos;
 
-        const bool loop_is_outside = expr->is_outside_loop();
-        const bool loop_is_inside = !loop_is_outside;
-
-        bool current_is_outside = loop_is_outside;
-        bool current_is_inside = loop_is_inside;
+        bool collapse = true;
         do {
             const auto& prev_expr = *loop_end_pos;
             loop_end_pos++;
@@ -79,17 +75,10 @@ bool MarkLoops::run(LinearIR& linear_ir) {
                    is_connected = true;
                 }
             }
-            if (is_conflicted || !is_connected)
-                break;
+            collapse = is_connected && !is_conflicted;
+        } while (collapse);
 
-            current_is_outside = current_expr->is_outside_loop();
-        } while (current_is_inside == loop_is_inside && current_is_outside == loop_is_outside);
-
-        if (loop_is_inside)
-            loop_manager->mark_loop(loop_begin_pos, loop_end_pos, loop_depth, m_vector_size);
-        else if (loop_is_outside)
-            loop_manager->skipped_mark(loop_begin_pos, loop_end_pos, loop_depth);
-
+        loop_manager->mark_loop(loop_begin_pos, loop_end_pos, loop_depth, m_vector_size);
         expr_it = std::prev(loop_end_pos);
     }
 
