@@ -36,23 +36,8 @@ void PortDescriptor::validate_arguments() {
     }
 }
 
-PortDescriptor PortDescriptor::deserialize(const std::string& serialized_info) {
-    std::stringstream sinfo(serialized_info);
-    auto read_values = [](std::stringstream& ss){
-        size_t num = 0;
-        ss >> num;
-        std::vector<size_t> res;
-        for (size_t i = 0; i < num; i++) {
-            size_t val;
-            ss >> val;
-            res.push_back(val);
-        }
-        return res;
-    };
-    const auto& tensor_shape = read_values(sinfo);
-    const auto& subtensor_shape = read_values(sinfo);
-    const auto& layout = read_values(sinfo);
-    return {tensor_shape, subtensor_shape, layout};
+PortDescriptorPtr PortDescriptor::clone() const {
+    return std::make_shared<PortDescriptor>(m_tensor_shape, m_subtensor_shape, m_layout);
 }
 
 std::string  PortDescriptor::serialize() const {

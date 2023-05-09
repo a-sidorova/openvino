@@ -25,7 +25,7 @@ bool ResetBuffers::reuse_buffer_increments(const LinearIR& linear_ir, const Expr
     std::set<size_t> resetting_buffers;
     std::set<size_t> buffers_ids;
     for (size_t i = 0; i < input_count; ++i) {
-        const auto parent_output = loop_tds[i]->get_source().get_expr();
+        const auto& parent_output = loop_tds[i]->get_source().get_expr();
         if (const auto buffer = ov::as_type_ptr<op::Buffer>(parent_output->get_node())) {
             // If Buffer is missed in set, Just save - it's first meeting
             if (buffers_ids.count(buffer->get_id()) == 0) {

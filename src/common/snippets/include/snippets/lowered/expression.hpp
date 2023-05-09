@@ -48,6 +48,7 @@ public:
     void set_loop_id(size_t id, size_t idx);
     void remove_loop_id(size_t id);
 
+    void validate() const;
     void init_emitter(const std::shared_ptr<const TargetMachine>& target);
 
     ExpressionPort get_input_port(size_t i);
@@ -57,10 +58,7 @@ protected:
     // Note: The constructor and tensor initialization are private since an expression can be created only by Linear IR.
     //       These methods must be used only by Linear IR builder of expressions!
     explicit Expression(const std::shared_ptr<Node>& n);
-    void init_inputs(const std::vector<TensorPtr>& inputs) { m_input_tensors = inputs; }
-    void init_outputs(const std::vector<TensorPtr>& outputs) { m_output_tensors = outputs; }
 
-    // Note: These methods don't control availability of the current expression in this Tensor (as Consumer or Source)
     void replace_input(size_t port, TensorPtr to);
 
     std::shared_ptr<Node> m_source_node{nullptr};

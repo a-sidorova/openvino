@@ -33,20 +33,18 @@ public:
     LinearIR() = default;
     explicit LinearIR(const std::shared_ptr<ov::Model>& m, Config config = {});
 
-    ExpressionPtr create_expression(const std::shared_ptr<Node>& n, const std::vector<TensorPtr> inputs);
+    ExpressionPtr create_expression(const std::shared_ptr<Node>& n, const std::vector<TensorPtr>& inputs);
 
-    LinearIR deep_copy() const;
     static LinearIR::container deep_copy_range(LinearIR::container::const_iterator begin, LinearIR::container::const_iterator end);
 
     const container& get_ops() const {return m_lowered_ops; }
     const io_container& get_IO_ops() const {return m_io_lowered_ops; }
     Config get_config() {return m_config; }
 
-    ExpressionPtr get_expr_by_node(const std::shared_ptr<Node>& n) const;
+    const ExpressionPtr& get_expr_by_node(const std::shared_ptr<Node>& n) const;
 
-    void replace_input(std::set<ExpressionPort> consumers, const TensorPtr& to);
+    void replace_input(const std::set<ExpressionPort>& consumers, const TensorPtr& to);
     void replace_input(const ExpressionPort& expr_port, const TensorPtr& to);
-    void replace_input(const ExpressionPtr& expr, size_t port, const TensorPtr& to);
 
     /**
     * @brief Move an expression from the position "from" to the position immediately before "to".
@@ -87,20 +85,17 @@ public:
     void init_emitters(const std::shared_ptr<TargetMachine>& target);
     void serialize(const std::string& xml, const std::string& bin);
 
-    static ov::NodeVector get_ordered_ops(const std::shared_ptr<ov::Model>& model);
-
     class LoopManager;
     using LoopManagerPtr = std::shared_ptr<LoopManager>;
 
     const LoopManagerPtr& get_loop_manager() const { return m_loop_manager; }
 
 private:
+    static ov::NodeVector get_ordered_ops(const std::shared_ptr<ov::Model>& model);
     // Default ctor - can be called only from Linear IR initialization as default way
     ExpressionPtr create_expression(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model = nullptr);
 
-    void register_expression(const ExpressionPtr& expr);
-    // Like register_expression, but doesn't allow Parameter or Result registration. You can do it only through ctor
-    void register_regular_expression(const ExpressionPtr& expr);
+    void register_expression(const ExpressionPtr& expr, bool io_allowed = false);
     void unregister_expression(const ExpressionPtr& expr);
 
     container m_lowered_ops{};

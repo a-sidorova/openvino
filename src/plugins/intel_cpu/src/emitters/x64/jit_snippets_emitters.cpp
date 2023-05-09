@@ -139,7 +139,7 @@ KernelEmitter::KernelEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl:
                 IE_THROW() << "Kernel detected unsupported io_type";
             }
         }
-        io_shapes.push_back(td->get_tensor());
+        io_shapes.push_back(td->get_shape());
         io_data_layouts.push_back(td->get_layout());
         io_data_sizes.push_back(etype.size());
     }

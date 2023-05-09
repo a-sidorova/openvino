@@ -20,8 +20,7 @@ namespace lowered {
 
 LinearIR::LinearIR(const std::shared_ptr<ov::Model>& model, Config config)
         : m_io_lowered_ops{}, m_config{std::move(config)}, m_loop_manager(std::make_shared<LoopManager>()) {
-    constExprIt scalar_pos = m_lowered_ops.begin();
-    ExpressionPtr last_param = nullptr;
+    constExprIt last_param = m_lowered_ops.end();
     for (const auto& n : get_ordered_ops(model)) {
         constExprIt insertion_pos = m_lowered_ops.end();
         const auto expr = create_expression(n, model);
@@ -30,23 +29,17 @@ LinearIR::LinearIR(const std::shared_ptr<ov::Model>& model, Config config)
         // After these passes we must call pass MoveScalarToConsumer() to have a correct accuracy.
         // For more details, please see the pass description
         if (const auto& scalar = as_type_ptr<op::Scalar>(n)) {
-            if (scalar_pos == m_lowered_ops.end()) {
-                OPENVINO_ASSERT(last_param, "Scalars must be executed after Parameters");
-                scalar_pos = std::find(m_lowered_ops.begin(), m_lowered_ops.end(), last_param);
-            }
-            insertion_pos = std::next(scalar_pos);
+            insertion_pos = std::next(last_param);
         }
+
+        register_expression(expr, true);
+        const auto& it = m_lowered_ops.insert(insertion_pos, expr);
 
         if (const auto io_expr = std::dynamic_pointer_cast<IOExpression>(expr)) {
-            register_expression(expr);
             m_io_lowered_ops.push_back(io_expr);
             if (ov::is_type<ov::op::v0::Parameter>(n))
-                last_param = expr;
-        } else {
-            register_regular_expression(expr);
+                last_param = it;
         }
-
-        m_lowered_ops.insert(insertion_pos, expr);
     }
 }
 
@@ -54,8 +47,8 @@ ExpressionPtr LinearIR::create_expression(const std::shared_ptr<Node>& n, const 
     return ExpressionFactory::build(n, *this, model);
 }
 
-ExpressionPtr LinearIR::create_expression(const std::shared_ptr<Node>& n, const std::vector<TensorPtr> inputs) {
-    return ExpressionFactory::build(n, *this, inputs);
+ExpressionPtr LinearIR::create_expression(const std::shared_ptr<Node>& n, const std::vector<TensorPtr>& inputs) {
+    return ExpressionFactory::build(n, inputs);
 }
 
 ov::NodeVector LinearIR::get_ordered_ops(const std::shared_ptr<ov::Model>& m) {
@@ -102,15 +95,6 @@ LinearIR::container LinearIR::deep_copy_range(LinearIR::container::const_iterato
         new_expr.m_source_node = node_map[(*it)->get_node().get()];
         result.emplace_back(std::make_shared<Expression>(new_expr));
     }
-    return result;
-}
-
-LinearIR LinearIR::deep_copy() const {
-    LinearIR result;
-    auto& result_ops = result.m_lowered_ops;
-    for (const auto& expr : deep_copy_range(m_lowered_ops.begin(), m_lowered_ops.end()))
-        result_ops.emplace_back(expr);
-    result.m_config = m_config;
     return result;
 }
 
@@ -165,25 +149,21 @@ void LinearIR::init_emitters(const std::shared_ptr<TargetMachine>& target) {
     }
 }
 
-ExpressionPtr LinearIR::get_expr_by_node(const std::shared_ptr<Node>& n) const {
+const ExpressionPtr& LinearIR::get_expr_by_node(const std::shared_ptr<Node>& n) const {
     auto found = m_node2expression_map.find(n);
     OPENVINO_ASSERT(found != m_node2expression_map.end(), "The node " + n->get_friendly_name() + " hasn't been found in Linear IR");
     return found->second;
 }
 
-void LinearIR::replace_input(std::set<ExpressionPort> consumers, const TensorPtr& to) {
+void LinearIR::replace_input(const std::set<ExpressionPort>& consumers, const TensorPtr& to) {
     for (const auto& consumer_input : consumers) {
         replace_input(consumer_input, to);
     }
 }
 
-void LinearIR::replace_input(const ExpressionPtr& expr, size_t port, const TensorPtr& to) {
-    replace_input(expr->get_input_port(port), to);
-}
-
 void LinearIR::replace_input(const ExpressionPort& expr_port, const TensorPtr& to) {
     const auto port = expr_port.get_index();
-    const auto expr = expr_port.get_expr();
+    const auto& expr = expr_port.get_expr();
 
     OPENVINO_ASSERT(expr_port.get_type() == ExpressionPort::Type::Input, "Failed to replace: target input port must have Input type");
     OPENVINO_ASSERT(expr_port.get_index() < expr->get_input_count(), "Failed to replace: target input port must be less than input count!");
@@ -196,17 +176,13 @@ void LinearIR::replace_input(const ExpressionPort& expr_port, const TensorPtr& t
         to->add_consumer(expr_port);
     }
     from->remove_consumer(expr_port);
-    expr->replace_input(port, std::move(to));
+    expr->replace_input(port, to);
 }
 
-void LinearIR::register_regular_expression(const ExpressionPtr& expr) {
-    if (is_type<ov::op::v0::Result>(expr->get_node()) || is_type<ov::op::v0::Parameter>(expr->get_node()))
-        OPENVINO_THROW("LinearIR::insert can't be used to add Parameters or Results to IR");
-    register_expression(expr);
-}
-
-void LinearIR::register_expression(const ExpressionPtr& expr) {
+void LinearIR::register_expression(const ExpressionPtr& expr, bool io_allowed) {
     const auto& node = expr->get_node();
+    if (!io_allowed && (is_type<ov::op::v0::Result>(node) || is_type<ov::op::v0::Parameter>(node)))
+        OPENVINO_THROW("LinearIR::insert can't be used to add Parameters or Results to IR");
     {
         const auto& res = m_node2expression_map.insert({node, expr});
         if (!res.second)
@@ -224,12 +200,12 @@ void LinearIR::unregister_expression(const ExpressionPtr& expr) {
 }
 
 LinearIR::exprIt LinearIR::insert(constExprIt pos, container::value_type&& value) {
-    register_regular_expression(value);
+    register_expression(value);
     return m_lowered_ops.insert(pos, value);
 }
 
 LinearIR::exprIt LinearIR::insert(constExprIt pos, const container::value_type& value) {
-    register_regular_expression(value);
+    register_expression(value);
     return m_lowered_ops.insert(pos, value);
 }
 
@@ -241,7 +217,7 @@ LinearIR::exprIt LinearIR::insert(constExprIt pos, exprIt begin, exprIt end) {
 
 LinearIR::exprIt LinearIR::insert(constExprIt pos, constExprIt begin, constExprIt end) {
     for (auto b = begin; b != end; b++)
-        register_regular_expression(*b);
+        register_expression(*b);
     return m_lowered_ops.insert(pos, begin, end);
 }
 
@@ -249,7 +225,7 @@ LinearIR::exprIt LinearIR::insert(LinearIR::constExprIt pos, const NodeVector& n
     auto ret = m_lowered_ops.end();
     for (const auto& n : nodes) {
         const auto& expr = create_expression(n);
-        register_regular_expression(expr);
+        register_expression(expr);
         ret = m_lowered_ops.insert(pos, expr);
     }
     // Need to return iterator to the first of the inserted values
@@ -258,7 +234,7 @@ LinearIR::exprIt LinearIR::insert(LinearIR::constExprIt pos, const NodeVector& n
 
 LinearIR::exprIt LinearIR::insert(LinearIR::constExprIt pos, const std::shared_ptr<Node>& n) {
     const auto& expr = create_expression(n);
-    register_regular_expression(expr);
+    register_expression(expr);
     return m_lowered_ops.insert(pos, expr);
 }
 

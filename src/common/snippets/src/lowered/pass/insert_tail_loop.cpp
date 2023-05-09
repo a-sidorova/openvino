@@ -41,10 +41,10 @@ void InsertTailLoop::tail_transformations(LinearIR& linear_ir,
              ov::is_type<ov::op::v1::Add>(op))) {
             for (size_t i = 0; i < op->inputs().size(); ++i) {
                 if (auto fill = insertFill(op->input(i))) {
-                    std::vector<TensorPtr> inputs{expr_it->get()->get_input_tensor(i)};
-                    const auto& consumers = inputs.front()->get_consumers();
+                    const auto& input = expr_it->get()->get_input_tensor(i);
+                    const auto consumers = input->get_consumers();
                     // Note: inputs == outputs, since we want to modify vector reg inplace
-                    auto fill_expr = linear_ir.create_expression(fill, inputs);
+                    auto fill_expr = linear_ir.create_expression(fill, {input});
                     linear_ir.insert(expr_it, fill_expr);
                     linear_ir.replace_input(consumers, fill_expr->get_output_tensor(0));
                     auto reg = expr_it->get()->get_reg_info().first[i];
@@ -98,7 +98,7 @@ bool InsertTailLoop::run(LinearIR& linear_ir) {
     };
     auto is_loop_with_buffers = [&linear_ir](const std::shared_ptr<op::LoopEnd>& loop_end) {
         auto is_buffer_input = [&linear_ir](const TensorPtr& input) {
-            const auto parent_expr = input->get_source().get_expr();
+            const auto& parent_expr = input->get_source().get_expr();
             return ov::is_type<op::Buffer>(parent_expr->get_node());
         };
         auto is_buffer_output = [&linear_ir](const TensorPtr& output) {
@@ -107,7 +107,7 @@ bool InsertTailLoop::run(LinearIR& linear_ir) {
                                [](const ExpressionPort& lp) {return ov::is_type<op::Buffer>(lp.get_expr()->get_node());});
         };
 
-        const auto loop_end_expr = linear_ir.get_expr_by_node(loop_end);
+        const auto& loop_end_expr = linear_ir.get_expr_by_node(loop_end);
         const auto inputs = loop_end_expr->get_input_tensors();
         const auto in_num = loop_end->get_input_num();
         const auto out_num = loop_end->get_output_num();

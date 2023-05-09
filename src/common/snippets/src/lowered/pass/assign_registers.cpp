@@ -20,7 +20,7 @@ bool AssignRegisters::run(LinearIR& linear_ir) {
     OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::AssignRegisters")
     using Reg = size_t;
     using tensor = TensorPtr;
-    auto& expressions = linear_ir.get_ops();
+    const auto& expressions = linear_ir.get_ops();
 
     std::vector<std::pair<Generator::opRegType, ExpressionPtr>> typed_ops;
     NodeVector ops;
@@ -65,18 +65,18 @@ bool AssignRegisters::run(LinearIR& linear_ir) {
             // Only in SoftmaxDecomposition ReduceMax and ReduceSum use HorizonMax/HorizonSum and VectorBuffer.
             // We should manually set the one vector register for VectorBuffer and Max/Sum output to simulate a accumulator
             // TODO [96351]: We should rewrite accumulator pattern using another way
-            const auto input_td = expr->get_input_tensor(0);
-            const auto& input_expr = input_td->get_source().get_expr();
-            const auto& input_expr_input_tds = input_expr->get_input_tensors();
-            for (const auto& td : input_expr_input_tds) {
-                if (ov::is_type<op::VectorBuffer>(td->get_source().get_expr()->get_node())) {
-                    manually_assigned_vecs[td] = static_cast<Reg>(accumulator_reg);
+            const auto& input_tensor = expr->get_input_tensor(0);
+            const auto& input_expr = input_tensor->get_source().get_expr();
+            const auto& input_expr_input_tensors = input_expr->get_input_tensors();
+            for (const auto& tensor : input_expr_input_tensors) {
+                if (ov::is_type<op::VectorBuffer>(tensor->get_source().get_expr()->get_node())) {
+                    manually_assigned_vecs[tensor] = static_cast<Reg>(accumulator_reg);
                 }
             }
-            const auto output_td = expr->get_output_tensor(0);
-            manually_assigned_vecs[input_td] = static_cast<Reg>(accumulator_reg);
-            manually_assigned_vecs[output_td] = static_cast<Reg>(accumulator_reg);
-            for (const auto& child_expr_input : output_td->get_consumers()) {
+            const auto& output_tensor = expr->get_output_tensor(0);
+            manually_assigned_vecs[input_tensor] = static_cast<Reg>(accumulator_reg);
+            manually_assigned_vecs[output_tensor] = static_cast<Reg>(accumulator_reg);
+            for (const auto& child_expr_input : output_tensor->get_consumers()) {
                 if (ov::is_type<op::BroadcastMove>(child_expr_input.get_expr()->get_node())) {
                     manually_assigned_vecs[child_expr_input.get_expr()->get_output_tensor(0)] =
                             static_cast<Reg>(accumulator_reg);
@@ -86,7 +86,7 @@ bool AssignRegisters::run(LinearIR& linear_ir) {
             // TODO: Fix via common pipeline using LoopEnd:
             //       All operations `outside loop` after Horizon ops should have the same register to avoid using it in the next Loop
             const auto current_loops_ids = expr->get_loop_ids();
-            auto next_expr = output_td->get_consumers().begin()->get_expr();
+            auto next_expr = output_tensor->get_consumers().begin()->get_expr();
             while (next_expr->get_loop_ids() == current_loops_ids) {
                 manually_assigned_vecs[next_expr->get_output_tensor(0)] =
                         static_cast<Reg>(accumulator_reg);
@@ -103,11 +103,11 @@ bool AssignRegisters::run(LinearIR& linear_ir) {
                                                               decltype(regs_vec)& reg_map,
                                                               const std::map<tensor, Reg>& manually_assigned_regs,
                                                               size_t& counter) {
-        for (const auto& out_td : expr->get_output_tensors()) {
+        for (const auto& out_tensor : expr->get_output_tensors()) {
             // Note that some ops might have identical input&output tensors (Result and Tile* for ex.)
             // so we have to check that the tensor has not been enumerated already
-            if (reg_map.count(out_td) == 0) {
-                reg_map[out_td] = manually_assigned_regs.count(out_td) == 0 ? counter++ : IS_MANUALLY_ALLOCATED_REG;
+            if (reg_map.count(out_tensor) == 0) {
+                reg_map[out_tensor] = manually_assigned_regs.count(out_tensor) == 0 ? counter++ : IS_MANUALLY_ALLOCATED_REG;
             }
         }
     };

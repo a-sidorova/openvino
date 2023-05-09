@@ -22,7 +22,7 @@ BrgemmCPU::BrgemmCPU(const Output<Node>& A, const Output<Node>& B, const Type ty
     set_input_port_descriptor({0, offset_a}, 0);
     set_input_port_descriptor({0, offset_b}, 1);
     set_output_port_descriptor({0, offset_c}, 0);
-    constructor_validate_and_infer_types();
+    custom_constructor_validate_and_infer_types();
 }
 
 BrgemmCPU::BrgemmCPU(const Output<Node>& A, const Output<Node>& B, const Output<Node>& scratch, const Type type,
@@ -35,10 +35,10 @@ BrgemmCPU::BrgemmCPU(const Output<Node>& A, const Output<Node>& B, const Output<
     set_input_port_descriptor({0, offset_b}, 1);
     set_output_port_descriptor({0, offset_c}, 0);
     set_input_port_descriptor({0, offset_scratch}, 2);
-    constructor_validate_and_infer_types();
+    custom_constructor_validate_and_infer_types();
 }
 
-void BrgemmCPU::constructor_validate_and_infer_types() {
+void BrgemmCPU::custom_constructor_validate_and_infer_types() {
     INTERNAL_OP_SCOPE(BrgemmCPU_constructor_validate_and_infer_types);
     validate_inputs();
 

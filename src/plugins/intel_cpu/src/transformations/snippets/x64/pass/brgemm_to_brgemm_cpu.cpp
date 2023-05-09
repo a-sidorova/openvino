@@ -84,7 +84,7 @@ pass::BrgemmToBrgemmCPU::BrgemmToBrgemmCPU() {
             const auto copy_b_type = with_comp ? BrgemmCopyB::WithCompensations : BrgemmCopyB::OnlyRepacking;
             brgemm_repacking = std::make_shared<BrgemmCopyB>(brgemm->input_value(1), element_type_a, copy_b_type, offset_b);
             const auto buffer = std::make_shared<ngraph::snippets::op::Buffer>(brgemm_repacking->output(0));
-            set_port_desc(brgemm_repacking->input(0), brgemm_in1_desc->get_tensor(), brgemm_in1_desc->get_subtensor(), brgemm_in1_desc->get_layout());
+            set_port_desc(brgemm_repacking->input(0), brgemm_in1_desc->get_shape(), brgemm_in1_desc->get_subtensor(), brgemm_in1_desc->get_layout());
             set_full_port_desc(brgemm_repacking->output(0));
             set_full_port_desc(buffer->input(0));
             set_full_port_desc(buffer->output(0));
@@ -115,13 +115,13 @@ pass::BrgemmToBrgemmCPU::BrgemmToBrgemmCPU() {
         ngraph::replace_node(brgemm, brgemm_cpu);
 
         // Transfer ports
-        set_port_desc(brgemm_cpu->input(0), brgemm_in0_desc->get_tensor(), brgemm_in0_desc->get_subtensor(), brgemm_in0_desc->get_layout());
+        set_port_desc(brgemm_cpu->input(0), brgemm_in0_desc->get_shape(), brgemm_in0_desc->get_subtensor(), brgemm_in0_desc->get_layout());
         if (brgemm_repacking) {
             set_full_port_desc(brgemm_cpu->input(1));
         } else {
-            set_port_desc(brgemm_cpu->input(1), brgemm_in1_desc->get_tensor(), brgemm_in1_desc->get_subtensor(), brgemm_in1_desc->get_layout());
+            set_port_desc(brgemm_cpu->input(1), brgemm_in1_desc->get_shape(), brgemm_in1_desc->get_subtensor(), brgemm_in1_desc->get_layout());
         }
-        set_port_desc(brgemm_cpu->output(0), brgemm_out_desc->get_tensor(), brgemm_out_desc->get_subtensor(), brgemm_out_desc->get_layout());
+        set_port_desc(brgemm_cpu->output(0), brgemm_out_desc->get_shape(), brgemm_out_desc->get_subtensor(), brgemm_out_desc->get_layout());
 
         // need to run validate_and_infer_types manually: either input shapes were updated or
         // output Layout was updated (out shape will be updated in validate_and_infer_types())

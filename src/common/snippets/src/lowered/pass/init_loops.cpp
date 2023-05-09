@@ -29,7 +29,7 @@ void filter_ports(LinearIR& linear_ir,
         const auto node = expr->get_node();
         const auto ma = ov::as_type_ptr<op::MemoryAccess>(node);
         if (ma && ma->is_memory_access_input_port(port)) {
-            const auto& parent_expr = expr->get_input_tensor(port)->get_source().get_expr();
+            const auto& parent_expr = loop_entry_point.get_connected_ports().begin()->get_expr();
             const auto& parent = parent_expr->get_node();
             // Todo: Sometimes several Load in one Loop read data from the same Node
             if (loop_parents.find(parent) == loop_parents.end()) {
@@ -71,20 +71,20 @@ std::vector<int64_t> InitLoops::init_ptr_increments(const std::vector<Expression
     size_t max_relevant_dim_size = 1;
     for (const auto& loop_input : loop_inputs) {
         const auto& layout = loop_input.get_layout();
-        const auto& tensor = loop_input.get_tensor();
+        const auto& tensor = loop_input.get_shape();
         const auto& dim = *(layout.rbegin() + dim_idx);
         max_relevant_dim_size = std::max(tensor[dim], max_relevant_dim_size);
     }
     for (const auto& loop_output : loop_outputs) {
         const auto& layout = loop_output.get_layout();
-        const auto& tensor = loop_output.get_tensor();
+        const auto& tensor = loop_output.get_shape();
         const auto& dim = *(layout.rbegin() + dim_idx);
         max_relevant_dim_size = std::max(tensor[dim], max_relevant_dim_size);
     }
 
     for (const auto& loop_input : loop_inputs) {
         const auto& layout = loop_input.get_layout();
-        const auto& tensor = loop_input.get_tensor();
+        const auto& tensor = loop_input.get_shape();
         const auto& dim = *(layout.rbegin() + dim_idx);
         int64_t ptr_increment = 0;
         // If relevant dim is not broadcasted, then ptr_increment is the dim stride in the new layout
@@ -95,7 +95,7 @@ std::vector<int64_t> InitLoops::init_ptr_increments(const std::vector<Expression
 
     for (const auto& loop_output : loop_outputs) {
         const auto& layout = loop_output.get_layout();
-        const auto& tensor = loop_output.get_tensor();
+        const auto& tensor = loop_output.get_shape();
         const auto& dim = *(layout.rbegin() + dim_idx);
         int64_t ptr_increment = 0;
         // If relevant dim is not broadcasted, then ptr_increment is the dim stride in the new layout

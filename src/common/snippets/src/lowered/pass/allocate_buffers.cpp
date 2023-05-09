@@ -61,7 +61,8 @@ bool AllocateBuffers::run(LinearIR& linear_ir) {
     bool modified = false;
     size_t offset = 0;
     for (auto expr_it = linear_ir.begin(); expr_it != linear_ir.end(); expr_it++) {
-        if (auto buffer = as_type_ptr<op::Buffer>(expr_it->get()->get_node())) {
+        const auto& expr = *expr_it;
+        if (auto buffer = as_type_ptr<op::Buffer>(expr->get_node())) {
             const auto buffer_size = buffer->get_byte_size();
             // If it's the first buffer, offsets are zero => nothing to propagate, can continue
             if (m_buffer_scratchpad_size == 0) {
@@ -70,7 +71,7 @@ bool AllocateBuffers::run(LinearIR& linear_ir) {
             }
 
             if (buffer->is_intermediate_memory()) {
-                const auto& parent_expr = expr_it->get()->get_input_tensor(0)->get_source().get_expr();
+                const auto& parent_expr = expr->get_input_tensor(0)->get_source().get_expr();
                 const auto& parent_node = parent_expr->get_node();
                 // Full MemoryAccess ops need new memory. Previous logic is to check for parent isn't Loop
                 // TODO: It should be unified in MemoryManager with memory reuse in the near future

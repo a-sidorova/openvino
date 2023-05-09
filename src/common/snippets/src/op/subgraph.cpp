@@ -16,7 +16,7 @@
 #include "snippets/pass/transform_convert.hpp"
 #include "snippets/pass/matmul_to_brgemm.hpp"
 #include "snippets/pass/fuse_transpose_brgemm.hpp"
-#include "snippets/pass/schedule_softmax.hpp"
+#include "snippets/pass/set_softmax_ports.hpp"
 #include "snippets/utils.hpp"
 #include "snippets/port_descriptor.hpp"
 
@@ -463,7 +463,7 @@ void snippets::op::Subgraph::convert_to_snippet_dialect() {
         manager.register_pass<snippets::pass::MatMulToBrgemm>();
         manager.register_pass<snippets::pass::FuseTransposeBrgemm>();
         manager.register_pass<snippets::pass::TransposeDecomposition>();
-        manager.register_pass<snippets::pass::ScheduleSoftmax>();
+        manager.register_pass<snippets::pass::SetSoftmaxPorts>();
     }
     manager.register_pass<snippets::pass::BroadcastToMoveBroadcast>();
     manager.register_pass<snippets::pass::ConvertConstantsToScalars>();

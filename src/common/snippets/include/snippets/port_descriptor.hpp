@@ -11,6 +11,8 @@
 namespace ngraph {
 namespace snippets {
 
+class PortDescriptor;
+using PortDescriptorPtr = std::shared_ptr<PortDescriptor>;
 class PortDescriptor {
 public:
     // The structure with service values for scheduling parameters
@@ -34,17 +36,17 @@ public:
     PortDescriptor(std::vector<size_t> shape, std::vector<size_t> subtensor_shape, std::vector<size_t> layout = {});
     PortDescriptor() = default;
 
-    std::vector<size_t> get_tensor() const {return m_tensor_shape;}
+    std::vector<size_t> get_shape() const {return m_tensor_shape;}
     std::vector<size_t> get_subtensor() const {return m_subtensor_shape;}
     std::vector<size_t> get_layout() const {return m_layout;}
 
-    void set_tensor(const std::vector<size_t>& tensor) { m_tensor_shape = tensor; }
+    void set_shape(const std::vector<size_t>& tensor) { m_tensor_shape = tensor; }
     void set_layout(const std::vector<size_t>& layout) { m_layout = layout; }
     void set_subtensor(const std::vector<size_t>& subtensor) { m_subtensor_shape = subtensor; }
 
-    static PortDescriptor deserialize(const std::string& serialized_info);
     std::string serialize() const;
     bool empty() const { return m_layout.empty() && m_subtensor_shape.empty();}
+    PortDescriptorPtr clone() const;
 
     friend bool operator==(const PortDescriptor& lhs, const PortDescriptor& rhs);
     friend bool operator!=(const PortDescriptor& lhs, const PortDescriptor& rhs) {return !(lhs == rhs);}
@@ -58,7 +60,6 @@ private:
     /// \brief Minimal tensor size that could be processed in one call
     std::vector<size_t> m_subtensor_shape{};
 };
-using PortDescriptorPtr = std::shared_ptr<PortDescriptor>;
 
 class PortManager {
 public:
@@ -76,14 +77,11 @@ private:
 
 class PortDescriptorVectorAttribute : public ov::RuntimeAttribute {
 public:
-    OPENVINO_RTTI("PortDescriptorVectorAttribute", "0");
+    OPENVINO_RTTI("PortDescriptorVectorAttribute", "", ov::RuntimeAttribute);
 
     PortDescriptorVectorAttribute() = default;
     explicit PortDescriptorVectorAttribute(std::vector<PortDescriptorPtr> in_descs = {}, std::vector<PortDescriptorPtr> out_descs = {})
             : inputs(std::move(in_descs)), outputs(std::move(out_descs)) {}
-
-    void set_input_port_descriptor(const PortDescriptorPtr& desc, size_t index);
-    void set_output_port_descriptor(const PortDescriptorPtr& desc, size_t index);
 
     std::vector<PortDescriptorPtr> inputs{};
     std::vector<PortDescriptorPtr> outputs{};

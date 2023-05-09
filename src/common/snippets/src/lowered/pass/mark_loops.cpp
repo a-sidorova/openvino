@@ -33,11 +33,11 @@ bool MarkLoops::run(LinearIR& linear_ir) {
     };
 
     auto are_conflicted = [](const ExpressionPort& lhs, const ExpressionPort& rhs) {
-        const auto& lhs_desc = lhs.get_port_descriptor();
-        const auto& rhs_desc = rhs.get_port_descriptor();
+        const auto& lhs_desc = lhs.get_descriptor_ptr();
+        const auto& rhs_desc = rhs.get_descriptor_ptr();
         return lhs_desc->get_subtensor() != rhs_desc->get_subtensor() ||
                lhs_desc->get_layout() != rhs_desc->get_layout() ||
-               lhs_desc->get_tensor() != rhs_desc->get_tensor();
+               lhs_desc->get_shape() != rhs_desc->get_shape();
     };
 
     for (auto expr_it = linear_ir.cbegin(); expr_it != linear_ir.cend(); expr_it++) {
@@ -65,18 +65,18 @@ bool MarkLoops::run(LinearIR& linear_ir) {
                 break;
 
             // We finish Loop if
-            //  - the next expr isn't real customer
+            //  - the next expr isn't real consumer
             //  - the is conflict between the corresponding ports
             bool is_connected = false;
             bool is_conflicted = false;
             for (size_t i = 0; i < prev_expr->get_output_count(); ++i) {
-                const auto& loop_td = prev_expr->get_output_tensor(i);
-                const auto consumers = loop_td->get_consumers();
+                const auto& loop_tensor = prev_expr->get_output_tensor(i);
+                const auto consumers = loop_tensor->get_consumers();
                 const auto found = std::find_if(consumers.begin(), consumers.end(), [&loop_end_pos](const ExpressionPort& consumer) {
                     return consumer.get_expr() == *loop_end_pos;
                 });
                 if (found != consumers.end()) {
-                    if (are_conflicted(*found, loop_td->get_source())) {
+                    if (are_conflicted(*found, loop_tensor->get_source())) {
                         is_conflicted = true;
                         break;
                     }

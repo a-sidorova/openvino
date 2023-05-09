@@ -33,7 +33,7 @@ public:
     bool has_evaluate() const override { return false; }
 
 protected:
-    void constructor_validate_and_infer_types();
+    void custom_constructor_validate_and_infer_types();
     void validate_inputs() const;
 
     ov::element::Type get_output_type() const;

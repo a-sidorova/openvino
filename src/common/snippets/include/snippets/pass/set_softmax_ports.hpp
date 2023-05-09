@@ -12,13 +12,13 @@ namespace snippets {
 namespace pass {
 
 /**
- * @interface ScheduleSoftmax
- * @brief The pass updates port descriptors for Softmax to show by which axes there is reducing
+ * @interface SetSoftmaxPorts
+ * @brief The pass updates port descriptors in accordance with the Softmax reduction axis
  * @ingroup snippets
  */
-class ScheduleSoftmax: public ngraph::pass::MatcherPass {
+class SetSoftmaxPorts: public ngraph::pass::MatcherPass {
 public:
-    ScheduleSoftmax();
+    SetSoftmaxPorts();
 };
 
 } // namespace pass

@@ -55,7 +55,7 @@ void LinearIR::LoopManager::get_loop_bounds(const LinearIR &linear_ir,
                                             size_t loop_id) {
     OPENVINO_ASSERT(!entries.empty(), "Loop must have entry points");
     OPENVINO_ASSERT(!exits.empty(), "Loop must have entry points");
-    const auto entry_expr = entries.front().get_expr();
+    const auto& entry_expr = entries.front().get_expr();
     loop_begin_pos = std::find(linear_ir.begin(), linear_ir.end(), entry_expr);
     OPENVINO_ASSERT(loop_begin_pos != linear_ir.end(), "Loop begin hasn't been found!");
 
@@ -81,25 +81,21 @@ void LinearIR::LoopManager::get_io_loop_ports(LinearIR::constExprIt loop_begin_p
     exits.clear();
     for (auto expr_it = loop_begin_pos; expr_it != loop_end_pos; ++expr_it) {
         const auto& expr = *expr_it;
-        const auto inputs = expr->get_input_tensors();
-        const auto outputs = expr->get_output_tensors();
-
-        for (size_t in_port = 0; in_port < inputs.size(); ++in_port) {
-            const auto in_td = inputs[in_port];
-            const auto parent_expr = in_td->get_source().get_expr();
+        for (size_t i = 0; i < expr->get_input_count(); ++i) {
+            const auto in_port = expr->get_input_port(i);
+            const auto& parent_expr = in_port.get_connected_ports().begin()->get_expr();
             if (!ov::is_type<ov::op::v0::Constant>(parent_expr->get_node()) &&
                 std::find(loop_begin_pos, expr_it, parent_expr) == expr_it) {
-                entries.push_back(expr->get_input_port(in_port));
+                entries.push_back(in_port);
             }
         }
-
-        for (size_t out_port = 0; out_port < outputs.size(); ++out_port) {
-            const auto out_td = outputs[out_port];
-            const auto consumer_ports = out_td->get_consumers();
+        for (size_t i = 0; i < expr->get_output_count(); ++i) {
+            const auto out_port = expr->get_output_port(i);
+            const auto consumer_ports = out_port.get_connected_ports();
             for (const auto& consumer : consumer_ports) {
-                const auto consumer_expr = consumer.get_expr();
+                const auto& consumer_expr = consumer.get_expr();
                 if (std::find(expr_it, loop_end_pos, consumer_expr) == loop_end_pos) {
-                    exits.push_back(expr->get_output_port(out_port));
+                    exits.push_back(out_port);
                     break;
                 }
             }
@@ -113,7 +109,7 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
     std::vector<ExpressionPort> loop_entry_points, loop_exit_points;
     LoopManager::get_io_loop_ports(loop_begin_pos, loop_end_pos, loop_entry_points, loop_exit_points);
 
-    auto broadcast = [](std::vector<size_t> &lhs, const std::vector<size_t> &rhs, size_t index) -> void {
+    auto broadcast = [](std::vector<size_t>& lhs, const std::vector<size_t>& rhs, size_t index) -> void {
         if (rhs == lhs)
             return;
         const auto lhs_size = lhs.size();
@@ -135,7 +131,7 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
     std::vector<size_t> loop_subtensor;
     std::vector<size_t> loop_tensor(loop_depth, 1);
     for (const auto& exit_point : loop_exit_points) {
-        const auto tensor = utils::get_reordered_shape(exit_point.get_tensor(), exit_point.get_layout());
+        const auto tensor = utils::get_reordered_planar_shape(ov::PartialShape(exit_point.get_shape()), exit_point.get_layout()).get_shape();
         auto subtensor = exit_point.get_subtensor();
         if (subtensor.empty()) {
             subtensor.resize(loop_depth, 1);

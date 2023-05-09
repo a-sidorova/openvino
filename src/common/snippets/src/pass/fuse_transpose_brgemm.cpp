@@ -25,8 +25,10 @@ bool FuseTransposeBrgemm::is_supported_transpose(const Output<Node>& transpose_p
     // it's safe to do so because of the patterns we used. alternatively we can do it through pattern_values_map
     const auto& constant = as_type_ptr<ngraph::opset1::Constant>(transpose_node->get_input_node_shared_ptr(1));
     // if Transpose in and out layout is not empty => something was already fused on this port
-    if (!utils::get_node_output_layout(transpose_node).empty() ||
-        !utils::get_node_output_layout(transpose_node->get_input_node_shared_ptr(0)).empty())
+    auto default_layout = std::vector<size_t>(transpose_port.get_shape().size());
+    std::iota(default_layout.begin(), default_layout.end(), 0);// NCHW layout by default
+    if (PortManager::get_port_descriptor_ptr(transpose_port)->get_layout() != default_layout ||
+        PortManager::get_port_descriptor_ptr(transpose_node->input_value(0))->get_layout() != default_layout)
         return false;
     const auto& transpose_order = constant->cast_vector<int>();
     // todo: this limitation is due to the fact that offsets are calculated in Kernel, and the only way
@@ -65,7 +67,7 @@ FuseTransposeBrgemm::FuseTransposeBrgemm() {
             const auto& transpose_out = m.get_match_value();
             const auto& const_order = ov::as_type_ptr<ov::op::v0::Constant>(transpose_out.get_node_shared_ptr()->get_input_node_shared_ptr(1));
             const auto& original_port = ngraph::snippets::PortManager::get_port_descriptor_ptr(brgemm_out);
-            original_port->set_tensor(transpose_out.get_shape());
+            original_port->set_shape(transpose_out.get_shape());
             original_port->set_layout(const_order->cast_vector<size_t>());
             for (const auto& in : transpose_out.get_target_inputs())
                 in.replace_source_output(brgemm->output(0));
@@ -79,7 +81,7 @@ FuseTransposeBrgemm::FuseTransposeBrgemm() {
                 const auto& const_order = ov::as_type_ptr<ov::op::v0::Constant>(transpose->get_input_node_shared_ptr(1));
                 brgemm->set_argument(i, transpose->input_value(0));
                 const auto& original_port = ngraph::snippets::PortManager::get_port_descriptor_ptr(in);
-                original_port->set_tensor(transpose->get_input_shape(0));
+                original_port->set_shape(transpose->get_input_shape(0));
                 original_port->set_layout(const_order->cast_vector<size_t>());
                 // At the moment we support fused Transpose only after Parameter -> we can update port descriptor for Parameter as well.
                 // Note: It's needed for BrgemmCPU

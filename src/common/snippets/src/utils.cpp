@@ -67,27 +67,6 @@ auto get_non_scalar_constant_count_for_fq(const std::shared_ptr<opset1::FakeQuan
         return 0;
     }
 }
-std::vector<size_t> get_node_output_layout(const std::shared_ptr<Node>& node) {
-    return get_node_output_layout(node.get());
-}
-std::vector<size_t> get_node_output_layout(const Node* node) {
-    if (!node)
-        return {};
-    if (node->is_dynamic())
-        OPENVINO_THROW("It's illegal to call get_node_output_layout for dynamic nodes");
-    auto& rt = node->get_rt_info();
-    const auto rinfo = rt.find("Layout");
-    if (rinfo != rt.end()) {
-        std::vector<size_t> layout(rinfo->second.as<std::vector<size_t>>());
-        // This might be a little costy, but still useful sanity check. Remove if proved to be unacceptably heavy.
-        std::set<size_t> unique_elements(layout.begin(), layout.end());
-        if (unique_elements.size() < layout.size())
-            OPENVINO_THROW("Layout must contain only unique dimension indexes");
-        return layout;
-    } else {
-        return {};
-    }
-}
 
 ov::PartialShape get_reordered_planar_shape(const ov::PartialShape& shape, const std::vector<size_t>& layout) {
     if (layout.empty())
@@ -106,29 +85,14 @@ ov::PartialShape get_reordered_planar_shape(const ov::PartialShape& shape, const
     return reordered_shape;
 }
 
-ov::Shape get_reordered_shape(const ov::Shape& shape, const std::vector<size_t>& layout) {
-    if (layout.empty())
-        return shape;
-    ov::Shape reordered_shape(layout.size());
-    const size_t rank = shape.size();
-    if (layout.size() > rank)
-        OPENVINO_THROW("Layout rank can't be larger than tensor rank");
-    // Note that it can be smaller though, for example tensor shape can be prepended with 1 for scheduling purposes
-    if (std::any_of(layout.begin(), layout.end(), [=](size_t x) {return x >= rank;}))
-        OPENVINO_THROW("Invalid layout detected: all layout indexes must be smaller than the tensor rank");
-    for (size_t i = 0; i < layout.size(); i++)
-        reordered_shape[i] = shape[layout[i]];
-    return reordered_shape;
-}
-
 ov::PartialShape get_port_planar_shape(const Input<Node>& in) {
-    const auto& td = PortManager::get_port_descriptor_ptr(in);
-    return utils::get_reordered_planar_shape(ov::Shape{td->get_tensor()}, td->get_layout());
+    const auto& port = PortManager::get_port_descriptor_ptr(in);
+    return utils::get_reordered_planar_shape(ov::Shape{port->get_shape()}, port->get_layout());
 }
 
 ov::PartialShape get_port_planar_shape(const Output<Node>& out) {
-    const auto& td = PortManager::get_port_descriptor_ptr(out);
-    return utils::get_reordered_planar_shape(ov::Shape{td->get_tensor()}, td->get_layout());
+    const auto& port = PortManager::get_port_descriptor_ptr(out);
+    return utils::get_reordered_planar_shape(ov::Shape{port->get_shape()}, port->get_layout());
 }
 
 } // namespace utils

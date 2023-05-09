@@ -12,8 +12,8 @@ namespace ngraph {
 namespace snippets {
 namespace lowered {
 
-Tensor::Tensor(const ExpressionPort& source_descriptor, const std::set<ExpressionPort>& consumer_descriptors)
-    : m_source_port(source_descriptor), m_consumer_ports(consumer_descriptors) {}
+Tensor::Tensor(ExpressionPort source_descriptor, const std::set<ExpressionPort>& consumer_descriptors)
+    : m_source_port(std::move(source_descriptor)), m_consumer_ports(consumer_descriptors) {}
 
 std::set<ExpressionPort>::const_iterator Tensor::find_consumer(const ExpressionPort& consumer) const {
     // Note: Find by shared ptr and index port is enough since these parameters must be unique

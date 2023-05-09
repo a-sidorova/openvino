@@ -38,17 +38,14 @@ private:
                                 const std::shared_ptr<ov::Model>& model);
 
     /* -- Input Builders - get input tensors from method parameters and create new output tensors themselves */
-    static ExpressionPtr create(const std::shared_ptr<op::LoopBegin>& n, const LinearIR& linear_ir,
-                                const std::vector<TensorPtr>& inputs);
-    static ExpressionPtr create(const std::shared_ptr<op::LoopEnd>& n, const LinearIR& linear_ir,
-                                const std::vector<TensorPtr>& inputs);
-    static ExpressionPtr create(const std::shared_ptr<ov::Node>& n, const LinearIR& linear_ir,
-                                const std::vector<TensorPtr>& inputs);
+    static ExpressionPtr create(const std::shared_ptr<op::LoopBegin>& n, const std::vector<TensorPtr>& inputs);
+    static ExpressionPtr create(const std::shared_ptr<op::LoopEnd>& n, const std::vector<TensorPtr>& inputs);
+    static ExpressionPtr create(const std::shared_ptr<ov::Node>& n, const std::vector<TensorPtr>& inputs);
 
     // Creates inputs for expression using parent output tensors
     static void create_expression_inputs(const LinearIR& linear_ir, const ExpressionPtr& expr);
     // Creates new output tensors
-    static void create_expression_outputs(const LinearIR& linear_ir, const ExpressionPtr& expr);
+    static void create_expression_outputs(const ExpressionPtr& expr);
     // The method verifies of input tensors to availability of the expression as consumer and add it if missed
     static void init_expression_inputs(const ExpressionPtr& expr, const std::vector<TensorPtr>& inputs);
 };

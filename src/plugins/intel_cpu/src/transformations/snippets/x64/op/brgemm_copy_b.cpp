@@ -21,7 +21,7 @@ intel_cpu::BrgemmCopyB::BrgemmCopyB(const Output<Node>& x, const element::Type s
     if (is_with_compensations()) {
         set_output_port_descriptor({0, offset_out1}, 1);
     }
-    constructor_validate_and_infer_types();
+    custom_constructor_validate_and_infer_types();
 }
 
 bool intel_cpu::BrgemmCopyB::visit_attributes(AttributeVisitor& visitor) {
@@ -31,7 +31,7 @@ bool intel_cpu::BrgemmCopyB::visit_attributes(AttributeVisitor& visitor) {
     return true;
 }
 
-void intel_cpu::BrgemmCopyB::constructor_validate_and_infer_types() {
+void intel_cpu::BrgemmCopyB::custom_constructor_validate_and_infer_types() {
     INTERNAL_OP_SCOPE(BrgemmRepack_ctor_validate_and_infer_types);
     // During ctor call, BrgemmCopyB doesn't know his port descriptors.
     // So we use port descs from source inputs

@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
+#include "snippets/pass/set_softmax_ports.hpp"
+
 #include <snippets/itt.hpp>
-
-#include "snippets/pass/schedule_softmax.hpp"
-
 #include "snippets/port_descriptor.hpp"
 
 #include "ngraph/op/softmax.hpp"
@@ -15,15 +14,15 @@
 
 using namespace ngraph;
 
-ngraph::snippets::pass::ScheduleSoftmax::ScheduleSoftmax() {
-    MATCHER_SCOPE(ScheduleSoftmax);
+ngraph::snippets::pass::SetSoftmaxPorts::SetSoftmaxPorts() {
+    MATCHER_SCOPE(SetSoftmaxPorts);
 
     auto m_softmax_v1 = ngraph::pattern::wrap_type<ngraph::op::v1::Softmax>();
     auto m_softmax_v8 = ngraph::pattern::wrap_type<ngraph::op::v8::Softmax>();
     auto m_softmax = std::make_shared<ngraph::pattern::op::Or>(OutputVector{m_softmax_v1, m_softmax_v8});
 
     auto callback = [](ngraph::pattern::Matcher &m) {
-        OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::op::ScheduleSoftmax")
+        OV_ITT_SCOPED_TASK(ngraph::pass::itt::domains::SnippetsTransform, "Snippets::op::SetSoftmaxPorts")
         auto root = m.get_match_root();
 
         const auto& pshape = root->get_input_partial_shape(0);

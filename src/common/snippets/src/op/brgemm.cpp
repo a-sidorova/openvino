@@ -18,10 +18,10 @@ Brgemm::Brgemm(const Output<Node>& A, const Output<Node>& B,
     set_input_offset(offset_a, 0);
     set_input_offset(offset_b, 1);
     set_output_offset(offset_c, 0);
-    constructor_validate_and_infer_types();
+    custom_constructor_validate_and_infer_types();
 }
 
-void Brgemm::constructor_validate_and_infer_types() {
+void Brgemm::custom_constructor_validate_and_infer_types() {
     INTERNAL_OP_SCOPE(BrgemmCPU_constructor_validate_and_infer_types);
     validate_inputs();
 

@@ -51,6 +51,12 @@ void Expression::init_emitter(const std::shared_ptr<const TargetMachine>& target
     m_emitter = target->get(m_source_node->get_type_info())(m_source_node);
 }
 
+void Expression::validate() const {
+    OPENVINO_ASSERT(m_input_port_descriptors.size() == m_input_tensors.size(), "The count of input ports and input tensors must be equal");
+    OPENVINO_ASSERT(m_output_port_descriptors.size() == m_output_tensors.size(), "The count of output ports and output tensors must be equal");
+    OPENVINO_ASSERT(m_source_node != nullptr, "The expression has null source node");
+}
+
 void Expression::replace_input(size_t port, TensorPtr to) {
     OPENVINO_ASSERT(port < m_input_tensors.size(), "Failed to replace: target input port must be less than input count!");
     m_input_tensors[port] = std::move(to);
