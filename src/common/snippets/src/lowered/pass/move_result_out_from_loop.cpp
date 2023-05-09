@@ -31,8 +31,8 @@ bool MoveResultOutOfLoop::run(LinearIR& linear_ir) {
             continue;
         }
 
-        const auto& input_td = expr->input(0);
-        const auto parent_expr = input_td->get_source().get_expr_ptr();
+        const auto& input_td = expr->get_input_tensor(0);
+        const auto parent_expr = input_td->get_source().get_expr();
         const auto parent_loop_ids = parent_expr->get_loop_ids();
         int outer_loop_id = static_cast<int>(parent_loop_ids.size()) - 1;
         for (; outer_loop_id >= 0; --outer_loop_id) {

@@ -26,7 +26,7 @@ bool PropagateLayout::run(LinearIR& linear_ir) {
             continue;
 
         const bool is_input = io_expr->get_type() == IOExpression::io_type::INPUT;
-        const auto& tds = is_input ? expr->outputs() : expr->inputs();
+        const auto& tds = is_input ? expr->get_output_tensors() : expr->get_input_tensors();
         if (tds.size() != 1)
             OPENVINO_THROW("Parameter/Results should have exactly one output/input");
 
@@ -38,7 +38,7 @@ bool PropagateLayout::run(LinearIR& linear_ir) {
             // but often there is another child - LoopEnd
             std::set<std::vector<size_t>> child_layouts;
             for (const auto& child_input : consumer_inputs) {
-                const auto child = child_input.get_expr_ptr();
+                const auto child = child_input.get_expr();
                 const auto port = child_input.get_index();
                 const auto& n = child->get_node();
                 const auto ma = ov::as_type_ptr<op::MemoryAccess>(n);
@@ -47,14 +47,14 @@ bool PropagateLayout::run(LinearIR& linear_ir) {
                 }
             }
             OPENVINO_ASSERT(child_layouts.size() == 1, "All children of an input expression must have the same layout");
-            target_td->set_layout(*child_layouts.begin());
+            io_expr->get_output_port(0).set_layout(*child_layouts.begin());
         } else {
             const auto consumer_inputs = target_td->get_consumers();
             // Note that here we consider only the first child (which is usually Store),
             // but often there is another child - LoopEnd
             ExpressionPort result_td;
             for (const auto& child_input : consumer_inputs) {
-                const auto child = child_input.get_expr_ptr();
+                const auto child = child_input.get_expr();
                 if (ov::is_type<op::LoopEnd>(child->get_node())) {
                     continue;
                 }
@@ -65,8 +65,7 @@ bool PropagateLayout::run(LinearIR& linear_ir) {
                 OPENVINO_THROW("Result cannot have any siblings (only LoopEnd's)");
             }
 
-            const auto& td_it = target_td->find_consumer(result_td);
-            td_it->set_layout(target_td->get_layout());
+            io_expr->get_input_port(0).set_layout(target_td->get_layout());
         }
     }
 

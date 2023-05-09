@@ -24,12 +24,12 @@ void filter_ports(LinearIR& linear_ir,
 
     std::set<std::shared_ptr<ov::Node>> loop_parents;
     for (const auto& loop_entry_point : loop_entries) {
-        const auto& expr = loop_entry_point.get_expr_ptr();
+        const auto& expr = loop_entry_point.get_expr();
         const auto port = loop_entry_point.get_index();
         const auto node = expr->get_node();
         const auto ma = ov::as_type_ptr<op::MemoryAccess>(node);
         if (ma && ma->is_memory_access_input_port(port)) {
-            const auto& parent_expr = expr->input(port)->get_source().get_expr_ptr();
+            const auto& parent_expr = expr->get_input_tensor(port)->get_source().get_expr();
             const auto& parent = parent_expr->get_node();
             // Todo: Sometimes several Load in one Loop read data from the same Node
             if (loop_parents.find(parent) == loop_parents.end()) {
@@ -40,7 +40,7 @@ void filter_ports(LinearIR& linear_ir,
     }
 
     for (const auto& loop_exit_point : loop_exits) {
-        const auto& expr = loop_exit_point.get_expr_ptr();
+        const auto& expr = loop_exit_point.get_expr();
         const auto port = loop_exit_point.get_index();
         const auto ma = ov::as_type_ptr<op::MemoryAccess>(expr->get_node());
         if (ma && ma->is_memory_access_output_port(port)) {
@@ -121,10 +121,10 @@ std::vector<int64_t> InitLoops::init_element_type_sizes(const std::vector<Expres
     std::vector<int64_t> element_types;
     element_types.reserve(loop_inputs.size() + loop_outputs.size());
     for (const auto& in : loop_inputs) {
-        element_types.push_back(in.get_expr_ptr()->get_node()->get_input_element_type(in.get_index()).size());
+        element_types.push_back(in.get_expr()->get_node()->get_input_element_type(in.get_index()).size());
     }
     for (const auto& out : loop_outputs) {
-        element_types.push_back(out.get_expr_ptr()->get_node()->get_output_element_type(out.get_index()).size());
+        element_types.push_back(out.get_expr()->get_node()->get_output_element_type(out.get_index()).size());
     }
     return element_types;
 }
@@ -156,10 +156,10 @@ bool InitLoops::insertion(LinearIR& linear_ir, const LinearIR::LoopManager::Loop
 
     std::vector<TensorPtr> loop_end_inputs;
     for (const auto& expr_port : loop_entries)
-        loop_end_inputs.push_back(expr_port.get_expr_ptr()->input(expr_port.get_index()));
+        loop_end_inputs.push_back(expr_port.get_expr()->get_input_tensor(expr_port.get_index()));
     for (const auto& expr_port : loop_exits)
-        loop_end_inputs.push_back(expr_port.get_expr_ptr()->output(expr_port.get_index()));
-    loop_end_inputs.push_back(loop_begin_expr->output(0));
+        loop_end_inputs.push_back(expr_port.get_expr()->get_output_tensor(expr_port.get_index()));
+    loop_end_inputs.push_back(loop_begin_expr->get_output_tensor(0));
 
     const auto& loop_end_expr = linear_ir.create_expression(loop_end, loop_end_inputs);
     linear_ir.insert(loop_end_pos, loop_end_expr);

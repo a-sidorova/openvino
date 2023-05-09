@@ -55,19 +55,19 @@ std::vector<bool> IdentifyBuffers::create_adjacency_matrix(const LinearIR& linea
     for (size_t buffer_idx = 0; buffer_idx < buffers.size(); ++buffer_idx) {
         // Here intermediate Buffer
         const auto buffer_expr = buffers[buffer_idx];
-        const auto buffer_input_tds = buffer_expr->inputs();
+        const auto buffer_input_tds = buffer_expr->get_input_tensors();
         OPENVINO_ASSERT(buffer_input_tds.size() == 1, "Intermediate Buffer must have one input");
         const auto buffer = ov::as_type_ptr<op::Buffer>(buffer_expr->get_node());
 
         const auto& buffer_td = buffer_input_tds.front();
         const auto buffer_siblings = buffer_td->get_consumers();
         for (const auto& buffer_sibling : buffer_siblings) {
-            const auto& sibling_expr = buffer_sibling.get_expr_ptr();
+            const auto& sibling_expr = buffer_sibling.get_expr();
             // Skip myself
             if (sibling_expr == buffer_expr) {
                 continue;
             } else if (const auto loop_end = ov::as_type_ptr<op::LoopEnd>(sibling_expr->get_node())) {
-                const auto& loop_tds = sibling_expr->inputs();
+                const auto& loop_tds = sibling_expr->get_input_tensors();
                 const auto input_count = loop_end->get_input_num();
                 const auto output_count = loop_end->get_output_num();
                 const auto& ptr_increments = loop_end->get_ptr_increments();
@@ -76,7 +76,7 @@ std::vector<bool> IdentifyBuffers::create_adjacency_matrix(const LinearIR& linea
 
                 // Verify Buffers on Loop inputs:
                 for (size_t input_idx = 0; input_idx < input_count; ++input_idx) {
-                    const auto loop_in = loop_tds[input_idx]->get_source().get_expr_ptr();
+                    const auto loop_in = loop_tds[input_idx]->get_source().get_expr();
                     if (const auto& neighbour_buffer = is_intermediate_buffer(loop_in->get_node())) {
                         const auto neighbour_buffer_loop_port = input_idx;
                         update_adj_matrix(buffer, buffer_idx, neighbour_buffer,
@@ -93,7 +93,7 @@ std::vector<bool> IdentifyBuffers::create_adjacency_matrix(const LinearIR& linea
 
                     const auto consumer_inputs = loop_tds[input_count + output_idx]->get_consumers();
                     for (const auto& consumer_input : consumer_inputs) {
-                        const auto& child_node = consumer_input.get_expr_ptr()->get_node();
+                        const auto& child_node = consumer_input.get_expr()->get_node();
                         if (const auto& neighbour_buffer = is_intermediate_buffer(child_node)) {
                             const auto neighbour_buffer_loop_port = input_count + output_idx;
                             update_adj_matrix(buffer, buffer_idx, neighbour_buffer,

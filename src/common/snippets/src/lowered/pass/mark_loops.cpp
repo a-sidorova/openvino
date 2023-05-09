@@ -32,6 +32,14 @@ bool MarkLoops::run(LinearIR& linear_ir) {
                ov::is_type<opset1::Parameter>(node);
     };
 
+    auto are_conflicted = [](const ExpressionPort& lhs, const ExpressionPort& rhs) {
+        const auto& lhs_desc = lhs.get_port_descriptor();
+        const auto& rhs_desc = rhs.get_port_descriptor();
+        return lhs_desc->get_subtensor() != rhs_desc->get_subtensor() ||
+               lhs_desc->get_layout() != rhs_desc->get_layout() ||
+               lhs_desc->get_tensor() != rhs_desc->get_tensor();
+    };
+
     for (auto expr_it = linear_ir.cbegin(); expr_it != linear_ir.cend(); expr_it++) {
         const auto expr = *expr_it;
         const auto& node = expr->get_node();
@@ -62,13 +70,13 @@ bool MarkLoops::run(LinearIR& linear_ir) {
             bool is_connected = false;
             bool is_conflicted = false;
             for (size_t i = 0; i < prev_expr->get_output_count(); ++i) {
-                const auto& loop_td = prev_expr->output(i);
+                const auto& loop_td = prev_expr->get_output_tensor(i);
                 const auto consumers = loop_td->get_consumers();
                 const auto found = std::find_if(consumers.begin(), consumers.end(), [&loop_end_pos](const ExpressionPort& consumer) {
-                    return consumer.get_expr_ptr() == *loop_end_pos;
+                    return consumer.get_expr() == *loop_end_pos;
                 });
                 if (found != consumers.end()) {
-                    if (loop_td->is_conflicted_consumer(*found)) {
+                    if (are_conflicted(*found, loop_td->get_source())) {
                         is_conflicted = true;
                         break;
                     }

@@ -58,10 +58,6 @@ ExpressionPtr LinearIR::create_expression(const std::shared_ptr<Node>& n, const 
     return ExpressionFactory::build(n, *this, inputs);
 }
 
-ExpressionPtr LinearIR::create_expression(const std::shared_ptr<Node>& n, const std::vector<TensorPtr> inputs, const std::vector<TensorPtr> outputs) {
-    return ExpressionFactory::build(n, *this, inputs, outputs);
-}
-
 ov::NodeVector LinearIR::get_ordered_ops(const std::shared_ptr<ov::Model>& m) {
     if (!m->get_sinks().empty())
         OPENVINO_THROW("Linear IR is not supposed to work for model with sinks. Check your transformation pipeline.");
@@ -136,23 +132,23 @@ void LinearIR::debug_print(bool tds_as_pointers) const {
         std::cerr << counter++ << " : " <<
                   node->get_friendly_name() << " :  ";
         if (tds_as_pointers) {
-            for (const auto& in : expr->inputs()) {
+            for (const auto& in : expr->m_input_tensors) {
                 if (td2int.count(in) == 0)
                     OPENVINO_THROW("Undefined input descriptor for op");
                 std::cerr << td2int.at(in) << ", ";
             }
             std::cerr << "\b\b => ";
-            for (const auto& out : expr->outputs()) {
+            for (const auto& out : expr->m_output_tensors) {
                 if (td2int.count(out) == 0)
                     td2int.insert({out, td_counter++});
                 std::cerr << td2int.at(out) << ", ";
             }
         } else {
-            for (size_t i = 0; i < expr->get_input_count(); ++i)
-                std::cerr << expr->input_port(i) << ", ";
+            for (const auto& port_desc : expr->m_input_port_descriptors)
+                std::cerr << port_desc << ", ";
             std::cerr << "\b\b => ";
-            for (size_t i = 0; i < expr->get_output_count(); ++i)
-                std::cerr << expr->output_port(i) << ", ";
+            for (const auto& port_desc : expr->m_output_port_descriptors)
+                std::cerr << port_desc << ", ";
         }
         std::cerr << "\b\b";
         const auto& rinfo = expr->get_reg_info();
@@ -175,24 +171,24 @@ ExpressionPtr LinearIR::get_expr_by_node(const std::shared_ptr<Node>& n) const {
     return found->second;
 }
 
-void LinearIR::replace_input(const std::vector<ExpressionPort>& consumers, const TensorPtr& to) {
+void LinearIR::replace_input(std::set<ExpressionPort> consumers, const TensorPtr& to) {
     for (const auto& consumer_input : consumers) {
         replace_input(consumer_input, to);
     }
 }
 
 void LinearIR::replace_input(const ExpressionPtr& expr, size_t port, const TensorPtr& to) {
-    replace_input(expr->input_port(port), to);
+    replace_input(expr->get_input_port(port), to);
 }
 
 void LinearIR::replace_input(const ExpressionPort& expr_port, const TensorPtr& to) {
     const auto port = expr_port.get_index();
-    const auto expr = expr_port.get_expr_ptr();
+    const auto expr = expr_port.get_expr();
 
     OPENVINO_ASSERT(expr_port.get_type() == ExpressionPort::Type::Input, "Failed to replace: target input port must have Input type");
     OPENVINO_ASSERT(expr_port.get_index() < expr->get_input_count(), "Failed to replace: target input port must be less than input count!");
 
-    const auto& from = expr->input(port);
+    const auto& from = expr->get_input_tensor(port);
     if (from == to)
         return;
 
@@ -201,24 +197,6 @@ void LinearIR::replace_input(const ExpressionPort& expr_port, const TensorPtr& t
     }
     from->remove_consumer(expr_port);
     expr->replace_input(port, std::move(to));
-}
-
-void LinearIR::replace_output(const ExpressionPtr& expr, size_t port, const TensorPtr& to) {
-    replace_output(expr->output_port(port), to);
-}
-
-void LinearIR::replace_output(const ExpressionPort& expr_port, const TensorPtr& to) {
-    const auto port = expr_port.get_index();
-    const auto expr = expr_port.get_expr_ptr();
-
-    OPENVINO_ASSERT(expr_port.get_type() == ExpressionPort::Type::Output, "Failed to replace: target output port must have Output type");
-    OPENVINO_ASSERT(port < expr->get_output_count(), "Failed to replace: target output port must be less than output count!");
-    const auto to_source_td = to->get_source();
-    OPENVINO_ASSERT(to_source_td.get_expr_ptr() == expr && to_source_td.get_index() == port,
-                    "Failed to replace: incorrect new output Tensor. Source expr must be the current expr");
-    if (expr->output(port) == to)
-        return;
-    expr->replace_output(port, to);
 }
 
 void LinearIR::register_regular_expression(const ExpressionPtr& expr) {
@@ -238,8 +216,8 @@ void LinearIR::register_expression(const ExpressionPtr& expr) {
 
 void LinearIR::unregister_expression(const ExpressionPtr& expr) {
     for (size_t i = 0; i < expr->get_input_count(); ++i) {
-        const auto& input = expr->input(i);
-        input->remove_consumer(expr->input_port(i));
+        const auto& input = expr->get_input_tensor(i);
+        input->remove_consumer(expr->get_input_port(i));
     }
 
     m_node2expression_map.erase(expr->get_node());

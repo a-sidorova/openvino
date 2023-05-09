@@ -17,15 +17,24 @@ namespace lowered {
 size_t Expression::LOOP_NULL_ID = SIZE_MAX;
 
 Expression::Expression(const std::shared_ptr<Node>& n)
-    : m_source_node{n}, m_emitter{nullptr}, m_inputs{}, m_outputs{}, m_reg_info{{}, {}} {}
-
-const TensorPtr& Expression::input(size_t i) const {
-    OPENVINO_ASSERT(i < m_inputs.size(), "Failed to get input: target input port must be less than input count!");
-    return m_inputs[i];
+    : m_source_node{n}, m_emitter{nullptr}, m_input_tensors{}, m_output_tensors{}, m_reg_info{{}, {}} {
+    m_input_port_descriptors.reserve(n->get_input_size());
+    m_output_port_descriptors.reserve(n->get_output_size());
+    for (const auto& input : n->inputs()) {
+        m_input_port_descriptors.push_back(PortManager::get_port_descriptor_ptr(input));
+    }
+    for (const auto& output : n->outputs()) {
+        m_output_port_descriptors.push_back(PortManager::get_port_descriptor_ptr(output));
+    }
 }
-const TensorPtr& Expression::output(size_t i) const {
-    OPENVINO_ASSERT(i < m_outputs.size(), "Failed to get output: target output port must be less than output count!");
-    return m_outputs[i];
+
+const TensorPtr& Expression::get_input_tensor(size_t i) const {
+    OPENVINO_ASSERT(i < m_input_tensors.size(), "Failed to get input tensor: target input port must be less than input count!");
+    return m_input_tensors[i];
+}
+const TensorPtr& Expression::get_output_tensor(size_t i) const {
+    OPENVINO_ASSERT(i < m_output_tensors.size(), "Failed to get output: target output port must be less than output count!");
+    return m_output_tensors[i];
 }
 
 std::shared_ptr<Node> Expression::get_node() const {
@@ -43,13 +52,8 @@ void Expression::init_emitter(const std::shared_ptr<const TargetMachine>& target
 }
 
 void Expression::replace_input(size_t port, TensorPtr to) {
-    OPENVINO_ASSERT(port < m_inputs.size(), "Failed to replace: target input port must be less than input count!");
-    m_inputs[port] = std::move(to);
-}
-
-void Expression::replace_output(size_t port, TensorPtr to) {
-    OPENVINO_ASSERT(port < m_outputs.size(), "Failed to replace: target output port must be less than output count!");
-    m_outputs[port] = std::move(to);
+    OPENVINO_ASSERT(port < m_input_tensors.size(), "Failed to replace: target input port must be less than input count!");
+    m_input_tensors[port] = std::move(to);
 }
 
 void Expression::set_loop_id(size_t id, size_t idx) {
@@ -69,21 +73,12 @@ void Expression::remove_loop_id(size_t id) {
     *it = Expression::LOOP_NULL_ID;
 }
 
-ExpressionPort Expression::input_port(size_t i) {
-    OPENVINO_ASSERT(i < m_inputs.size(), "Failed to get input port: target input port must be less than input count!");
-    const auto& input = m_inputs[i];
-    const auto consumers = input->get_consumers();
-    const auto found = std::find_if(consumers.begin(), consumers.end(),
-                                    [&](const ExpressionPort& desc) {
-                                                return desc.get_index() == i && desc.get_expr_ptr() == this->shared_from_this();
-                                          });
-    OPENVINO_ASSERT(found != consumers.end(), "Input ExpressionPort for Expression hasn't found in input Tensor!");
-    return *found;
+ExpressionPort Expression::get_input_port(size_t i) {
+    return ExpressionPort(this->shared_from_this(), ExpressionPort::Type::Input, i);
 }
 
-ExpressionPort Expression::output_port(size_t i) {
-    OPENVINO_ASSERT(i < m_outputs.size(), "Failed to get output port: target output port must be less than output count!");
-    return m_outputs[i]->get_source();
+ExpressionPort Expression::get_output_port(size_t i) {
+    return ExpressionPort(this->shared_from_this(), ExpressionPort::Type::Output, i);
 }
 
 IOExpression::IOExpression(const std::shared_ptr<ov::opset1::Parameter>& par, int64_t index)

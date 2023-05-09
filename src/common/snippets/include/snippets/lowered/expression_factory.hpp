@@ -45,16 +45,12 @@ private:
     static ExpressionPtr create(const std::shared_ptr<ov::Node>& n, const LinearIR& linear_ir,
                                 const std::vector<TensorPtr>& inputs);
 
-    /* -- Full Builders - get input and outputs tensors from parameters */
-    static ExpressionPtr create(const std::shared_ptr<ov::Node>& n, const LinearIR& linear_ir,
-                                const std::vector<TensorPtr>& inputs, const std::vector<TensorPtr>& outputs);
-
     // Creates inputs for expression using parent output tensors
-    static std::vector<TensorPtr> create_expression_inputs(const LinearIR& linear_ir, const ExpressionPtr& expr);
+    static void create_expression_inputs(const LinearIR& linear_ir, const ExpressionPtr& expr);
     // Creates new output tensors
-    static std::vector<TensorPtr> create_expression_outputs(const LinearIR& linear_ir, const ExpressionPtr& expr);
+    static void create_expression_outputs(const LinearIR& linear_ir, const ExpressionPtr& expr);
     // The method verifies of input tensors to availability of the expression as consumer and add it if missed
-    static void validate_inputs(const ExpressionPtr& expr, const std::vector<TensorPtr>& inputs);
+    static void init_expression_inputs(const ExpressionPtr& expr, const std::vector<TensorPtr>& inputs);
 };
 
 } // namespace lowered

@@ -21,9 +21,9 @@ void AllocateBuffers::propagate_offset(const LinearIR& linear_ir, const Expressi
     // Propagate to up: in Store. Buffer can have only one Store
     {
         if (buffer->is_intermediate_memory()) {
-            OPENVINO_ASSERT(buffer_expr->inputs().size() == 1, "Buffer with intermediate memory must have one parent");
-            const auto& parent_output = buffer_expr->input(0)->get_source();
-            const auto& parent_expr = parent_output.get_expr_ptr();
+            OPENVINO_ASSERT(buffer_expr->get_input_tensors().size() == 1, "Buffer with intermediate memory must have one parent");
+            const auto& parent_output = buffer_expr->get_input_tensor(0)->get_source();
+            const auto& parent_expr = parent_output.get_expr();
             const auto port = parent_output.get_index();
             const auto& parent_node = parent_expr->get_node();
             auto memory_access = ov::as_type_ptr<ngraph::snippets::op::MemoryAccess>(parent_node);
@@ -36,9 +36,9 @@ void AllocateBuffers::propagate_offset(const LinearIR& linear_ir, const Expressi
         }
     }
     // Propagate to down: in Load. Buffer can have several Load
-    const auto& buffer_out = buffer_expr->output(0);
+    const auto& buffer_out = buffer_expr->get_output_tensor(0);
     for (const auto& child_expr_input : buffer_out->get_consumers()) {
-        const auto& child_expr = child_expr_input.get_expr_ptr();
+        const auto& child_expr = child_expr_input.get_expr();
         const auto port = child_expr_input.get_index();
         const auto& child_node = child_expr->get_node();
         auto memory_access = ov::as_type_ptr<ngraph::snippets::op::MemoryAccess>(child_node);
@@ -70,7 +70,7 @@ bool AllocateBuffers::run(LinearIR& linear_ir) {
             }
 
             if (buffer->is_intermediate_memory()) {
-                const auto& parent_expr = expr_it->get()->input(0)->get_source().get_expr_ptr();
+                const auto& parent_expr = expr_it->get()->get_input_tensor(0)->get_source().get_expr();
                 const auto& parent_node = parent_expr->get_node();
                 // Full MemoryAccess ops need new memory. Previous logic is to check for parent isn't Loop
                 // TODO: It should be unified in MemoryManager with memory reuse in the near future

@@ -11,30 +11,55 @@ namespace ngraph {
 namespace snippets {
 namespace lowered {
 
-ExpressionPort::ExpressionPort(const std::weak_ptr<Expression>& expr, Type type, size_t port,
-                               const std::vector<size_t>& tensor, const std::vector<size_t>& layout, const std::vector<size_t>& subtensor)
-        : m_expr(expr), m_type(type), m_port_index(port), m_port_desc(std::make_shared<PortDescriptor>(tensor, subtensor, layout)) {}
+ExpressionPort::ExpressionPort(const std::shared_ptr<Expression>& expr, Type type, size_t port)
+        : m_expr(expr), m_type(type), m_port_index(port) {}
 
-ExpressionPort::ExpressionPort(const std::weak_ptr<Expression>& expr, Type type, size_t port, const PortDescriptorPtr& port_desc)
-        : m_expr(expr), m_type(type), m_port_index(port) {
-    PortDescriptorPtr local_port_desc = port_desc;
-    if (!local_port_desc) {
-        if (type == Type::Input) {
-            local_port_desc = PortManager::get_port_descriptor_ptr(expr.lock()->get_node()->input(port));
-        } else if (type == Type::Output) {
-            local_port_desc = PortManager::get_port_descriptor_ptr(expr.lock()->get_node()->output(port));
-        } else {
-            OPENVINO_THROW("ExpressionPort supports only Input and Output type!");
-        }
-    }
-
-    m_port_desc = local_port_desc;
+PortDescriptorPtr ExpressionPort::get_port_descriptor() const {
+    const auto& descs = m_type == Type::Input ? m_expr->m_input_port_descriptors
+                                              : m_expr->m_output_port_descriptors;
+    OPENVINO_ASSERT(m_port_index < descs.size(), "Incorrect index of port");
+    return descs[m_port_index];
 }
 
-std::shared_ptr<Expression> ExpressionPort::get_expr_ptr() const {
-    auto shared = m_expr.lock();
-    OPENVINO_ASSERT(shared != nullptr, "Failed attempt to get shared pointer of source expression: nullptr");
-    return shared;
+const std::shared_ptr<Tensor>& ExpressionPort::get_tensor_ptr() const {
+    const auto& tensors = m_type == Type::Input ? m_expr->m_input_tensors
+                                                : m_expr->m_output_tensors;
+    OPENVINO_ASSERT(m_port_index < tensors.size(), "Incorrect index of port");
+    return tensors[m_port_index];
+}
+
+std::vector<size_t> ExpressionPort::get_tensor() const {
+    return get_port_descriptor()->get_tensor();
+}
+std::vector<size_t> ExpressionPort::get_layout() const {
+    return get_port_descriptor()->get_layout();
+}
+std::vector<size_t> ExpressionPort::get_subtensor() const {
+    return get_port_descriptor()->get_subtensor();
+}
+
+void ExpressionPort::set_tensor(const std::vector<size_t>& tensor) {
+    get_port_descriptor()->set_tensor(tensor);
+}
+void ExpressionPort::set_layout(const std::vector<size_t>& layout) {
+    get_port_descriptor()->set_layout(layout);
+}
+void ExpressionPort::set_subtensor(const std::vector<size_t>& subtensor) {
+    get_port_descriptor()->set_subtensor(subtensor);
+}
+
+bool operator==(const ExpressionPort& lhs, const ExpressionPort& rhs) {
+    if (&lhs == &rhs)
+        return true;
+    OPENVINO_ASSERT(lhs.get_type() == rhs.get_type(), "Incorrect ExpressionPort comparison");
+    return lhs.get_index() == rhs.get_index() && lhs.get_expr() == rhs.get_expr();
+}
+bool operator!=(const ExpressionPort& lhs, const ExpressionPort& rhs) {
+    return !(lhs == rhs);
+}
+bool operator<(const ExpressionPort& lhs, const ExpressionPort& rhs) {
+    OPENVINO_ASSERT(lhs.get_type() == rhs.get_type(), "Incorrect ExpressionPort comparison");
+    return (lhs.get_index() < rhs.get_index()) || (lhs.get_index() == rhs.get_index() && lhs.get_expr() < rhs.get_expr());
 }
 
 }// namespace lowered

@@ -55,7 +55,7 @@ void LinearIR::LoopManager::get_loop_bounds(const LinearIR &linear_ir,
                                             size_t loop_id) {
     OPENVINO_ASSERT(!entries.empty(), "Loop must have entry points");
     OPENVINO_ASSERT(!exits.empty(), "Loop must have entry points");
-    const auto entry_expr = entries.front().get_expr_ptr();
+    const auto entry_expr = entries.front().get_expr();
     loop_begin_pos = std::find(linear_ir.begin(), linear_ir.end(), entry_expr);
     OPENVINO_ASSERT(loop_begin_pos != linear_ir.end(), "Loop begin hasn't been found!");
 
@@ -68,7 +68,7 @@ void LinearIR::LoopManager::get_loop_bounds(const LinearIR &linear_ir,
     }
 
     // At the moment all Loops must have exit points
-    const auto& exit_expr = exits.back().get_expr_ptr();
+    const auto& exit_expr = exits.back().get_expr();
     loop_end_pos = std::next(std::find(loop_begin_pos, linear_ir.end(), exit_expr));
     OPENVINO_ASSERT(loop_end_pos != linear_ir.end(), "Loop end hasn't been found!");
 }
@@ -81,15 +81,15 @@ void LinearIR::LoopManager::get_io_loop_ports(LinearIR::constExprIt loop_begin_p
     exits.clear();
     for (auto expr_it = loop_begin_pos; expr_it != loop_end_pos; ++expr_it) {
         const auto& expr = *expr_it;
-        const auto inputs = expr->inputs();
-        const auto outputs = expr->outputs();
+        const auto inputs = expr->get_input_tensors();
+        const auto outputs = expr->get_output_tensors();
 
         for (size_t in_port = 0; in_port < inputs.size(); ++in_port) {
             const auto in_td = inputs[in_port];
-            const auto parent_expr = in_td->get_source().get_expr_ptr();
+            const auto parent_expr = in_td->get_source().get_expr();
             if (!ov::is_type<ov::op::v0::Constant>(parent_expr->get_node()) &&
                 std::find(loop_begin_pos, expr_it, parent_expr) == expr_it) {
-                entries.push_back(expr->input_port(in_port));
+                entries.push_back(expr->get_input_port(in_port));
             }
         }
 
@@ -97,9 +97,9 @@ void LinearIR::LoopManager::get_io_loop_ports(LinearIR::constExprIt loop_begin_p
             const auto out_td = outputs[out_port];
             const auto consumer_ports = out_td->get_consumers();
             for (const auto& consumer : consumer_ports) {
-                const auto consumer_expr = consumer.get_expr_ptr();
+                const auto consumer_expr = consumer.get_expr();
                 if (std::find(expr_it, loop_end_pos, consumer_expr) == loop_end_pos) {
-                    exits.push_back(expr->output_port(out_port));
+                    exits.push_back(expr->get_output_port(out_port));
                     break;
                 }
             }
