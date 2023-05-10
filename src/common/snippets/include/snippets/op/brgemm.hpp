@@ -20,7 +20,8 @@ class Brgemm : public MemoryAccess {
 public:
     OPENVINO_OP("Brgemm", "SnippetsOpset", MemoryAccess);
     Brgemm(const Output<Node>& A, const Output<Node>& B,
-           const size_t offset_a = 0lu, const size_t offset_b = 0lu, const size_t offset_c = 0lu);
+           const size_t offset_a = 0lu, const size_t offset_b = 0lu, const size_t offset_c = 0lu,
+           std::vector<size_t> layout_a = {}, std::vector<size_t> layout_b = {}, std::vector<size_t> layout_c = {});
     Brgemm() = default;
 
     size_t get_offset_a() const { return get_input_offset(0); }
@@ -33,7 +34,7 @@ public:
     bool has_evaluate() const override { return false; }
 
 protected:
-    void custom_constructor_validate_and_infer_types();
+    void custom_constructor_validate_and_infer_types(std::vector<size_t> layout_a, std::vector<size_t> layout_b, std::vector<size_t> layout_c);
     void validate_inputs() const;
 
     ov::element::Type get_output_type() const;

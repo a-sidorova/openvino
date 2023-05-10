@@ -13,7 +13,8 @@ namespace ov {
 namespace intel_cpu {
 
 BrgemmCPU::BrgemmCPU(const Output<Node>& A, const Output<Node>& B, const Type type,
-                     const size_t offset_a, const size_t offset_b, const size_t offset_c)
+                     const size_t offset_a, const size_t offset_b, const size_t offset_c,
+                     std::vector<size_t> layout_a, std::vector<size_t> layout_b, std::vector<size_t> layout_c)
     : Brgemm(), m_type(type) {
     // We call default ctor of Brgemm class to avoid incorrect shape infer in constructor_validate_and_type_infer() call
     set_arguments({A, B});
@@ -22,11 +23,12 @@ BrgemmCPU::BrgemmCPU(const Output<Node>& A, const Output<Node>& B, const Type ty
     set_input_port_descriptor({0, offset_a}, 0);
     set_input_port_descriptor({0, offset_b}, 1);
     set_output_port_descriptor({0, offset_c}, 0);
-    custom_constructor_validate_and_infer_types();
+    custom_constructor_validate_and_infer_types(layout_a, layout_b, layout_c);
 }
 
 BrgemmCPU::BrgemmCPU(const Output<Node>& A, const Output<Node>& B, const Output<Node>& scratch, const Type type,
-                     const size_t offset_a, const size_t offset_b, const size_t offset_scratch, const size_t offset_c)
+                     const size_t offset_a, const size_t offset_b, const size_t offset_scratch, const size_t offset_c,
+                     std::vector<size_t> layout_a, std::vector<size_t> layout_b, std::vector<size_t> layout_c)
     : Brgemm(), m_type(type) {
     set_arguments({A, B, scratch});
     set_output_size(1);
@@ -35,10 +37,10 @@ BrgemmCPU::BrgemmCPU(const Output<Node>& A, const Output<Node>& B, const Output<
     set_input_port_descriptor({0, offset_b}, 1);
     set_output_port_descriptor({0, offset_c}, 0);
     set_input_port_descriptor({0, offset_scratch}, 2);
-    custom_constructor_validate_and_infer_types();
+    custom_constructor_validate_and_infer_types(layout_a, layout_b, layout_c);
 }
 
-void BrgemmCPU::custom_constructor_validate_and_infer_types() {
+void BrgemmCPU::custom_constructor_validate_and_infer_types(std::vector<size_t> layout_a, std::vector<size_t> layout_b, std::vector<size_t> layout_c) {
     INTERNAL_OP_SCOPE(BrgemmCPU_constructor_validate_and_infer_types);
     validate_inputs();
 
@@ -46,11 +48,11 @@ void BrgemmCPU::custom_constructor_validate_and_infer_types() {
     // So we use port descs from source inputs
     const auto brgemm_copy = is_with_data_repacking() ? get_brgemm_copy() : nullptr;
     const auto planar_input_shapes =
-        std::vector<ov::PartialShape>{ ngraph::snippets::utils::get_port_planar_shape(input_value(0)),
+        std::vector<ov::PartialShape>{ ngraph::snippets::utils::get_reordered_planar_shape(get_input_partial_shape(0), std::move(layout_a)),
                                        brgemm_copy ? ngraph::snippets::utils::get_port_planar_shape(brgemm_copy->input(0))
-                                                   : ngraph::snippets::utils::get_port_planar_shape(input_value(1)) };
+                                                   : ngraph::snippets::utils::get_reordered_planar_shape(get_input_partial_shape(1), std::move(layout_b)) };
     auto output_shape = get_output_partial_shape(planar_input_shapes);
-    set_output_type(0, get_output_type(), get_planar_output_shape(output_shape));
+    set_output_type(0, get_output_type(), ngraph::snippets::utils::get_reordered_planar_shape(output_shape, std::move(layout_c)));
 
     //Additional check for 3rd input
     validate_with_scratchpad(planar_input_shapes[1].get_shape());
@@ -107,10 +109,16 @@ std::shared_ptr<Node> BrgemmCPU::clone_with_new_inputs(const OutputVector& new_a
     std::shared_ptr<BrgemmCPU> new_node = nullptr;
     if (!is_with_scratchpad()) {
         new_node = std::make_shared<BrgemmCPU>(new_args.at(0), new_args.at(1), m_type,
-                                               get_offset_a(), get_offset_b(), get_offset_c());
+                                               get_offset_a(), get_offset_b(), get_offset_c(),
+                                               ngraph::snippets::PortManager::get_port_descriptor_ptr(input(0))->get_layout(),
+                                               ngraph::snippets::PortManager::get_port_descriptor_ptr(input(1))->get_layout(),
+                                               ngraph::snippets::PortManager::get_port_descriptor_ptr(output(0))->get_layout());
     } else {
         new_node = std::make_shared<BrgemmCPU>(new_args.at(0), new_args.at(1), new_args.at(2), m_type,
-                                               get_offset_a(), get_offset_b(), get_offset_scratch(), get_offset_c());
+                                               get_offset_a(), get_offset_b(), get_offset_scratch(), get_offset_c(),
+                                               ngraph::snippets::PortManager::get_port_descriptor_ptr(input(0))->get_layout(),
+                                               ngraph::snippets::PortManager::get_port_descriptor_ptr(input(1))->get_layout(),
+                                               ngraph::snippets::PortManager::get_port_descriptor_ptr(output(0))->get_layout());
     }
     return new_node;
 }

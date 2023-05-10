@@ -13,25 +13,27 @@ namespace snippets {
 namespace op {
 
 Brgemm::Brgemm(const Output<Node>& A, const Output<Node>& B,
-               const size_t offset_a, const size_t offset_b, const size_t offset_c) : MemoryAccess({A, B}, std::set<size_t>{0, 1}, std::set<size_t>{0}) {
+               const size_t offset_a, const size_t offset_b, const size_t offset_c,
+               std::vector<size_t> layout_a, std::vector<size_t> layout_b, std::vector<size_t> layout_c)
+    : MemoryAccess({A, B}, std::set<size_t>{0, 1}, std::set<size_t>{0}) {
     set_output_size(1);
     set_input_offset(offset_a, 0);
     set_input_offset(offset_b, 1);
     set_output_offset(offset_c, 0);
-    custom_constructor_validate_and_infer_types();
+    custom_constructor_validate_and_infer_types(std::move(layout_a), std::move(layout_b), std::move(layout_c));
 }
 
-void Brgemm::custom_constructor_validate_and_infer_types() {
+void Brgemm::custom_constructor_validate_and_infer_types(std::vector<size_t> layout_a, std::vector<size_t> layout_b, std::vector<size_t> layout_c) {
     INTERNAL_OP_SCOPE(BrgemmCPU_constructor_validate_and_infer_types);
     validate_inputs();
 
     // During ctor call, Brgemm doesn't know his port descriptors.
-    // So we use port descs from source inputs
+    // So we use explicit layouts from parameters
     const auto planar_input_shapes =
-            std::vector<ov::PartialShape>{ ngraph::snippets::utils::get_port_planar_shape(input_value(0)),
-                                           ngraph::snippets::utils::get_port_planar_shape(input_value(1)) };
+            std::vector<ov::PartialShape>{ ngraph::snippets::utils::get_reordered_planar_shape(get_input_partial_shape(0), std::move(layout_a)),
+                                           ngraph::snippets::utils::get_reordered_planar_shape(get_input_partial_shape(1), std::move(layout_b)) };
     auto output_shape = get_output_partial_shape(planar_input_shapes);
-    set_output_type(0, get_output_type(), get_planar_output_shape(output_shape));
+    set_output_type(0, get_output_type(), ngraph::snippets::utils::get_reordered_planar_shape(output_shape, std::move(layout_c)));
 }
 
 void Brgemm::validate_inputs() const {
@@ -52,7 +54,11 @@ void Brgemm::validate_and_infer_types() {
 std::shared_ptr<Node> Brgemm::clone_with_new_inputs(const OutputVector& new_args) const {
     INTERNAL_OP_SCOPE(Brgemm_clone_with_new_inputs);
     check_new_args_count(this, new_args);
-    return std::make_shared<Brgemm>(new_args.at(0), new_args.at(1), get_offset_a(), get_offset_b(), get_offset_c());
+    return std::make_shared<Brgemm>(new_args.at(0), new_args.at(1),
+                                    get_offset_a(), get_offset_b(), get_offset_c(),
+                                    PortManager::get_port_descriptor_ptr(input(0))->get_layout(),
+                                    PortManager::get_port_descriptor_ptr(input(1))->get_layout(),
+                                    PortManager::get_port_descriptor_ptr(output(0))->get_layout());
 }
 
 ov::element::Type Brgemm::get_output_type() const {

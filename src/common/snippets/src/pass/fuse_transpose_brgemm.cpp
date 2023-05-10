@@ -83,12 +83,6 @@ FuseTransposeBrgemm::FuseTransposeBrgemm() {
                 const auto& original_port = ngraph::snippets::PortManager::get_port_descriptor_ptr(in);
                 original_port->set_shape(transpose->get_input_shape(0));
                 original_port->set_layout(const_order->cast_vector<size_t>());
-                // At the moment we support fused Transpose only after Parameter -> we can update port descriptor for Parameter as well.
-                // Note: It's needed for BrgemmCPU
-                ngraph::snippets::PortManager::set_port_descriptor_ptr(transpose->input_value(0),
-                                                                       std::make_shared<PortDescriptor>(transpose->get_input_shape(0),
-                                                                                                        std::vector<size_t>{},
-                                                                                                        const_order->cast_vector<size_t>()));
             }
         }
 

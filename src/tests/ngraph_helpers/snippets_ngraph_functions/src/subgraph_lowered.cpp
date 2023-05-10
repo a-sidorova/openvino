@@ -83,10 +83,10 @@ std::shared_ptr<ov::Model> Transpose0213MatMulLoweredFunction::initLowered() con
         const auto& td = ngraph::snippets::PortManager::get_port_descriptor_ptr(anchor);
         const auto& tensor = td->get_shape();
         const auto& subtensor = td->get_subtensor();
-        ngraph::snippets::PortManager::set_port_descriptor_ptr(anchor,
-                                                               std::make_shared<ngraph::snippets::PortDescriptor>(tensor, subtensor, layout));
     }
-    auto matmul = std::make_shared<ngraph::snippets::op::Brgemm>(data[0], data[1]);
+    auto matmul = std::make_shared<ngraph::snippets::op::Brgemm>(data[0], data[1], 0, 0, 0, transpose_position == 0 ? layout : std::vector<size_t>{},
+                                                                                            transpose_position == 1 ? layout : std::vector<size_t>{},
+                                                                                            transpose_position == 2 ? layout : std::vector<size_t>{});
     auto result = std::make_shared<ov::op::v0::Result>(matmul);
     if (transpose_position == 2) {
         const auto& anchor = matmul->output(0);
@@ -94,8 +94,6 @@ std::shared_ptr<ov::Model> Transpose0213MatMulLoweredFunction::initLowered() con
         const auto& tensor = td->get_shape();
         const auto& subtensor = td->get_subtensor();
         ngraph::snippets::PortManager::set_port_descriptor_ptr(anchor,
-                                                               std::make_shared<ngraph::snippets::PortDescriptor>(tensor, subtensor, layout));
-        ngraph::snippets::PortManager::set_port_descriptor_ptr(result->input(0),
                                                                std::make_shared<ngraph::snippets::PortDescriptor>(tensor, subtensor, layout));
     }
     if (transpose_position < 2) {

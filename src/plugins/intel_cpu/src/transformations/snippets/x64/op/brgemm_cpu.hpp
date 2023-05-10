@@ -30,9 +30,11 @@ public:
     };
 
     BrgemmCPU(const Output<Node>& A, const Output<Node>& B, const Type type,
-              const size_t offset_a = 0, const size_t offset_b = 0, const size_t offset_c = 0);
+              const size_t offset_a = 0, const size_t offset_b = 0, const size_t offset_c = 0,
+              std::vector<size_t> layout_a = {}, std::vector<size_t> layout_b = {}, std::vector<size_t> layout_c = {});
     BrgemmCPU(const Output<Node>& A, const Output<Node>& B, const Output<Node>& scratch, const Type type,
-              const size_t offset_a = 0, const size_t offset_b = 0, const size_t offset_scratch = 0, const size_t offset_c = 0);
+              const size_t offset_a = 0, const size_t offset_b = 0, const size_t offset_scratch = 0, const size_t offset_c = 0,
+              std::vector<size_t> layout_a = {}, std::vector<size_t> layout_b = {}, std::vector<size_t> layout_c = {});
     BrgemmCPU() = default;
 
     void validate_and_infer_types() override;
@@ -50,7 +52,7 @@ public:
     constexpr static size_t SCRATCH_BYTE_SIZE = 32 * 1024;
 
 private:
-    void custom_constructor_validate_and_infer_types();
+    void custom_constructor_validate_and_infer_types(std::vector<size_t> layout_a, std::vector<size_t> layout_b, std::vector<size_t> layout_c);
     void validate_with_scratchpad(const ov::Shape& shape_b) const;
     void validate_inputs() const;
 
