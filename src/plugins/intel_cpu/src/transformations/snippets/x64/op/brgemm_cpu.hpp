@@ -7,7 +7,7 @@
 #include "snippets/op/brgemm.hpp"
 #include "brgemm_copy_b.hpp"
 
-#include "snippets/port_descriptor.hpp"
+#include "snippets/lowered/port_descriptor.hpp"
 
 namespace ov {
 namespace intel_cpu {

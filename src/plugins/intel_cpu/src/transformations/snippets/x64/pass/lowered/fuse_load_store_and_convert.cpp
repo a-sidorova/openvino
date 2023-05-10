@@ -44,12 +44,9 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_load_convert(ngraph::snippe
         OPENVINO_THROW("Type of Convert op is undefined. Supports only fusing Load and ConvertTruncation or ConvertSaturation ops");
     }
 
-    const auto& convert_out = convert_expr->get_output_tensor(0);
-    const auto convert_consumers = convert_out->get_consumers();
-    ngraph::snippets::PortManager::set_port_descriptor_ptr(load_convert->output(0),
-                                                           std::make_shared<ngraph::snippets::PortDescriptor>(convert_out->get_shape(),
-                                                                                                              convert_out->get_subtensor(),
-                                                                                                              convert_out->get_layout()));
+    const auto out_port = convert_expr->get_output_port(0);
+    const auto convert_consumers = out_port.get_connected_ports();
+    ngraph::snippets::lowered::PortManager::set_port_descriptor_ptr(load_convert->output(0), out_port.get_descriptor_ptr()->clone());
     const auto load_convert_expr = linear_ir.create_expression(load_convert, { load_expr->get_input_tensor(0) });
     const auto convert_expr_it = convert_it;
     const auto insertion_pos = std::next(convert_it);
@@ -92,12 +89,9 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_store_convert(ngraph::snipp
         OPENVINO_THROW("Type of Convert op is undefined. Supports only fusing Store and ConvertTruncation or ConvertSaturation ops");
     }
 
-    const auto& store_out = store_expr->get_output_tensor(0);
-    const auto store_consumers = store_out->get_consumers();
-    ngraph::snippets::PortManager::set_port_descriptor_ptr(store_convert->output(0),
-                                                           std::make_shared<ngraph::snippets::PortDescriptor>(store_out->get_shape(),
-                                                                                                              store_out->get_subtensor(),
-                                                                                                              store_out->get_layout()));
+    const auto out_port = store_expr->get_output_port(0);
+    const auto store_consumers = out_port.get_connected_ports();
+    ngraph::snippets::lowered::PortManager::set_port_descriptor_ptr(store_convert->output(0), out_port.get_descriptor_ptr()->clone());
     const auto store_convert_expr = linear_ir.create_expression(store_convert, { input_td });
     const auto convert_expr_it = convert_it;
     const auto insertion_pos = std::next(convert_it);

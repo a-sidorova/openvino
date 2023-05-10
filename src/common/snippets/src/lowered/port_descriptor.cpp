@@ -2,12 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-#include "snippets/port_descriptor.hpp"
-#include "ngraph/except.hpp"
-#include <sstream>
+#include "snippets/lowered/port_descriptor.hpp"
 
 namespace ngraph {
 namespace snippets {
+namespace lowered {
 
 size_t PortDescriptor::Scheduling::FULL_DIM = SIZE_MAX;
 
@@ -139,5 +138,6 @@ PortDescriptorPtr PortManager::get_port_descriptor_ptr(const Output<const ov::No
         OPENVINO_THROW("Get output port descriptor is failed: incorrect count");
     return out_descs[out.get_index()];
 }
+} // namespace lowered
 } // namespace snippets
 } // namespace ngraph

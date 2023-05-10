@@ -750,9 +750,11 @@ BrgemmEmitter::BrgemmEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl:
     std::vector<ov::Input<ov::Node>> brgemm_inputs = {brgemm_node->input(0),
                                                       brgemm_copy ? brgemm_copy->input(0) : brgemm_node->input(1)};
     for (const auto& input : brgemm_inputs) {
-        init_scheduling_params(ngraph::snippets::PortManager::get_port_descriptor_ptr(input)->get_layout(), input.get_shape());
+        init_scheduling_params(ngraph::snippets::lowered::PortManager::get_port_descriptor_ptr(input)->get_layout(),
+                               input.get_shape());
     }
-    init_scheduling_params(ngraph::snippets::PortManager::get_port_descriptor_ptr(brgemm_node->output(0))->get_layout(), brgemm_node->output(0).get_shape());
+    init_scheduling_params(ngraph::snippets::lowered::PortManager::get_port_descriptor_ptr(brgemm_node->output(0))->get_layout(),
+                           brgemm_node->output(0).get_shape());
 
     const auto& A_shape = brgemm_node->get_input_shape(0);
     const auto& A_layout = io_layouts[0];
@@ -1107,7 +1109,7 @@ BrgemmCopyBEmitter::BrgemmCopyBEmitter(dnnl::impl::cpu::x64::jit_generator* h, d
     if (m_with_comp)
         m_comp_offset = brgemm_repack->get_offset_compensations();
 
-    const auto& layout = ngraph::snippets::PortManager::get_port_descriptor_ptr(brgemm_repack->input(0))->get_layout();
+    const auto& layout = ngraph::snippets::lowered::PortManager::get_port_descriptor_ptr(brgemm_repack->input(0))->get_layout();
     const auto& original_shape = brgemm_repack->get_input_shape(0);
     auto transposed_shape = original_shape;
     size_t leading_dimension = *(original_shape.rbegin());

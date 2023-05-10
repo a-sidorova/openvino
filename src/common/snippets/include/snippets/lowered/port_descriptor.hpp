@@ -10,6 +10,7 @@
 
 namespace ngraph {
 namespace snippets {
+namespace lowered {
 
 class PortDescriptor;
 using PortDescriptorPtr = std::shared_ptr<PortDescriptor>;
@@ -87,5 +88,6 @@ public:
     std::vector<PortDescriptorPtr> outputs{};
 };
 
+} // namespace lowered
 } // namespace snippets
 } // namespace ngraph

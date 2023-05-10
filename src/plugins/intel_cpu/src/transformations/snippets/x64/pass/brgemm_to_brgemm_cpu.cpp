@@ -22,19 +22,21 @@
 
 namespace ov {
 namespace intel_cpu {
+
+using namespace ngraph::snippets::lowered;
+
 namespace {
 inline std::vector<size_t> make_subtensor(const ov::Shape& tensor) {
-    return std::vector<size_t>(std::min(tensor.size(), 2lu), ngraph::snippets::PortDescriptor::Scheduling::FULL_DIM);
+    return std::vector<size_t>(std::min(tensor.size(), 2lu), PortDescriptor::Scheduling::FULL_DIM);
 }
 template<typename T>
 void set_full_port_desc(const T& port) {
     const auto& shape = port.get_shape();
-    ngraph::snippets::PortManager::set_port_descriptor_ptr(port, std::make_shared<ngraph::snippets::PortDescriptor>(shape,
-                                                                                                                    make_subtensor(shape)));
+    PortManager::set_port_descriptor_ptr(port, std::make_shared<PortDescriptor>(shape, make_subtensor(shape)));
 }
 template<typename T, typename... Args>
 void set_port_desc(const T& port, Args... params) {
-    ngraph::snippets::PortManager::set_port_descriptor_ptr(port, std::make_shared<ngraph::snippets::PortDescriptor>(params...));
+    PortManager::set_port_descriptor_ptr(port, std::make_shared<PortDescriptor>(params...));
 }
 } // namespace
 
@@ -55,9 +57,9 @@ pass::BrgemmToBrgemmCPU::BrgemmToBrgemmCPU() {
             return false;
         }
 
-        const auto& brgemm_in0_desc = ngraph::snippets::PortManager::get_port_descriptor_ptr(brgemm->input(0));
-        const auto& brgemm_in1_desc = ngraph::snippets::PortManager::get_port_descriptor_ptr(brgemm->input(1));
-        const auto& brgemm_out_desc = ngraph::snippets::PortManager::get_port_descriptor_ptr(brgemm->output(0));
+        const auto& brgemm_in0_desc = PortManager::get_port_descriptor_ptr(brgemm->input(0));
+        const auto& brgemm_in1_desc = PortManager::get_port_descriptor_ptr(brgemm->input(1));
+        const auto& brgemm_out_desc = PortManager::get_port_descriptor_ptr(brgemm->output(0));
 
         const auto dimsMatMulIn0 = ngraph::snippets::utils::get_port_planar_shape(brgemm->input_value(0)).get_shape();
         const auto dimsMatMulIn1 = ngraph::snippets::utils::get_port_planar_shape(brgemm->input_value(1)).get_shape();

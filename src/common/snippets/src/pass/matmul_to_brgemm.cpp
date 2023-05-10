@@ -10,7 +10,7 @@
 #include "snippets/utils.hpp"
 
 #include "ngraph/rt_info.hpp"
-#include <snippets/port_descriptor.hpp>
+#include "snippets/lowered/port_descriptor.hpp"
 #include "ngraph/pattern/op/wrap_type.hpp"
 
 namespace ngraph {
@@ -19,16 +19,16 @@ namespace pass {
 
 void MatMulToBrgemm::init_ports(const std::shared_ptr<op::Brgemm>& brgemm) const {
     auto get_subtensor = [](const ov::Shape& shape) {
-        return std::vector<size_t>{ PortDescriptor::Scheduling::FULL_DIM, PortDescriptor::Scheduling::FULL_DIM };
+        return std::vector<size_t>{ lowered::PortDescriptor::Scheduling::FULL_DIM, lowered::PortDescriptor::Scheduling::FULL_DIM };
     };
     for (const auto& input : brgemm->inputs()) {
         const auto tensor = input.get_shape();
         const auto subtensor = get_subtensor(tensor);
-        PortManager::set_port_descriptor_ptr(input, std::make_shared<PortDescriptor>(tensor, subtensor));
+        lowered::PortManager::set_port_descriptor_ptr(input, std::make_shared<lowered::PortDescriptor>(tensor, subtensor));
     }
     const auto tensor = brgemm->get_output_shape(0);
     const auto subtensor = get_subtensor(tensor);
-    PortManager::set_port_descriptor_ptr(brgemm->output(0), std::make_shared<PortDescriptor>(tensor, subtensor));
+    lowered::PortManager::set_port_descriptor_ptr(brgemm->output(0), std::make_shared<lowered::PortDescriptor>(tensor, subtensor));
 }
 
 MatMulToBrgemm::MatMulToBrgemm() {

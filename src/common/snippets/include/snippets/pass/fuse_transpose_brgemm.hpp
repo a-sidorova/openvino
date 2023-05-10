@@ -9,7 +9,7 @@
 
 #include "openvino/op/transpose.hpp"
 
-#include "snippets/port_descriptor.hpp"
+#include "snippets/lowered/port_descriptor.hpp"
 
 namespace ngraph {
 namespace snippets {

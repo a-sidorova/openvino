@@ -5,7 +5,7 @@
 #include <snippets/pass/transpose_decomposition.hpp>
 #include <snippets/itt.hpp>
 #include <snippets/snippets_isa.hpp>
-#include <snippets/port_descriptor.hpp>
+#include "snippets/lowered/port_descriptor.hpp"
 #include <ngraph/partial_shape.hpp>
 #include <ngraph/pattern/op/wrap_type.hpp>
 #include <ngraph/pass/manager.hpp>
@@ -41,18 +41,18 @@ TransposeDecomposition::TransposeDecomposition() {
             return false;
 
         // number of elements that can be processed on every iteration. For 0,1,2,3 -> 0,2,3,1 we can guarantee only scalar access
-        const auto subtensor_shape = std::vector<size_t>{1};
+        const auto subtensor = std::vector<size_t>{1};
         const auto& layout = order->cast_vector<size_t>();
 
         // todo: LoadReshape used here is essentially Load + an easy way to maintain correct shape propagation
         //  fix this in future and develop a more consistent shape propagation approach.
-        auto load = std::make_shared<snippets::op::LoadReshape>(data_input, subtensor_shape[0], 0, layout);
-        auto store = std::make_shared<snippets::op::Store>(load, subtensor_shape[0]);
+        auto load = std::make_shared<snippets::op::LoadReshape>(data_input, subtensor[0], 0, layout);
+        auto store = std::make_shared<snippets::op::Store>(load, subtensor[0]);
 
-        PortManager::set_port_descriptor_ptr(load->input(0), std::make_shared<PortDescriptor>(load->get_input_shape(0), subtensor_shape, layout));
-        PortManager::set_port_descriptor_ptr(load->output(0), std::make_shared<PortDescriptor>(load->get_output_shape(0), subtensor_shape));
-        PortManager::set_port_descriptor_ptr(store->input(0), std::make_shared<PortDescriptor>(store->get_input_shape(0), subtensor_shape));
-        PortManager::set_port_descriptor_ptr(store->output(0), std::make_shared<PortDescriptor>(store->get_output_shape(0), subtensor_shape));
+        lowered::PortManager::set_port_descriptor_ptr(load->input(0), std::make_shared<lowered::PortDescriptor>(load->get_input_shape(0), subtensor, layout));
+        lowered::PortManager::set_port_descriptor_ptr(load->output(0), std::make_shared<lowered::PortDescriptor>(load->get_output_shape(0), subtensor));
+        lowered::PortManager::set_port_descriptor_ptr(store->input(0), std::make_shared<lowered::PortDescriptor>(store->get_input_shape(0), subtensor));
+        lowered::PortManager::set_port_descriptor_ptr(store->output(0), std::make_shared<lowered::PortDescriptor>(store->get_output_shape(0), subtensor));
 
         for (auto& input : transpose->output(0).get_target_inputs()) {
             input.replace_source_output(store->output(0));

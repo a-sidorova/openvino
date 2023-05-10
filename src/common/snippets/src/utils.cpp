@@ -86,12 +86,12 @@ ov::PartialShape get_reordered_planar_shape(const ov::PartialShape& shape, const
 }
 
 ov::PartialShape get_port_planar_shape(const Input<Node>& in) {
-    const auto& port = PortManager::get_port_descriptor_ptr(in);
+    const auto& port = lowered::PortManager::get_port_descriptor_ptr(in);
     return utils::get_reordered_planar_shape(ov::Shape{port->get_shape()}, port->get_layout());
 }
 
 ov::PartialShape get_port_planar_shape(const Output<Node>& out) {
-    const auto& port = PortManager::get_port_descriptor_ptr(out);
+    const auto& port = lowered::PortManager::get_port_descriptor_ptr(out);
     return utils::get_reordered_planar_shape(ov::Shape{port->get_shape()}, port->get_layout());
 }
 

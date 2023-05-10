@@ -18,7 +18,7 @@
 #include "snippets/pass/fuse_transpose_brgemm.hpp"
 #include "snippets/pass/set_softmax_ports.hpp"
 #include "snippets/utils.hpp"
-#include "snippets/port_descriptor.hpp"
+#include "snippets/lowered/port_descriptor.hpp"
 
 #include "transformations/common_optimizations/nop_elimination.hpp"
 #include "transformations/utils/utils.hpp"

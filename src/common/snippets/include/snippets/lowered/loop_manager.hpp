@@ -9,7 +9,7 @@
 #include <openvino/core/node.hpp>
 #include <openvino/opsets/opset1.hpp>
 
-#include "snippets/port_descriptor.hpp"
+#include "port_descriptor.hpp"
 
 namespace ngraph {
 namespace snippets {

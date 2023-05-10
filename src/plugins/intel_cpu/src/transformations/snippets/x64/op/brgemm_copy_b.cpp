@@ -80,7 +80,7 @@ std::shared_ptr<Node> intel_cpu::BrgemmCopyB::clone_with_new_inputs(const Output
                                          get_offset_in(),
                                          get_offset_out(),
                                          is_with_compensations() ? get_offset_compensations() : 0,
-                                         ngraph::snippets::PortManager::get_port_descriptor_ptr(input(0))->get_layout());
+                                         ngraph::snippets::lowered::PortManager::get_port_descriptor_ptr(input(0))->get_layout());
 }
 
 size_t intel_cpu::BrgemmCopyB::get_offset_compensations() const {

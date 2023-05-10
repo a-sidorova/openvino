@@ -7,7 +7,7 @@
 #include <memory>
 #include <vector>
 
-#include "snippets/port_descriptor.hpp"
+#include "port_descriptor.hpp"
 
 
 namespace ngraph {
