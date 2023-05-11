@@ -17,7 +17,7 @@ using PortDescriptorPtr = std::shared_ptr<PortDescriptor>;
 class PortDescriptor {
 public:
     // The structure with service values for scheduling parameters
-    struct Scheduling {
+    struct ServiceDimensions {
         // The value for the subtensor that means that scheduling should be by full dimension
         static size_t FULL_DIM;
     };

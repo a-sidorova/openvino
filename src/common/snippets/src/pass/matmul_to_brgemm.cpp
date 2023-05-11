@@ -19,7 +19,7 @@ namespace pass {
 
 void MatMulToBrgemm::init_ports(const std::shared_ptr<op::Brgemm>& brgemm) const {
     auto get_subtensor = [](const ov::Shape& shape) {
-        return std::vector<size_t>{ lowered::PortDescriptor::Scheduling::FULL_DIM, lowered::PortDescriptor::Scheduling::FULL_DIM };
+        return std::vector<size_t>{ lowered::PortDescriptor::ServiceDimensions::FULL_DIM, lowered::PortDescriptor::ServiceDimensions::FULL_DIM };
     };
     for (const auto& input : brgemm->inputs()) {
         const auto tensor = input.get_shape();

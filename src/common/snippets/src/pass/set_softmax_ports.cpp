@@ -46,7 +46,7 @@ ngraph::snippets::pass::SetSoftmaxPorts::SetSoftmaxPorts() {
         OPENVINO_ASSERT(axis < static_cast<int64_t>(rank), "Softmax has incorrect axis");
         std::vector<size_t> subtensor(rank, 1);
         for (size_t i = axis; i < rank; ++i)
-            subtensor[i] = lowered::PortDescriptor::Scheduling::FULL_DIM;
+            subtensor[i] = lowered::PortDescriptor::ServiceDimensions::FULL_DIM;
 
         lowered::PortManager::set_port_descriptor_ptr(root->input(0), std::make_shared<lowered::PortDescriptor>(root->input(0), subtensor));
         lowered::PortManager::set_port_descriptor_ptr(root->output(0), std::make_shared<lowered::PortDescriptor>(root->output(0), subtensor));

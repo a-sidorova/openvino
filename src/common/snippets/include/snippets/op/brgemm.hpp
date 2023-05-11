@@ -34,13 +34,14 @@ public:
     bool has_evaluate() const override { return false; }
 
 protected:
-    void custom_constructor_validate_and_infer_types(std::vector<size_t> layout_a, std::vector<size_t> layout_b, std::vector<size_t> layout_c);
-    void validate_inputs() const;
-
     ov::element::Type get_output_type() const;
     std::vector<ov::PartialShape> get_planar_input_shapes(const std::vector<ov::Input<ov::Node>>& inputs) const;
     ov::PartialShape get_output_partial_shape(const std::vector<ov::PartialShape>& input_shapes) const;
     ov::PartialShape get_planar_output_shape(const ov::PartialShape& output_shape) const;
+
+private:
+    void custom_constructor_validate_and_infer_types(std::vector<size_t> layout_a, std::vector<size_t> layout_b, std::vector<size_t> layout_c);
+    void validate_inputs() const;
 };
 
 } // namespace op

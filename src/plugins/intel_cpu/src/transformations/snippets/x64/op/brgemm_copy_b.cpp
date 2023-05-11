@@ -36,7 +36,7 @@ void intel_cpu::BrgemmCopyB::custom_constructor_validate_and_infer_types(std::ve
     // During ctor call, BrgemmCopyB doesn't know his port descriptors.
     // So we use port descs from source inputs
     const auto element_type = get_input_element_type(0);
-    const auto pshape = ngraph::snippets::utils::get_reordered_planar_shape(get_input_partial_shape(0), std::move(layout_input));
+    const auto pshape = ngraph::snippets::utils::get_reordered_planar_shape(get_input_partial_shape(0), layout_input);
     validate(pshape, element_type);
 }
 

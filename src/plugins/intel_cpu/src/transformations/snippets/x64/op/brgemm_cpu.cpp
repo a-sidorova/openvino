@@ -23,7 +23,7 @@ BrgemmCPU::BrgemmCPU(const Output<Node>& A, const Output<Node>& B, const Type ty
     set_input_port_descriptor({0, offset_a}, 0);
     set_input_port_descriptor({0, offset_b}, 1);
     set_output_port_descriptor({0, offset_c}, 0);
-    custom_constructor_validate_and_infer_types(layout_a, layout_b, layout_c);
+    custom_constructor_validate_and_infer_types(std::move(layout_a), std::move(layout_b), std::move(layout_c));
 }
 
 BrgemmCPU::BrgemmCPU(const Output<Node>& A, const Output<Node>& B, const Output<Node>& scratch, const Type type,
@@ -37,7 +37,7 @@ BrgemmCPU::BrgemmCPU(const Output<Node>& A, const Output<Node>& B, const Output<
     set_input_port_descriptor({0, offset_b}, 1);
     set_output_port_descriptor({0, offset_c}, 0);
     set_input_port_descriptor({0, offset_scratch}, 2);
-    custom_constructor_validate_and_infer_types(layout_a, layout_b, layout_c);
+    custom_constructor_validate_and_infer_types(std::move(layout_a), std::move(layout_b), std::move(layout_c));
 }
 
 void BrgemmCPU::custom_constructor_validate_and_infer_types(std::vector<size_t> layout_a, std::vector<size_t> layout_b, std::vector<size_t> layout_c) {
@@ -48,11 +48,11 @@ void BrgemmCPU::custom_constructor_validate_and_infer_types(std::vector<size_t> 
     // So we use port descs from source inputs
     const auto brgemm_copy = is_with_data_repacking() ? get_brgemm_copy() : nullptr;
     const auto planar_input_shapes =
-        std::vector<ov::PartialShape>{ ngraph::snippets::utils::get_reordered_planar_shape(get_input_partial_shape(0), std::move(layout_a)),
+        std::vector<ov::PartialShape>{ ngraph::snippets::utils::get_reordered_planar_shape(get_input_partial_shape(0), layout_a),
                                        brgemm_copy ? ngraph::snippets::utils::get_port_planar_shape(brgemm_copy->input(0))
-                                                   : ngraph::snippets::utils::get_reordered_planar_shape(get_input_partial_shape(1), std::move(layout_b)) };
+                                                   : ngraph::snippets::utils::get_reordered_planar_shape(get_input_partial_shape(1), layout_b) };
     auto output_shape = get_output_partial_shape(planar_input_shapes);
-    set_output_type(0, get_output_type(), ngraph::snippets::utils::get_reordered_planar_shape(output_shape, std::move(layout_c)));
+    set_output_type(0, get_output_type(), ngraph::snippets::utils::get_reordered_planar_shape(output_shape, layout_c));
 
     //Additional check for 3rd input
     validate_with_scratchpad(planar_input_shapes[1].get_shape());

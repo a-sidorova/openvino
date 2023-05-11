@@ -30,10 +30,10 @@ void Brgemm::custom_constructor_validate_and_infer_types(std::vector<size_t> lay
     // During ctor call, Brgemm doesn't know his port descriptors.
     // So we use explicit layouts from parameters
     const auto planar_input_shapes =
-            std::vector<ov::PartialShape>{ ngraph::snippets::utils::get_reordered_planar_shape(get_input_partial_shape(0), std::move(layout_a)),
-                                           ngraph::snippets::utils::get_reordered_planar_shape(get_input_partial_shape(1), std::move(layout_b)) };
+            std::vector<ov::PartialShape>{ ngraph::snippets::utils::get_reordered_planar_shape(get_input_partial_shape(0), layout_a),
+                                           ngraph::snippets::utils::get_reordered_planar_shape(get_input_partial_shape(1), layout_b) };
     auto output_shape = get_output_partial_shape(planar_input_shapes);
-    set_output_type(0, get_output_type(), ngraph::snippets::utils::get_reordered_planar_shape(output_shape, std::move(layout_c)));
+    set_output_type(0, get_output_type(), ngraph::snippets::utils::get_reordered_planar_shape(output_shape, layout_c));
 }
 
 void Brgemm::validate_inputs() const {

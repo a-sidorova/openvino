@@ -27,7 +27,7 @@ using namespace ngraph::snippets::lowered;
 
 namespace {
 inline std::vector<size_t> make_subtensor(const ov::Shape& tensor) {
-    return std::vector<size_t>(std::min(tensor.size(), 2lu), PortDescriptor::Scheduling::FULL_DIM);
+    return std::vector<size_t>(std::min(tensor.size(), 2lu), PortDescriptor::ServiceDimensions::FULL_DIM);
 }
 template<typename T>
 void set_full_port_desc(const T& port) {
