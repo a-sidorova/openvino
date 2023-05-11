@@ -131,8 +131,9 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
     std::vector<size_t> loop_subtensor;
     std::vector<size_t> loop_tensor(loop_depth, 1);
     for (const auto& exit_point : loop_exit_points) {
-        const auto tensor = utils::get_reordered_planar_shape(ov::PartialShape(exit_point.get_shape()), exit_point.get_layout()).get_shape();
-        auto subtensor = exit_point.get_subtensor();
+        const auto& desc = exit_point.get_descriptor_ptr();
+        const auto tensor = utils::get_reordered_planar_shape(ov::PartialShape(desc->get_shape()), desc->get_layout()).get_shape();
+        auto subtensor = desc->get_subtensor();
         if (subtensor.empty()) {
             subtensor.resize(loop_depth, 1);
             subtensor[subtensor.size() - 1] = vector_size;

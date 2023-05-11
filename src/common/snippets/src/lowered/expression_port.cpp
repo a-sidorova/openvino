@@ -38,26 +38,6 @@ std::set<ExpressionPort> ExpressionPort::get_connected_ports() const {
     OPENVINO_THROW("ExpressionPort supports only Input and Output types");
 }
 
-std::vector<size_t> ExpressionPort::get_shape() const {
-    return get_descriptor_ptr()->get_shape();
-}
-std::vector<size_t> ExpressionPort::get_layout() const {
-    return get_descriptor_ptr()->get_layout();
-}
-std::vector<size_t> ExpressionPort::get_subtensor() const {
-    return get_descriptor_ptr()->get_subtensor();
-}
-
-void ExpressionPort::set_shape(const std::vector<size_t>& tensor) {
-    get_descriptor_ptr()->set_shape(tensor);
-}
-void ExpressionPort::set_layout(const std::vector<size_t>& layout) {
-    get_descriptor_ptr()->set_layout(layout);
-}
-void ExpressionPort::set_subtensor(const std::vector<size_t>& subtensor) {
-    get_descriptor_ptr()->set_subtensor(subtensor);
-}
-
 bool operator==(const ExpressionPort& lhs, const ExpressionPort& rhs) {
     if (&lhs == &rhs)
         return true;

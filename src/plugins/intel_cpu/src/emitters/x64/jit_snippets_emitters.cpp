@@ -121,26 +121,26 @@ KernelEmitter::KernelEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl:
     num_inputs = 0;
     num_outputs = 0;
     for (const auto& expr : io_exprs) {
-        TensorPtr td {};
+        ngraph::snippets::lowered::PortDescriptorPtr desc = nullptr;
         element::Type etype;
         switch (expr->get_type()) {
             case ngraph::snippets::lowered::IOExpression::io_type::INPUT: {
-                td = expr->get_output_tensor(0);
+                desc = expr->get_output_port_descriptor(0);
                 etype = expr->get_node()->get_output_element_type(0);
                 num_inputs++;
                 break;
             }
             case ngraph::snippets::lowered::IOExpression::io_type::OUTPUT: {
                 num_outputs++;
-                td = expr->get_input_tensor(0);
+                desc = expr->get_input_port_descriptor(0);
                 etype = expr->get_node()->get_input_element_type(0);
                 break;
             } default : {
                 IE_THROW() << "Kernel detected unsupported io_type";
             }
         }
-        io_shapes.push_back(td->get_shape());
-        io_data_layouts.push_back(td->get_layout());
+        io_shapes.push_back(desc->get_shape());
+        io_data_layouts.push_back(desc->get_layout());
         io_data_sizes.push_back(etype.size());
     }
 

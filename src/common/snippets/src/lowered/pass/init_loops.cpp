@@ -72,14 +72,14 @@ std::vector<int64_t> InitLoops::init_ptr_increments(const std::vector<Expression
     // Note: Need to find max relevant dim expr to account for broadcasting, collect relevant_dims as well
     size_t max_relevant_dim_size = 1;
     for (const auto& loop_input : loop_inputs) {
-        const auto& layout = loop_input.get_layout();
-        const auto& shape = loop_input.get_shape();
+        const auto& layout = loop_input.get_descriptor_ptr()->get_layout();
+        const auto& shape = loop_input.get_descriptor_ptr()->get_shape();
         const auto& dim = *(layout.rbegin() + dim_idx);
         max_relevant_dim_size = std::max(shape[dim], max_relevant_dim_size);
     }
     for (const auto& loop_output : loop_outputs) {
-        const auto& layout = loop_output.get_layout();
-        const auto& shape = loop_output.get_shape();
+        const auto& layout = loop_output.get_descriptor_ptr()->get_layout();
+        const auto& shape = loop_output.get_descriptor_ptr()->get_shape();
         const auto& dim = *(layout.rbegin() + dim_idx);
         max_relevant_dim_size = std::max(shape[dim], max_relevant_dim_size);
     }
@@ -87,19 +87,19 @@ std::vector<int64_t> InitLoops::init_ptr_increments(const std::vector<Expression
     for (const auto& loop_input : loop_inputs) {
         // For strides we have to use layout from source since source writes data by special rules
         const auto source = *loop_input.get_connected_ports().begin();
-        const auto& layout = loop_input.get_layout();
-        const auto& shape = loop_input.get_shape();
+        const auto& layout = loop_input.get_descriptor_ptr()->get_layout();
+        const auto& shape = loop_input.get_descriptor_ptr()->get_shape();
         const auto& dim = *(layout.rbegin() + dim_idx);
         int64_t ptr_increment = 0;
         // If relevant dim is not broadcasted, then ptr_increment is the dim stride in the new layout
         if (!(shape[dim] == 1 && max_relevant_dim_size != 1))
-            ptr_increment = get_dim_stride(dim, source.get_layout(), shape);
+            ptr_increment = get_dim_stride(dim, source.get_descriptor_ptr()->get_layout(), shape);
         ptr_increments.push_back(ptr_increment);
     }
 
     for (const auto& loop_output : loop_outputs) {
-        const auto& layout = loop_output.get_layout();
-        const auto& shape = loop_output.get_shape();
+        const auto& layout = loop_output.get_descriptor_ptr()->get_layout();
+        const auto& shape = loop_output.get_descriptor_ptr()->get_shape();
         const auto& dim = *(layout.rbegin() + dim_idx);
         int64_t ptr_increment = 0;
         // If relevant dim is not broadcasted, then ptr_increment is the dim stride in the new layout

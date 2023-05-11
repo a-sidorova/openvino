@@ -32,11 +32,6 @@ public:
     std::set<ExpressionPort>::const_iterator find_consumer(const ExpressionPort& consumer) const;
     std::set<ExpressionPort>::iterator find_consumer(const ExpressionPort& consumer);
 
-    // The scheduling params of Tensor is controlled by source expression port
-    std::vector<size_t> get_shape() const { return m_source_port.get_shape(); }
-    std::vector<size_t> get_layout() const { return m_source_port.get_layout(); }
-    std::vector<size_t> get_subtensor() const { return m_source_port.get_subtensor(); }
-
 private:
     ExpressionPort m_source_port;
     std::set<ExpressionPort> m_consumer_ports;

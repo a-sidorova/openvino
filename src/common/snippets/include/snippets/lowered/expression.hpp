@@ -40,6 +40,11 @@ public:
     std::vector<TensorPtr> get_input_tensors() const { return m_input_tensors; }
     std::vector<TensorPtr> get_output_tensors() const { return m_output_tensors; }
 
+    const PortDescriptorPtr& get_input_port_descriptor(size_t i) const;
+    const PortDescriptorPtr& get_output_port_descriptor(size_t i) const;
+    std::vector<PortDescriptorPtr> get_input_port_descriptors() const { return m_input_port_descriptors; }
+    std::vector<PortDescriptorPtr> get_output_port_descriptors() const { return m_output_port_descriptors; }
+
     size_t get_input_count() const { return m_input_tensors.size(); }
     size_t get_output_count() const { return m_output_tensors.size(); }
 

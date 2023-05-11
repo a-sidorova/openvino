@@ -19,7 +19,7 @@ InsertBuffers::InsertBuffers(int32_t buffer_allocation_rank)
     : Transformation(), m_buffer_allocation_rank(buffer_allocation_rank) {}
 
 LinearIR::constExprIt InsertBuffers::insertion_position(const LinearIR& linear_ir, const LinearIR::LoopManagerPtr& loop_manager,
-                                                          const ExpressionPtr& up_expr, const ExpressionPtr& down_expr) {
+                                                        const ExpressionPtr& up_expr, const ExpressionPtr& down_expr) {
     const auto up_loops = up_expr->get_loop_ids();
     const auto down_loops = down_expr->get_loop_ids();
     OPENVINO_ASSERT(up_loops.size() == down_loops.size(), "The Loop IDs must be normalized!");

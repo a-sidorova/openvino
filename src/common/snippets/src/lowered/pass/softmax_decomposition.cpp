@@ -38,7 +38,7 @@ bool SoftmaxDecomposition::run(LinearIR& linear_ir) {
             const auto softmax_loop_ids = softmax_expr->get_loop_ids();
             const auto& input_tensor = softmax_expr->get_input_tensor(0);
             const auto& output_tensor = softmax_expr->get_output_tensor(0);
-            const auto tensor_out = output_tensor->get_shape();
+            const auto tensor_out = softmax_expr->get_output_port_descriptor(0)->get_shape();
             const auto inner_work_amount = *(tensor_out.rbegin());
 
             expr_it = linear_ir.erase(expr_it);   // Remove Softmax

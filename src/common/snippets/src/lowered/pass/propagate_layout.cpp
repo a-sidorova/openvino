@@ -43,13 +43,13 @@ bool PropagateLayout::run(LinearIR& linear_ir) {
                 const auto& n = child->get_node();
                 const auto ma = ov::as_type_ptr<op::MemoryAccess>(n);
                 if (ma && ma->is_memory_access_input_port(port)) {
-                    child_layouts.insert(child_input.get_layout());
+                    child_layouts.insert(child_input.get_descriptor_ptr()->get_layout());
                 }
             }
             OPENVINO_ASSERT(child_layouts.size() == 1, "All children of an input expression must have the same layout");
-            io_expr->get_output_port(0).set_layout(*child_layouts.begin());
+            io_expr->get_output_port_descriptor(0)->set_layout(*child_layouts.begin());
         } else {
-            io_expr->get_input_port(0).set_layout(target_tensor->get_layout());
+            io_expr->get_input_port_descriptor(0)->set_layout(target_tensor->get_source().get_descriptor_ptr()->get_layout());
         }
     }
 

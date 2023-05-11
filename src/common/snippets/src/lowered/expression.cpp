@@ -37,6 +37,15 @@ const TensorPtr& Expression::get_output_tensor(size_t i) const {
     return m_output_tensors[i];
 }
 
+const PortDescriptorPtr& Expression::get_input_port_descriptor(size_t i) const {
+    OPENVINO_ASSERT(i < m_input_port_descriptors.size(), "Failed to get input port descriptor: target input port must be less than input count!");
+    return m_input_port_descriptors[i];
+}
+const PortDescriptorPtr& Expression::get_output_port_descriptor(size_t i) const {
+    OPENVINO_ASSERT(i < m_output_port_descriptors.size(), "Failed to get output port descriptor: target output port must be less than output count!");
+    return m_output_port_descriptors[i];
+}
+
 std::shared_ptr<Node> Expression::get_node() const {
     if (!m_source_node)
         OPENVINO_THROW("An attempt to get uninitialized node from lowered expression");
