@@ -90,6 +90,7 @@ public:
     void set_work_amount(size_t new_work_amount);
     void set_increment(size_t new_increment);
     void set_evaluate_once(bool once);
+    void set_id(size_t id);
     // Used to propagate information about Loop structure, needed to simplify some optimizations. For example,
     // to skip pointer increments when outer Loop is empty, and work_amount == vector_size (one inner vector Loop)
     // true by default, the optimizations enabled if it's false;
@@ -97,17 +98,19 @@ public:
     size_t get_work_amount() const;
     size_t get_increment() const;
     bool get_evaluate_once() const;
+    size_t get_id() const;
     bool visit_attributes(AttributeVisitor& visitor) override;
 
 private:
-    std::vector<int64_t> ptr_increments = {};
-    std::vector<int64_t> finalization_offsets = {};
-    std::vector<int64_t> element_type_sizes = {};
-    size_t work_amount = 0;
-    size_t work_amount_increment = 0;
-    size_t input_num = 0;
-    size_t output_num = 0;
-    bool evaluate_once = false; // true if the Loop is executed only once, used to skip setting and testing the loop counter
+    std::vector<int64_t> m_ptr_increments = {};
+    std::vector<int64_t> m_finalization_offsets = {};
+    std::vector<int64_t> m_element_type_sizes = {};
+    size_t m_work_amount = 0;
+    size_t m_work_amount_increment = 0;
+    size_t m_input_num = 0;
+    size_t m_output_num = 0;
+    size_t m_id = 0;  // the corresponding Loop identificator in LoopManager
+    bool m_evaluate_once = false; // true if the Loop is executed only once, used to skip setting and testing the loop counter
 };
 
 } // namespace op

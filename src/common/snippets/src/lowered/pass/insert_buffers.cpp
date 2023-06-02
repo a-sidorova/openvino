@@ -84,17 +84,18 @@ void InsertBuffers::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPt
         const auto node_ma = ov::as_type_ptr<op::MemoryAccess>(node);
         bool is_buffer_needed = (parent_ma && parent_ma->is_memory_access_output_port(parent_port)) ||
                                 (node_ma && node_ma->is_memory_access_input_port(port));
-        if (!is_buffer_needed) {
-            const auto current_loops = expr->get_loop_ids();
-            const auto parent_loops = parent_expr->get_loop_ids();
-            const auto current_loop_count = current_loops.size();
-            const auto parent_loop_count = parent_loops.size();
-            for (size_t i = 0; i < std::min(current_loop_count, parent_loop_count); ++i) {
-                if (current_loops[i] != parent_loops[i]) {
-                    is_buffer_needed = true;
-                    break;
-                }
+        std::vector<size_t> buffer_loop_ids;
+        const auto current_loops = expr->get_loop_ids();
+        const auto parent_loops = parent_expr->get_loop_ids();
+        const auto current_loop_count = current_loops.size();
+        const auto parent_loop_count = parent_loops.size();
+        for (size_t i = 0; i < std::min(current_loop_count, parent_loop_count); ++i) {
+            if (current_loops[i] == parent_loops[i]) {
+                buffer_loop_ids.push_back(current_loops[i]);
+                continue;
             }
+            is_buffer_needed = is_buffer_needed || true;
+            break;
         }
 
         if (is_buffer_needed) {
@@ -109,6 +110,7 @@ void InsertBuffers::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPt
             const auto buffer_expr = linear_ir.create_expression(buffer, {input_connector});
             linear_ir.insert(pos, buffer_expr);
             linear_ir.replace_input(*entry_port.get(), buffer_expr->get_output_port_connector(0));
+            buffer_expr->set_loop_ids(buffer_loop_ids);
         }
     }
 
@@ -125,6 +127,13 @@ void InsertBuffers::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPt
 
         std::set<ExpressionPort> potential_consumers;
         std::set<ExpressionPtr> buffers;
+        std::vector<size_t> buffer_loop_ids;
+        auto update_buffer_loop_ids = [&buffer_loop_ids, &potential_consumers, &buffers](const std::vector<size_t>& local_ids) {
+            if (buffers.empty() && potential_consumers.empty()) {
+                buffer_loop_ids = local_ids;
+            }
+            OPENVINO_ASSERT(local_ids == buffer_loop_ids, "Incorrect loop configuration for Buffers");
+        };
         for (const auto& child_expr_input : child_exprs_inputs) {
             const auto& child_expr = child_expr_input.get_expr();
             const auto child_port = child_expr_input.get_index();
@@ -132,25 +141,30 @@ void InsertBuffers::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPt
             if (ov::is_type<ov::op::v0::Result>(child))
                 continue;
             if (ov::is_type<op::Buffer>(child)) {
+                update_buffer_loop_ids(child_expr->get_loop_ids());
                 buffers.insert(child_expr);
                 continue;
             }
             // Each MemoryAccess op needs Buffer
             const auto child_ma = ov::as_type_ptr<op::MemoryAccess>(child);
             const auto node_ma = ov::as_type_ptr<op::MemoryAccess>(node);
-            if ((child_ma && child_ma->is_memory_access_input_port(child_port)) ||
-                (node_ma && node_ma->is_memory_access_output_port(port))) {
-                potential_consumers.insert(child_expr_input);
-                continue;
-            }
-
+            bool is_buffer_needed = (child_ma && child_ma->is_memory_access_input_port(child_port)) ||
+                                    (node_ma && node_ma->is_memory_access_output_port(port));
+            std::vector<size_t> local_buffer_loop_ids;
             const auto child_loops = child_expr->get_loop_ids();
             const auto child_loop_count = child_loops.size();
             for (size_t i = 0; i < std::min(current_loop_count, child_loop_count); ++i) {
-                if (current_loops[i] != child_loops[i]) {
-                    potential_consumers.insert(child_expr_input);
-                    break;
+                if (current_loops[i] == child_loops[i]) {
+                    local_buffer_loop_ids.push_back(current_loops[i]);
+                    continue;
                 }
+                is_buffer_needed = is_buffer_needed || true;
+                break;
+            }
+
+            if (is_buffer_needed) {
+                update_buffer_loop_ids(local_buffer_loop_ids);
+                potential_consumers.insert(child_expr_input);
             }
         }
 
@@ -172,7 +186,6 @@ void InsertBuffers::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPt
             //          Target consumers Loop identifies:  3, 4, 6
             //          Need to insert after 2nd Loops
             // Note: All potential consumers must have the same count of first equal Loop identifies and the same count of different last identifies
-            // TODO: Need to verify that
             const auto pos = insertion_position(linear_ir, loop_manager, expr, (*potential_consumers.begin()).get_expr());
 
             auto buffer = std::make_shared<op::Buffer>(node->output(port), m_buffer_allocation_rank);
@@ -188,6 +201,7 @@ void InsertBuffers::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPt
             const auto buffer_expr = linear_ir.create_expression(buffer, node_outs);
             linear_ir.insert(pos, buffer_expr);
             linear_ir.replace_input(potential_consumers, buffer_expr->get_output_port_connector(0));
+            buffer_expr->set_loop_ids(buffer_loop_ids);
         }
     }
 }

@@ -37,16 +37,18 @@ public:
     class LoopInfo {
     public:
         LoopInfo() = default;
-        LoopInfo(size_t work_amount, size_t increment, size_t dim_idx,
+        LoopInfo(size_t work_amount, size_t increment, size_t work_amount_tail, size_t dim_idx,
                  const std::vector<LoopPort>& entries,
                  const std::vector<LoopPort>& exits)
-            : work_amount(work_amount), increment(increment), dim_idx(dim_idx), entry_points(entries), exit_points(exits) {}
-        LoopInfo(size_t work_amount, size_t increment, size_t dim_idx,
+            : work_amount(work_amount), increment(increment), work_amount_tail(work_amount_tail), dim_idx(dim_idx),
+              entry_points(entries), exit_points(exits) {}
+        LoopInfo(size_t work_amount, size_t increment, size_t work_amount_tail, size_t dim_idx,
                  const std::vector<ExpressionPort>& entries,
                  const std::vector<ExpressionPort>& exits);
 
         size_t work_amount = 0;
         size_t increment = 0;
+        size_t work_amount_tail = 0;
         size_t dim_idx = 0;  // The numeration begins from the end (dim_idx = 0 -> is the most inner dimension)
         // The order of entry and exit expressions is important:
         //     - The position before first entry expr is Loop Begin position
@@ -70,20 +72,38 @@ public:
                    LinearIR::constExprIt loop_end_pos,
                    size_t work_amount,
                    size_t work_amount_increment,
+                   size_t work_amount_tail,
                    size_t dim_idx,
                    const std::vector<ExpressionPort>& entries,
                    const std::vector<ExpressionPort>& exits);
 
+    // Note: these methods find iterators of first entry loop point and last exit point (bounds of Loop)
+    //       If there are already inserted LoopBegin and LoopEnd in Linear IR, the methods can find them as well if `explicitly` = true
     void get_loop_bounds(const LinearIR& linear_ir,
                          size_t loop_id,
                          LinearIR::constExprIt& loop_begin_pos,
-                         LinearIR::constExprIt& loop_end_pos) const;
+                         LinearIR::constExprIt& loop_end_pos,
+                         bool explicitly = false) const;
     static void get_loop_bounds(const LinearIR& linear_ir,
                                 const std::vector<LoopPort>& entries,
                                 const std::vector<LoopPort>& exits,
                                 LinearIR::constExprIt& loop_begin_pos,
                                 LinearIR::constExprIt& loop_end_pos,
-                                size_t loop_id);
+                                size_t loop_id, bool explicitly = false);
+
+    // The following methods update ports of LoopInfo. They save the order of ports!
+    // Remainder: the order is important to find Loop bounds (the most first and the most last expressions)
+    //   - Update LoopPort - insert new loop target ports instead of existing.
+    void update_loop_port(size_t loop_id, const LoopPort& actual_port, const std::vector<LoopPort>& target_ports, bool is_entry = true);
+    //   - Update ExpressionPort in the LoopPort - with saving of port parameters. It's softer method since ExpressionPort may not be port of Loop
+    void update_loop_port(size_t loop_id, const ExpressionPort& actual_port, const std::vector<ExpressionPort>& target_ports, bool is_entry = true);
+    template<typename T>
+    void update_loops_port(const std::vector<size_t>& loop_ids, const T& actual_port,
+                           const std::vector<T>& target_ports, bool is_entry = true) {
+        for (auto loop_id : loop_ids) {
+            update_loop_port(loop_id, actual_port, target_ports, is_entry);
+        }
+    }
 
     /* ===== The methods for work with Loop IDs of Expression ===== */
     // Notes:

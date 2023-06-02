@@ -40,6 +40,7 @@ bool SoftmaxDecomposition::run(LinearIR& linear_ir) {
             const auto& output_connector = softmax_expr->get_output_port_connector(0);
             const auto tensor_out = softmax_expr->get_output_port_descriptor(0)->get_shape();
             const auto inner_work_amount = *(tensor_out.rbegin());
+            const auto inner_work_amount_tail = inner_work_amount % m_vector_size;
 
             expr_it = linear_ir.erase(expr_it);   // Remove Softmax
 
@@ -60,7 +61,7 @@ bool SoftmaxDecomposition::run(LinearIR& linear_ir) {
             const auto horizon_max = push_node(std::make_shared<op::HorizonMax>(max.second));
 
             // Markup of ReduceMax Loop
-            loop_manager->mark_loop(max.first, horizon_max.first, inner_work_amount, m_vector_size, 0,
+            loop_manager->mark_loop(max.first, horizon_max.first, inner_work_amount, m_vector_size, inner_work_amount_tail, 0,
                                     std::vector<ExpressionPort>{(*max.first)->get_input_port(0),
                                                                 (*max.first)->get_input_port(1)},
                                     std::vector<ExpressionPort>{(*max.first)->get_output_port(0)});
@@ -77,7 +78,7 @@ bool SoftmaxDecomposition::run(LinearIR& linear_ir) {
             const auto horizon_sum = push_node(std::make_shared<op::HorizonSum>(sum.second));
 
             // Markup of ReduceMax Loop
-            loop_manager->mark_loop(sub.first, horizon_sum.first, inner_work_amount, m_vector_size, 0,
+            loop_manager->mark_loop(sub.first, horizon_sum.first, inner_work_amount, m_vector_size, inner_work_amount_tail, 0,
                                     std::vector<ExpressionPort>{(*sub.first)->get_input_port(0),
                                                                 (*sub.first)->get_input_port(1),
                                                                 (*sum.first)->get_input_port(1)},
@@ -97,7 +98,7 @@ bool SoftmaxDecomposition::run(LinearIR& linear_ir) {
             linear_ir.replace_input(output_connector->get_consumers(), (*mul.first)->get_output_port_connector(0));
 
             // Markup of Mul Loop
-            loop_manager->mark_loop(mul.first, expr_it, inner_work_amount, m_vector_size, 0,
+            loop_manager->mark_loop(mul.first, expr_it, inner_work_amount, m_vector_size, inner_work_amount_tail, 0,
                                     std::vector<ExpressionPort>{(*mul.first)->get_input_port(0),
                                                                 (*mul.first)->get_input_port(1)},
                                     std::vector<ExpressionPort>{(*mul.first)->get_output_port(0)});

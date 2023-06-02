@@ -141,7 +141,10 @@ bool FuseLoops::fuse_upper_into_current(LinearIR& linear_ir, const LinearIR::Loo
     // Update current Loop bounds:
     current_loop_begin_pos = target_loop_begin_pos;
 
-    // Update work_amount for Loop (increment is constant because increments must be the identical for fusion):
+    // The common increment is the same because increments must be the identical for fusion
+    // The common tail work amount is tail work amount of Loop with full work amount > 1 (broadcasting).
+    loop_current->work_amount_tail = loop_current->work_amount > 1 ? loop_current->work_amount_tail : loop_target->work_amount_tail;
+    // The common work amount is max work amount because work amounts must be broadcastable for fusion
     loop_current->work_amount = std::max(loop_current->work_amount, loop_target->work_amount);
 
     std::vector<LoopManager::LoopPort> new_entries = target_entry_points;
@@ -208,7 +211,10 @@ bool FuseLoops::fuse_lower_into_current(LinearIR& linear_ir, const LinearIR::Loo
     if (!is_move_needed)
         current_loop_end_pos = target_loop_end_pos;
 
-    // Update work_amount for Loop (increment is constant because increments must be the identical for fusion):
+    // The common increment is the same because increments must be the identical for fusion
+    // The common tail work amount is tail work amount of Loop with full work amount > 1 (broadcasting).
+    loop_current->work_amount_tail = loop_current->work_amount > 1 ? loop_current->work_amount_tail : loop_target->work_amount_tail;
+    // The common work amount is max work amount because work amounts must be broadcastable for fusion
     loop_current->work_amount = std::max(loop_current->work_amount, loop_target->work_amount);
 
     std::vector<LoopManager::LoopPort>& new_entries = current_entry_points;
