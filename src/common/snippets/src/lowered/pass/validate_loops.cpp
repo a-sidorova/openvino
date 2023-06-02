@@ -59,6 +59,8 @@ bool ValidateLoops::run(LinearIR& linear_ir) {
                 } else {
                     OPENVINO_ASSERT(*dim_indexes.rbegin() == dim_idx,
                                     "Incorrect Loop ID configuration: the Loops with splitted dimension should be successively nested");
+                    OPENVINO_ASSERT(i == 0 || loop_manager->get_loop_info(loop_ids[i - 1])->increment == loop_manager->get_loop_info(id)->work_amount,
+                                    "Incorrect Loop ID configuration: the Loops with splitted dimension should be successively nested");
                 }
                 if (i > 0) {
                     OPENVINO_ASSERT(loop_manager->get_loop_info(loop_ids[i - 1])->dim_idx >= dim_idx,
