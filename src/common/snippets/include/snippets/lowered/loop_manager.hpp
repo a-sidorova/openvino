@@ -82,6 +82,13 @@ public:
                     const std::vector<ExpressionPort>& entries,
                     const std::vector<ExpressionPort>& exits);
 
+    void mark_loop(const ExpressionPtr expr,
+                   size_t work_amount,
+                   size_t work_amount_increment,
+                   size_t dim_idx,
+                   const std::vector<LoopPort>& entries,
+                   const std::vector<LoopPort>& exits);
+
     void fuse_loops(const LinearIR& linear_ir, size_t loop_id_upper, size_t loop_id_lower, bool fuse_into_upper = true);
     void fuse_loops(LinearIR::constExprIt loop_begin_target, LinearIR::constExprIt loop_end_target,
                     size_t loop_id_upper, size_t loop_id_lower, bool fuse_into_upper = true);

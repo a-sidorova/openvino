@@ -508,6 +508,7 @@ void snippets::op::Subgraph::data_flow_transformations(ov::pass::Manager& pre_co
 }
 
 void snippets::op::Subgraph::control_flow_transformations(lowered::LinearIR& linear_ir,
+                                                          lowered::pass::PassPipeline& target_markup_pipeline,
                                                           lowered::pass::PassPipeline& target_pipeline) {
     INTERNAL_OP_SCOPE(Subgraph);
     OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "Snippets::op::control_flow_transformations")
@@ -515,6 +516,11 @@ void snippets::op::Subgraph::control_flow_transformations(lowered::LinearIR& lin
     const size_t vector_size = get_generator()->get_target_machine()->get_lanes();
     const int32_t buffer_allocation_rank = static_cast<int32_t>(linear_ir.get_config().m_loop_depth);
 
+    target_markup_pipeline.run(linear_ir);
+
+    // Note: The pass InitLoops uses LoopInfo that contains entry and exit points of the corresponding Loop.
+    //       To avoid the Loop information corruption, we should call the passes with Load/Store work
+    //       (for example, LoadMoveBroadcastToBroadcastLoad()) after explicit Loop insertion (InitLoops())
     lowered::pass::PassPipeline common_pipeline;
     common_pipeline.register_pass<lowered::pass::MarkLoops>(vector_size);
     common_pipeline.register_pass<lowered::pass::SoftmaxDecomposition>(vector_size);
@@ -560,22 +566,24 @@ snippets::Schedule snippets::op::Subgraph::generate(const BlockedShapeVector& ou
                                                     ov::pass::Manager& pre_common,
                                                     ov::pass::Manager& post_common,
                                                     ov::pass::Manager& post_precision,
+                                                    lowered::pass::PassPipeline& target_lowered_markup_pipeline,
                                                     lowered::pass::PassPipeline& target_lowered_pipeline,
                                                     const void* compile_params) {
     canonicalize(output_shapes, input_shapes);
-    return generate(pre_common, post_common, post_precision, target_lowered_pipeline, compile_params);
+    return generate(pre_common, post_common, post_precision, target_lowered_markup_pipeline, target_lowered_pipeline, compile_params);
 }
 
 snippets::Schedule snippets::op::Subgraph::generate(const void* compile_params) {
     auto mngr = ov::pass::Manager();
     auto lowered = lowered::pass::PassPipeline();
-    return generate(mngr, mngr, mngr, lowered, compile_params);
+    return generate(mngr, mngr, mngr, lowered, lowered, compile_params);
 }
 
 snippets::Schedule snippets::op::Subgraph::generate(
     ov::pass::Manager& pre_common,
     ov::pass::Manager& post_common,
     ov::pass::Manager& post_precision,
+    lowered::pass::PassPipeline& target_lowered_markup_pipeline,
     lowered::pass::PassPipeline& target_lowered_pipeline,
     const void* compile_params) {
     INTERNAL_OP_SCOPE(Subgraph);
@@ -590,7 +598,7 @@ snippets::Schedule snippets::op::Subgraph::generate(
     lowering_config.m_loop_depth = tileRank;
 
     lowered::LinearIR linear_ir = lowered::LinearIR(body_ptr(), lowering_config);
-    control_flow_transformations(linear_ir, target_lowered_pipeline);
+    control_flow_transformations(linear_ir, target_lowered_markup_pipeline, target_lowered_pipeline);
 
     // actual code emission
     const auto& lowering_result = m_generator->generate(linear_ir, lowering_config, compile_params);
