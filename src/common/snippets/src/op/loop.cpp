@@ -50,7 +50,7 @@ bool LoopBegin::visit_attributes(AttributeVisitor &visitor) {
 
 LoopEnd::LoopEnd(const Output<Node>& loop_begin, size_t work_amount, size_t work_amount_increment,
                  std::vector<bool> apply_increments, std::vector<int64_t> finalization_offsets,
-                 std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num)
+                 std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num, size_t id)
         : LoopBase({loop_begin}),
         has_outer_loop(true),
         m_finalization_offsets(std::move(finalization_offsets)),
@@ -59,6 +59,7 @@ LoopEnd::LoopEnd(const Output<Node>& loop_begin, size_t work_amount, size_t work
         m_work_amount_increment(work_amount_increment),
         m_input_num(input_num),
         m_output_num(output_num),
+        m_id(id),
         m_evaluate_once(false) {
         m_ptr_increments.resize(apply_increments.size());
         std::transform(apply_increments.begin(), apply_increments.end(), m_ptr_increments.begin(),
@@ -70,7 +71,7 @@ LoopEnd::LoopEnd(const Output<Node>& loop_begin, size_t work_amount, size_t work
 
 LoopEnd::LoopEnd(const Output<Node>& loop_begin, size_t work_amount, size_t work_amount_increment,
                  std::vector<int64_t> ptr_increments, std::vector<int64_t> finalization_offsets,
-                 std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num)
+                 std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num, size_t id)
         : LoopBase({loop_begin}),
         has_outer_loop(true),
         m_ptr_increments(std::move(ptr_increments)),
@@ -80,6 +81,7 @@ LoopEnd::LoopEnd(const Output<Node>& loop_begin, size_t work_amount, size_t work
         m_work_amount_increment(work_amount_increment),
         m_input_num(input_num),
         m_output_num(output_num),
+        m_id(id),
         m_evaluate_once(false) {
     constructor_validate_and_infer_types();
 }
@@ -87,9 +89,8 @@ LoopEnd::LoopEnd(const Output<Node>& loop_begin, size_t work_amount, size_t work
 std::shared_ptr<Node> LoopEnd::clone_with_new_inputs(const OutputVector& inputs) const {
     check_new_args_count(this, inputs);
     const auto loop_end = std::make_shared<LoopEnd>(inputs.at(0), m_work_amount, m_work_amount_increment, m_ptr_increments,
-                                                    m_finalization_offsets, m_element_type_sizes, m_input_num, m_output_num);
+                                                    m_finalization_offsets, m_element_type_sizes, m_input_num, m_output_num, m_id);
     loop_end->m_evaluate_once = m_evaluate_once;
-    loop_end->m_id = m_id;
     return loop_end;
 }
 
@@ -165,10 +166,6 @@ void LoopEnd::set_increment(size_t new_increment) {
 
 void LoopEnd::set_evaluate_once(bool once) {
     m_evaluate_once = once;
-}
-
-void LoopEnd::set_id(size_t id) {
-    m_id = id;
 }
 
 void LoopEnd::validate_and_infer_types() {

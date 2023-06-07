@@ -45,10 +45,11 @@ std::shared_ptr<op::LoopEnd> InsertTailLoop::create_tail_loop(LinearIR& linear_i
 
     tail_transformations(linear_ir, tail_begin, tail_end, tail_size);
     std::shared_ptr<op::LoopEnd> tail_loop_end = ov::as_type_ptr<op::LoopBegin>((*tail_begin)->get_node())->get_loop_end();
-    tail_loop_end->set_finalization_offsets(tail_finalization_offsets);
-    tail_loop_end->set_increment(tail_size);
+    const auto vector_increment = vector_loop_end->get_increment();
+    tail_loop_end->set_increment(std::min(vector_increment, tail_size));
     // ptr increments were set to the old increment, need to update them in accordance with the new one
     tail_loop_end->set_work_amount(tail_size);
+    tail_loop_end->set_finalization_offsets(tail_finalization_offsets);
     tail_loop_end->has_outer_loop = vector_loop_end->has_outer_loop;
     return tail_loop_end;
 }
@@ -70,7 +71,13 @@ void InsertTailLoop::tail_transformations(LinearIR& linear_ir,
         return fill;
     };
 
-    for (auto expr_it = tail_begin; expr_it != tail_end; expr_it++) {
+    for (auto expr_it = std::next(tail_begin); expr_it != tail_end; expr_it++) {
+        // Skip inner Loops
+        const auto loop_begin = ov::as_type_ptr<op::LoopBegin>(expr_it->get()->get_node());
+        if (loop_begin) {
+            expr_it = std::find(expr_it, tail_end, linear_ir.get_expr_by_node(loop_begin->get_loop_end()));
+            continue;
+        }
         // We should fill vector regs by float_min and zero to have
         // correct math calculations for ReduceMax and ReduceSum in scalar case.
         // Note: We find Maximum and Add ops because HorizonMax and HorizonSum are outside Loop,
@@ -133,7 +140,10 @@ bool InsertTailLoop::optimize_single_evaluation(const std::shared_ptr<op::LoopEn
     return true;
 }
 
-bool InsertTailLoop::is_loop_with_buffers(const LinearIR& linear_ir, const std::shared_ptr<op::LoopEnd>& loop_end) {
+bool InsertTailLoop::is_loop_with_buffers(const ExpressionPtr& loop_end_expr) {
+    const auto loop_end = ov::as_type_ptr<op::LoopEnd>(loop_end_expr->get_node());
+    OPENVINO_ASSERT(loop_end, "Failed is_loop_with_buffers: expects an expression with LoopEnd node");
+
     auto is_buffer_input = [](const PortConnectorPtr& input) {
         const auto& parent_expr = input->get_source().get_expr();
         return ov::is_type<op::Buffer>(parent_expr->get_node());
@@ -144,7 +154,6 @@ bool InsertTailLoop::is_loop_with_buffers(const LinearIR& linear_ir, const std::
                            [](const ExpressionPort& lp) {return ov::is_type<op::Buffer>(lp.get_expr()->get_node());});
     };
 
-    const auto& loop_end_expr = linear_ir.get_expr_by_node(loop_end);
     const auto inputs = loop_end_expr->get_input_port_connectors();
     const auto in_num = loop_end->get_input_num();
     const auto out_num = loop_end->get_output_num();
@@ -169,7 +178,7 @@ bool InsertTailLoop::run(LinearIR& linear_ir) {
         if (!loop_end)
             continue;
 
-        const bool is_there_buffer = is_loop_with_buffers(linear_ir, loop_end);
+        const bool is_there_buffer = is_loop_with_buffers(expr);
         const auto work_amount = loop_end->get_work_amount();
         const auto increment = loop_end->get_increment();
         const auto tail_size = loop_manager->get_loop_info(loop_end->get_id())->work_amount_tail;

@@ -13,6 +13,22 @@ namespace ov {
 namespace snippets {
 namespace lowered {
 namespace pass {
+namespace {
+std::vector<size_t> get_buffer_loop_ids(const std::vector<size_t>& lhs, const std::vector<size_t>& rhs, bool& is_buffer_needed) {
+    std::vector<size_t> buffer_loop_ids;
+    const auto lhs_num = lhs.size();
+    const auto rhs_num = rhs.size();
+    for (size_t i = 0; i < std::min(lhs_num, rhs_num); ++i) {
+        if (lhs[i] == rhs[i]) {
+            buffer_loop_ids.push_back(lhs[i]);
+            continue;
+        }
+        is_buffer_needed = true;
+        break;
+    }
+    return buffer_loop_ids;
+}
+}  // namespace
 
 InsertBuffers::InsertBuffers(int32_t buffer_allocation_rank)
     : Pass(), m_buffer_allocation_rank(buffer_allocation_rank) {}
@@ -84,19 +100,9 @@ void InsertBuffers::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPt
         const auto node_ma = ov::as_type_ptr<op::MemoryAccess>(node);
         bool is_buffer_needed = (parent_ma && parent_ma->is_memory_access_output_port(parent_port)) ||
                                 (node_ma && node_ma->is_memory_access_input_port(port));
-        std::vector<size_t> buffer_loop_ids;
         const auto current_loops = expr->get_loop_ids();
         const auto parent_loops = parent_expr->get_loop_ids();
-        const auto current_loop_count = current_loops.size();
-        const auto parent_loop_count = parent_loops.size();
-        for (size_t i = 0; i < std::min(current_loop_count, parent_loop_count); ++i) {
-            if (current_loops[i] == parent_loops[i]) {
-                buffer_loop_ids.push_back(current_loops[i]);
-                continue;
-            }
-            is_buffer_needed = is_buffer_needed || true;
-            break;
-        }
+        const auto buffer_loop_ids = get_buffer_loop_ids(current_loops, parent_loops, is_buffer_needed);
 
         if (is_buffer_needed) {
             // We should insert Buffer between first different Loops.
@@ -150,17 +156,7 @@ void InsertBuffers::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPt
             const auto node_ma = ov::as_type_ptr<op::MemoryAccess>(node);
             bool is_buffer_needed = (child_ma && child_ma->is_memory_access_input_port(child_port)) ||
                                     (node_ma && node_ma->is_memory_access_output_port(port));
-            std::vector<size_t> local_buffer_loop_ids;
-            const auto child_loops = child_expr->get_loop_ids();
-            const auto child_loop_count = child_loops.size();
-            for (size_t i = 0; i < std::min(current_loop_count, child_loop_count); ++i) {
-                if (current_loops[i] == child_loops[i]) {
-                    local_buffer_loop_ids.push_back(current_loops[i]);
-                    continue;
-                }
-                is_buffer_needed = is_buffer_needed || true;
-                break;
-            }
+            const auto local_buffer_loop_ids = get_buffer_loop_ids(current_loops, child_expr->get_loop_ids(), is_buffer_needed);
 
             if (is_buffer_needed) {
                 update_buffer_loop_ids(local_buffer_loop_ids);

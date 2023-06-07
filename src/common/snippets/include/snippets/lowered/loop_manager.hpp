@@ -78,21 +78,21 @@ public:
                    const std::vector<ExpressionPort>& exits);
 
     // Note: these methods find iterators of first entry loop point and last exit point (bounds of Loop)
-    //       If there are already inserted LoopBegin and LoopEnd in Linear IR, the methods can find them as well if `explicitly` = true
+    //       If there are already inserted LoopBegin and LoopEnd in Linear IR, the methods can find them as well if `loop_ops_inserted` = true
     void get_loop_bounds(const LinearIR& linear_ir,
                          size_t loop_id,
                          LinearIR::constExprIt& loop_begin_pos,
                          LinearIR::constExprIt& loop_end_pos,
-                         bool explicitly = false) const;
+                         bool loop_ops_inserted = false) const;
     static void get_loop_bounds(const LinearIR& linear_ir,
                                 const std::vector<LoopPort>& entries,
                                 const std::vector<LoopPort>& exits,
                                 LinearIR::constExprIt& loop_begin_pos,
                                 LinearIR::constExprIt& loop_end_pos,
-                                size_t loop_id, bool explicitly = false);
+                                size_t loop_id, bool loop_ops_inserted = false);
 
-    // The following methods update ports of LoopInfo. They save the order of ports!
-    // Remainder: the order is important to find Loop bounds (the most first and the most last expressions)
+    // The following methods update ports of LoopInfo. They preserve the order of ports!
+    // Remainder: the order is important to find Loop bounds (the first and the last expressions)
     //   - Update LoopPort - insert new loop target ports instead of existing.
     void update_loop_port(size_t loop_id, const LoopPort& actual_port, const std::vector<LoopPort>& target_ports, bool is_entry = true);
     //   - Update ExpressionPort in the LoopPort - with saving of port parameters. It's softer method since ExpressionPort may not be port of Loop

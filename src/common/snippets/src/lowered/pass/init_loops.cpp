@@ -79,7 +79,7 @@ int64_t get_dim_stride(const LinearIR::LoopManagerPtr& loop_manager, const std::
     }
     return stride;
 }
-std::vector<size_t> get_loop_ids(const ExpressionPtr& expr, size_t loop_id) {
+std::vector<size_t> get_outer_loop_ids(const ExpressionPtr& expr, size_t loop_id) {
     const auto loop_ids = expr->get_loop_ids();
     const auto it = std::find(loop_ids.cbegin(), loop_ids.cend(), loop_id);
     OPENVINO_ASSERT(it != loop_ids.cend(), "Loop ID hasn't been found");
@@ -175,9 +175,8 @@ void InitLoops::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPtr& l
 
     const auto& loop_end = std::make_shared<op::LoopEnd>(
             loop_begin->output(0), work_amount, work_amount_increment, ptr_increments, finalization_offsets,
-            io_data_sizes, loop_entries.size(), loop_exits.size());
+            io_data_sizes, loop_entries.size(), loop_exits.size(), loop_id);
     loop_end->has_outer_loop = has_outer_loop;
-    loop_end->set_id(loop_id);
 
     std::vector<PortConnectorPtr> loop_end_inputs;
     for (const auto& expr_point : loop_entries)
@@ -189,7 +188,7 @@ void InitLoops::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPtr& l
     const auto& loop_end_expr = linear_ir.create_expression(loop_end, loop_end_inputs);
     const auto& it = linear_ir.insert(loop_end_pos, loop_end_expr);
 
-    const auto outer_loop_ids = get_loop_ids(*std::prev(it), loop_id);
+    const auto outer_loop_ids = get_outer_loop_ids(*std::prev(it), loop_id);
     loop_begin_expr->set_loop_ids(outer_loop_ids);
     loop_end_expr->set_loop_ids(outer_loop_ids);
 }

@@ -38,7 +38,7 @@ private:
                                      LinearIR::constExprIt tail_end,
                                      size_t tail_size);
     static bool optimize_single_evaluation(const std::shared_ptr<op::LoopEnd>& loop, bool force_ptr_increment = false);
-    static bool is_loop_with_buffers(const LinearIR& linear_ir, const std::shared_ptr<op::LoopEnd>& loop_end);
+    static bool is_loop_with_buffers(const ExpressionPtr& loop_end_expr);
 };
 
 } // namespace pass

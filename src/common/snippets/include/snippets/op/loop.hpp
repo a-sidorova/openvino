@@ -62,6 +62,7 @@ private:
  * @param ptr_increments specifies i/o pointer increment performed on every iteration. This is an alternative to
  * apply_increments, which enables more flexibility.
  * @param finalization_offsets pointer increments that are be applied to i/o pointers before exiting the loop
+ * @param id the identifier of Loop in Loop system in LoopManager
  * @ingroup snippets
  */
 class LoopEnd : public LoopBase {
@@ -69,10 +70,10 @@ public:
     OPENVINO_OP("LoopEnd", "SnippetsOpset", LoopBase);
     LoopEnd(const Output<Node>& loop_begin, size_t work_amount, size_t work_amount_increment,
               std::vector<bool> apply_increment, std::vector<int64_t> finalization_offsets,
-              std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num);
+              std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num, size_t id);
     LoopEnd(const Output<Node>& loop_begin, size_t work_amount, size_t work_amount_increment,
             std::vector<int64_t> ptr_increments, std::vector<int64_t> finalization_offsets,
-            std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num);
+            std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num, size_t id);
     LoopEnd() = default;
     std::shared_ptr<LoopBegin> get_loop_begin();
     void validate_and_infer_types() override;
@@ -90,7 +91,6 @@ public:
     void set_work_amount(size_t new_work_amount);
     void set_increment(size_t new_increment);
     void set_evaluate_once(bool once);
-    void set_id(size_t id);
     // Used to propagate information about Loop structure, needed to simplify some optimizations. For example,
     // to skip pointer increments when outer Loop is empty, and work_amount == vector_size (one inner vector Loop)
     // true by default, the optimizations enabled if it's false;
