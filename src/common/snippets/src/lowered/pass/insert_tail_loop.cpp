@@ -6,6 +6,7 @@
 
 #include "snippets/lowered/linear_ir.hpp"
 #include "snippets/lowered/loop_manager.hpp"
+#include "snippets/lowered/pass/init_loops.hpp"
 #include "snippets/snippets_isa.hpp"
 #include "snippets/itt.hpp"
 
@@ -43,13 +44,33 @@ std::shared_ptr<op::LoopEnd> InsertTailLoop::create_tail_loop(LinearIR& linear_i
         tail_end = vector_end;
     }
 
+    bool inner_tail = false;
+    const auto& loop_manager = linear_ir.get_loop_manager();
+    const auto current_dim_idx = loop_manager->get_loop_info(vector_loop_end->get_id())->dim_idx;
+    for (auto it = std::next(tail_begin); it != std::prev(tail_end); ++it) {
+        const auto& expr = *it;
+        const auto inner_loop_end = ov::as_type_ptr<op::LoopEnd>(expr->get_node());
+        if (!inner_loop_end)
+            continue;
+        const auto loop_info = loop_manager->get_loop_info(inner_loop_end->get_id());
+        if (loop_info->dim_idx != current_dim_idx)
+            continue;
+        const auto inner_loop_begin = inner_loop_end->get_loop_begin();
+        const auto inner_tail_increment = inner_loop_end->get_increment();
+        inner_loop_end->set_increment(std::min(inner_tail_increment, tail_size));
+        inner_loop_end->set_work_amount(tail_size);
+        inner_loop_end->set_finalization_offsets(InitLoops::init_finalization_offsets(inner_loop_end->get_ptr_increments(), tail_size));
+        tail_transformations(linear_ir, std::find(tail_begin, it, linear_ir.get_expr_by_node(inner_loop_begin)), std::next(tail_end), tail_size);
+        inner_tail = true;
+    }
+
     tail_transformations(linear_ir, tail_begin, tail_end, tail_size);
     std::shared_ptr<op::LoopEnd> tail_loop_end = ov::as_type_ptr<op::LoopBegin>((*tail_begin)->get_node())->get_loop_end();
     const auto vector_increment = vector_loop_end->get_increment();
-    tail_loop_end->set_increment(std::min(vector_increment, tail_size));
+    tail_loop_end->set_increment(tail_size);
     // ptr increments were set to the old increment, need to update them in accordance with the new one
     tail_loop_end->set_work_amount(tail_size);
-    tail_loop_end->set_finalization_offsets(tail_finalization_offsets);
+    tail_loop_end->set_finalization_offsets(inner_tail ? std::vector<int64_t>(tail_finalization_offsets.size(), 0) : tail_finalization_offsets);
     tail_loop_end->has_outer_loop = vector_loop_end->has_outer_loop;
     return tail_loop_end;
 }
@@ -181,7 +202,8 @@ bool InsertTailLoop::run(LinearIR& linear_ir) {
         const bool is_there_buffer = is_loop_with_buffers(expr);
         const auto work_amount = loop_end->get_work_amount();
         const auto increment = loop_end->get_increment();
-        const auto tail_size = loop_manager->get_loop_info(loop_end->get_id())->work_amount_tail;
+        const auto loop_info = loop_manager->get_loop_info(loop_end->get_id());
+        const auto tail_size = loop_info->work_amount_tail;
         const auto need_tail = tail_size != 0;
         const auto need_vector_loop = work_amount >= increment;
         // Note, that finalization_offsets could be modified inside optimize_single_evaluation,

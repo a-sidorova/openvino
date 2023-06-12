@@ -29,6 +29,8 @@ Generator::LoweringResult Generator::generate(lowered::LinearIR& linear_ir, cons
     lowered_pipeline.register_pass<lowered::pass::InsertTailLoop>();
     lowered_pipeline.run(linear_ir);
 
+    linear_ir.serialize("lin.xml", "lin.bin");
+
     linear_ir.init_emitters(target);
 
     OV_ITT_TASK_NEXT(GENERATE, "::EmitCode")
