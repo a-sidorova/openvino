@@ -18,13 +18,16 @@ namespace lowered {
 
 LinearIR::LoopManager::LoopInfo::LoopInfo(size_t work_amount, size_t increment, size_t work_amount_tail, size_t dim_idx,
                                           const std::vector<ExpressionPort>& entries, const std::vector<ExpressionPort>& exits)
-    : work_amount(work_amount), increment(increment), work_amount_tail(work_amount_tail), dim_idx(dim_idx) {
+    : work_amount(work_amount), increment(increment), dim_idx(dim_idx), tail_info(nullptr) {
     entry_points.reserve(entries.size());
     exit_points.reserve(exits.size());
     for (const auto& port : entries)
         entry_points.emplace_back(port);
     for (const auto& port : exits)
         exit_points.emplace_back(port);
+    if (work_amount_tail > 0) {
+        tail_info = std::make_shared<LoopInfo>(work_amount_tail, std::min(work_amount_tail, increment), dim_idx, entry_points, exit_points);
+    }
 }
 
 bool operator==(const LinearIR::LoopManager::LoopPort& lhs, const LinearIR::LoopManager::LoopPort& rhs) {
@@ -250,6 +253,13 @@ void LinearIR::LoopManager::update_loop_port(size_t loop_id,
     OPENVINO_ASSERT(port_it != ports.end(), "Failed update_loop_port: existing loop ports has not been found");
     port_it = ports.erase(port_it);
     ports.insert(port_it, target_ports.cbegin(), target_ports.cend());
+}
+
+std::vector<size_t> LinearIR::LoopManager::get_outer_loop_ids(const ExpressionPtr& expr, size_t loop_id) {
+    const auto loop_ids = expr->get_loop_ids();
+    const auto it = std::find(loop_ids.cbegin(), loop_ids.cend(), loop_id);
+    OPENVINO_ASSERT(it != loop_ids.cend(), "Loop ID hasn't been found");
+    return std::vector<size_t>(loop_ids.cbegin(), it);
 }
 
 void LinearIR::LoopManager::insert_loop_id(const ExpressionPtr& expr, size_t new_id, bool before, size_t target_id) {

@@ -18,7 +18,7 @@ using LoopPort = LinearIR::LoopManager::LoopPort;
 namespace {
 int64_t get_dim_stride(const LinearIR::LoopManagerPtr& loop_manager, const std::vector<size_t>& loop_ids,
                        size_t loop_id, size_t dim, size_t dim_idx,
-                       const std::vector<size_t>& layout, const std::vector<size_t>& shape) {
+                       const std::vector<size_t>& layout, const std::vector<size_t>& shape, bool is_tail = false) {
     // Example, shape = [3, 384, 64], loop_ids = [2, 1, 0], layout = [0, 1, 2]
     // Loop Info:                            | Pointer increments:
     // - 2: work_amount = 12, dim_idx = 1    | 1 x 64 x 32 - (1 * shape[layout[2]] * 32) where 32 is work_amount of inner splitted Loop
@@ -44,7 +44,9 @@ int64_t get_dim_stride(const LinearIR::LoopManagerPtr& loop_manager, const std::
             for (auto id : splitted_loops) {
                 if (id == loop_id)
                     break;
-                stride *= loop_manager->get_loop_info(id)->work_amount;
+                const auto loop_info = is_tail ? loop_manager->get_loop_info(id)->tail_info : loop_manager->get_loop_info(id);
+                OPENVINO_ASSERT(loop_info != nullptr, "LoopInfo has not been found!");
+                stride *= loop_info->work_amount;
             }
             break;
         }
@@ -55,10 +57,21 @@ int64_t get_dim_stride(const LinearIR::LoopManagerPtr& loop_manager, const std::
 }  // namespace
 
 InitLoops::InitLoops() : Pass() {}
+
+void InitLoops::init(const LinearIR::LoopManagerPtr& loop_manager, const LinearIR::LoopManager::LoopInfoPtr& loop_info, size_t loop_id, bool is_tail) {
+    const auto work_amount = loop_info->work_amount;
+    const auto work_amount_increment = loop_info->increment;
+    const auto dim_idx = loop_info->dim_idx;
+
+    init_ptr_increments(loop_info->entry_points, loop_info->exit_points, loop_manager, loop_id, work_amount, dim_idx, is_tail);
+    init_finalization_offsets(loop_info->entry_points, loop_info->exit_points, work_amount);
+    init_element_type_sizes(loop_info->entry_points, loop_info->exit_points);
+}
+
 void InitLoops::init_ptr_increments(std::vector<LoopPort>& loop_inputs,
                                     std::vector<LoopPort>& loop_outputs,
                                     const LinearIR::LoopManagerPtr& loop_manager,
-                                    size_t loop_id, size_t work_amount, size_t dim_idx) {
+                                    size_t loop_id, size_t work_amount, size_t dim_idx, bool is_tail) {
     for (auto& loop_input : loop_inputs) {
         const auto& port = loop_input.expr_port;
         // For strides we have to use layout from source since source writes data by special rules
@@ -70,7 +83,8 @@ void InitLoops::init_ptr_increments(std::vector<LoopPort>& loop_inputs,
         loop_input.ptr_increment = 0;
         // If relevant dim is not broadcasted, then ptr_increment is the dim stride in the new layout
         if (loop_input.is_incremented && !(shape[dim] == 1 && work_amount != 1)) {
-            loop_input.ptr_increment = get_dim_stride(loop_manager, loop_ids, loop_id, dim, dim_idx, source.get_descriptor_ptr()->get_layout(), shape);
+            loop_input.ptr_increment = get_dim_stride(loop_manager, loop_ids, loop_id, dim, dim_idx,
+                                                      source.get_descriptor_ptr()->get_layout(), shape, is_tail);
         }
     }
 
@@ -80,10 +94,14 @@ void InitLoops::init_ptr_increments(std::vector<LoopPort>& loop_inputs,
         const auto& layout = port->get_descriptor_ptr()->get_layout();
         const auto& shape = port->get_descriptor_ptr()->get_shape();
         const auto& dim = *(layout.rbegin() + dim_idx);
+        // [113106] Need to update order logic
+        std::vector<size_t> planar_layout(layout.size());
+        std::iota(planar_layout.begin(), planar_layout.end(), 0);
         loop_output.ptr_increment = 0;
         // If relevant dim is not broadcasted, then ptr_increment is the dim stride in the new layout
         if (loop_output.is_incremented && !(shape[dim] == 1 && work_amount != 1)) {
-            loop_output.ptr_increment = get_dim_stride(loop_manager, loop_ids, loop_id, dim, dim_idx, layout, shape);
+            loop_output.ptr_increment = get_dim_stride(loop_manager, loop_ids, loop_id, dim, dim_idx,
+                                                       planar_layout, shape, is_tail);
         }
     }
 }
@@ -122,13 +140,9 @@ bool InitLoops::run(LinearIR& linear_ir) {
         const auto loop_id = loop.first;
         const auto loop_info = loop.second;
 
-        const auto work_amount = loop_info->work_amount;
-        const auto work_amount_increment = loop_info->increment;
-        const auto dim_idx = loop_info->dim_idx;
-
-        init_ptr_increments(loop_info->entry_points, loop_info->exit_points, loop_manager, loop_id, work_amount, dim_idx);
-        init_finalization_offsets(loop_info->entry_points, loop_info->exit_points, work_amount);
-        init_element_type_sizes(loop_info->entry_points, loop_info->exit_points);
+        init(loop_manager, loop_info, loop_id);
+        if (loop_info->tail_info)
+            init(loop_manager, loop_info->tail_info, loop_id, true);
     }
 
     return true;

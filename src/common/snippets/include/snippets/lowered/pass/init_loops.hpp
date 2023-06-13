@@ -25,10 +25,12 @@ public:
     bool run(LinearIR& linear_ir) override;
 
 private:
+    static void init(const LinearIR::LoopManagerPtr& loop_manager, const LinearIR::LoopManager::LoopInfoPtr& loop_info,
+                     size_t loop_id, bool is_tail = false);
     static void init_ptr_increments(std::vector<LinearIR::LoopManager::LoopPort>& loop_inputs,
                                     std::vector<LinearIR::LoopManager::LoopPort>& loop_outputs,
                                     const LinearIR::LoopManagerPtr& loop_manager,
-                                    size_t loop_id, size_t work_amount, size_t dim_idx);
+                                    size_t loop_id, size_t work_amount, size_t dim_idx, bool is_tail = false);
     static void init_finalization_offsets(std::vector<LinearIR::LoopManager::LoopPort>& loop_inputs,
                                           std::vector<LinearIR::LoopManager::LoopPort>& loop_outputs,
                                           size_t work_amount);

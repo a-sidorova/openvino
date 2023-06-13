@@ -28,7 +28,7 @@ public:
         friend bool operator!=(const LoopPort& lhs, const LoopPort& rhs);
         friend bool operator<(const LoopPort& lhs, const LoopPort& rhs);
 
-        std::shared_ptr<ExpressionPort> expr_port = {};
+        std::shared_ptr<ExpressionPort> expr_port = nullptr;
         // True if after each Loop iteration the corresponding data pointer should be incremented.
         // Otherwise, the data pointer shift is skipped
         bool is_incremented = true;
@@ -40,18 +40,18 @@ public:
     class LoopInfo {
     public:
         LoopInfo() = default;
-        LoopInfo(size_t work_amount, size_t increment, size_t work_amount_tail, size_t dim_idx,
+        LoopInfo(size_t work_amount, size_t increment, size_t dim_idx,
                  const std::vector<LoopPort>& entries,
-                 const std::vector<LoopPort>& exits)
-            : work_amount(work_amount), increment(increment), work_amount_tail(work_amount_tail), dim_idx(dim_idx),
-              entry_points(entries), exit_points(exits) {}
+                 const std::vector<LoopPort>& exits,
+                 const std::shared_ptr<LoopInfo>& tail_info = nullptr)
+            : work_amount(work_amount), increment(increment), dim_idx(dim_idx),
+              entry_points(entries), exit_points(exits), tail_info(tail_info) {}
         LoopInfo(size_t work_amount, size_t increment, size_t work_amount_tail, size_t dim_idx,
                  const std::vector<ExpressionPort>& entries,
                  const std::vector<ExpressionPort>& exits);
 
         size_t work_amount = 0;
         size_t increment = 0;
-        size_t work_amount_tail = 0;
         size_t dim_idx = 0;  // The numeration begins from the end (dim_idx = 0 -> is the most inner dimension)
         // The order of entry and exit expressions is important:
         //     - The position before first entry expr is Loop Begin position
@@ -59,6 +59,7 @@ public:
         // Note: Scalars aren't entry expressions but can be before first entry expr in Linear IR
         std::vector<LoopPort> entry_points = {};
         std::vector<LoopPort> exit_points = {};
+        std::shared_ptr<LoopInfo> tail_info = nullptr;
     };
     using LoopInfoPtr = std::shared_ptr<LoopInfo>;
 
@@ -107,6 +108,9 @@ public:
             update_loop_port(loop_id, actual_port, target_ports, is_entry);
         }
     }
+
+    // Return vector of outer Loop ID
+    static std::vector<size_t> get_outer_loop_ids(const ExpressionPtr& expr, size_t loop_id);
 
     /* ===== The methods for work with Loop IDs of Expression ===== */
     // Notes:

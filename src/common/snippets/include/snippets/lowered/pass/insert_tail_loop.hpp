@@ -7,6 +7,7 @@
 #include "pass.hpp"
 
 #include "snippets/op/loop.hpp"
+#include "snippets/lowered/loop_manager.hpp"
 
 namespace ov {
 namespace snippets {
@@ -30,15 +31,15 @@ private:
                                                          LinearIR::constExprIt vector_end,
                                                          LinearIR::constExprIt& tail_begin,
                                                          LinearIR::constExprIt& tail_end,
+                                                         const LinearIR::LoopManager::LoopInfoPtr& tail_loop_info,
                                                          const std::shared_ptr<op::LoopEnd>& vector_loop_end,
                                                          bool need_vector_loop,
-                                                         size_t tail_size, const std::vector<int64_t>& tail_finalization_offsets);
+                                                         const std::vector<int64_t>& tail_finalization_offsets);
     static void tail_transformations(LinearIR& linear_ir,
                                      LinearIR::constExprIt tail_begin,
                                      LinearIR::constExprIt tail_end,
                                      size_t tail_size);
-    static bool optimize_single_evaluation(const std::shared_ptr<op::LoopEnd>& loop, bool force_ptr_increment = false);
-    static bool is_loop_with_buffers(const ExpressionPtr& loop_end_expr);
+    static bool optimize_single_evaluation(const std::shared_ptr<op::LoopEnd>& loop);
 };
 
 } // namespace pass
