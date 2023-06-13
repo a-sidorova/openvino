@@ -39,6 +39,7 @@
 #include "snippets/lowered/pass/clean_repeated_ptr_shifts.hpp"
 #include "snippets/lowered/pass/identify_buffers.hpp"
 #include "snippets/lowered/pass/validate_loops.hpp"
+#include "snippets/lowered/pass/insert_loops.hpp"
 
 #include "transformations/utils/utils.hpp"
 
@@ -530,6 +531,7 @@ void snippets::op::Subgraph::control_flow_transformations(lowered::LinearIR& lin
     common_pipeline.register_pass<lowered::pass::LoadMoveBroadcastToBroadcastLoad>();
     common_pipeline.register_pass<lowered::pass::ValidateLoops>();
     common_pipeline.register_pass<lowered::pass::InitLoops>();
+    common_pipeline.register_pass<lowered::pass::InsertLoops>();
     common_pipeline.run(linear_ir);
 
     target_pipeline.run(linear_ir);

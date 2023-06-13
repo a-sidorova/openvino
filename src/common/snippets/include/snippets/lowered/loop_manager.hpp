@@ -32,6 +32,9 @@ public:
         // True if after each Loop iteration the corresponding data pointer should be incremented.
         // Otherwise, the data pointer shift is skipped
         bool is_incremented = true;
+        int64_t ptr_increment = 0;
+        int64_t finalization_offset = 0;
+        int64_t data_size = 0;
     };
 
     class LoopInfo {

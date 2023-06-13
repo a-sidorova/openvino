@@ -6,7 +6,6 @@
 
 #include "snippets/lowered/linear_ir.hpp"
 #include "snippets/lowered/loop_manager.hpp"
-#include "snippets/snippets_isa.hpp"
 #include "snippets/itt.hpp"
 
 namespace ov {
@@ -17,32 +16,6 @@ namespace pass {
 using LoopPort = LinearIR::LoopManager::LoopPort;
 
 namespace {
-void filter_ports(std::vector<LoopPort>& loop_entries, std::vector<LoopPort>& loop_exits) {
-    std::vector<LoopPort> new_loop_entries;
-    std::vector<LoopPort> new_loop_exits;
-    new_loop_entries.reserve(loop_entries.size());
-    new_loop_exits.reserve(loop_exits.size());
-
-    for (const auto& loop_entry_point : loop_entries) {
-        const auto& expr = loop_entry_point.expr_port->get_expr();
-        const auto ma = ov::as_type_ptr<op::MemoryAccess>(expr->get_node());
-        if (ma && ma->is_memory_access_input_port(loop_entry_point.expr_port->get_index())) {
-            new_loop_entries.push_back(loop_entry_point);
-        }
-    }
-
-    for (const auto& loop_exit_point : loop_exits) {
-        const auto& expr = loop_exit_point.expr_port->get_expr();
-        const auto ma = ov::as_type_ptr<op::MemoryAccess>(expr->get_node());
-        if (ma && ma->is_memory_access_output_port(loop_exit_point.expr_port->get_index())) {
-            new_loop_exits.push_back(loop_exit_point);
-        }
-    }
-
-    loop_entries = new_loop_entries;
-    loop_exits = new_loop_exits;
-}
-
 int64_t get_dim_stride(const LinearIR::LoopManagerPtr& loop_manager, const std::vector<size_t>& loop_ids,
                        size_t loop_id, size_t dim, size_t dim_idx,
                        const std::vector<size_t>& layout, const std::vector<size_t>& shape) {
@@ -79,22 +52,13 @@ int64_t get_dim_stride(const LinearIR::LoopManagerPtr& loop_manager, const std::
     }
     return stride;
 }
-std::vector<size_t> get_outer_loop_ids(const ExpressionPtr& expr, size_t loop_id) {
-    const auto loop_ids = expr->get_loop_ids();
-    const auto it = std::find(loop_ids.cbegin(), loop_ids.cend(), loop_id);
-    OPENVINO_ASSERT(it != loop_ids.cend(), "Loop ID hasn't been found");
-    return std::vector<size_t>(loop_ids.cbegin(), it);
-}
 }  // namespace
 
 InitLoops::InitLoops() : Pass() {}
-std::vector<int64_t> InitLoops::init_ptr_increments(std::vector<LoopPort>& loop_inputs,
-                                                    std::vector<LoopPort>& loop_outputs,
-                                                    const LinearIR::LoopManagerPtr& loop_manager,
-                                                    size_t loop_id, size_t work_amount, size_t dim_idx) {
-    std::vector<int64_t> ptr_increments;
-    ptr_increments.reserve(loop_inputs.size() + loop_outputs.size());
-
+void InitLoops::init_ptr_increments(std::vector<LoopPort>& loop_inputs,
+                                    std::vector<LoopPort>& loop_outputs,
+                                    const LinearIR::LoopManagerPtr& loop_manager,
+                                    size_t loop_id, size_t work_amount, size_t dim_idx) {
     for (auto& loop_input : loop_inputs) {
         const auto& port = loop_input.expr_port;
         // For strides we have to use layout from source since source writes data by special rules
@@ -103,12 +67,11 @@ std::vector<int64_t> InitLoops::init_ptr_increments(std::vector<LoopPort>& loop_
         const auto& layout = port->get_descriptor_ptr()->get_layout();
         const auto& shape = port->get_descriptor_ptr()->get_shape();
         const auto& dim = *(layout.rbegin() + dim_idx);
-        int64_t ptr_increment = 0;
+        loop_input.ptr_increment = 0;
         // If relevant dim is not broadcasted, then ptr_increment is the dim stride in the new layout
         if (loop_input.is_incremented && !(shape[dim] == 1 && work_amount != 1)) {
-            ptr_increment = get_dim_stride(loop_manager, loop_ids, loop_id, dim, dim_idx, source.get_descriptor_ptr()->get_layout(), shape);
+            loop_input.ptr_increment = get_dim_stride(loop_manager, loop_ids, loop_id, dim, dim_idx, source.get_descriptor_ptr()->get_layout(), shape);
         }
-        ptr_increments.push_back(ptr_increment);
     }
 
     for (auto& loop_output : loop_outputs) {
@@ -117,80 +80,35 @@ std::vector<int64_t> InitLoops::init_ptr_increments(std::vector<LoopPort>& loop_
         const auto& layout = port->get_descriptor_ptr()->get_layout();
         const auto& shape = port->get_descriptor_ptr()->get_shape();
         const auto& dim = *(layout.rbegin() + dim_idx);
-        int64_t ptr_increment = 0;
+        loop_output.ptr_increment = 0;
         // If relevant dim is not broadcasted, then ptr_increment is the dim stride in the new layout
         if (loop_output.is_incremented && !(shape[dim] == 1 && work_amount != 1)) {
-            ptr_increment = get_dim_stride(loop_manager, loop_ids, loop_id, dim, dim_idx, layout, shape);
+            loop_output.ptr_increment = get_dim_stride(loop_manager, loop_ids, loop_id, dim, dim_idx, layout, shape);
         }
-        ptr_increments.push_back(ptr_increment);
     }
-    return ptr_increments;
 }
 
-std::vector<int64_t> InitLoops::init_finalization_offsets(const std::vector<int64_t>& ptr_increments, size_t work_amount) {
-    std::vector<int64_t> finalization_offsets;
-    finalization_offsets.resize(ptr_increments.size());
-    for (size_t i = 0; i < ptr_increments.size(); ++i) {
-        finalization_offsets[i] = -1 * ptr_increments[i] * work_amount;
+void InitLoops::init_finalization_offsets(std::vector<LinearIR::LoopManager::LoopPort>& loop_inputs,
+                                          std::vector<LinearIR::LoopManager::LoopPort>& loop_outputs,
+                                          size_t work_amount) {
+    for (auto& loop_input : loop_inputs) {
+        loop_input.finalization_offset = -1 * loop_input.ptr_increment * work_amount;
     }
-    return finalization_offsets;
+    for (auto& loop_output : loop_outputs) {
+        loop_output.finalization_offset = -1 * loop_output.ptr_increment * work_amount;
+    }
 }
 
-std::vector<int64_t> InitLoops::init_element_type_sizes(const std::vector<LoopPort>& loop_inputs,
-                                                        const std::vector<LoopPort>& loop_outputs) {
-    std::vector<int64_t> element_types;
-    element_types.reserve(loop_inputs.size() + loop_outputs.size());
-    for (const auto& in : loop_inputs) {
-        const auto& port = in.expr_port;
-        element_types.push_back(port->get_expr()->get_node()->get_input_element_type(port->get_index()).size());
+void InitLoops::init_element_type_sizes(std::vector<LoopPort>& loop_inputs,
+                                        std::vector<LoopPort>& loop_outputs) {
+    for (auto& loop_input : loop_inputs) {
+        const auto& port = loop_input.expr_port;
+        loop_input.data_size = static_cast<int64_t>(port->get_expr()->get_node()->get_input_element_type(port->get_index()).size());
     }
-    for (const auto& out : loop_outputs) {
-        const auto& port = out.expr_port;
-        element_types.push_back(port->get_expr()->get_node()->get_output_element_type(port->get_index()).size());
+    for (auto& loop_output : loop_outputs) {
+        const auto& port = loop_output.expr_port;
+        loop_output.data_size = static_cast<int64_t>(port->get_expr()->get_node()->get_output_element_type(port->get_index()).size());
     }
-    return element_types;
-}
-
-void InitLoops::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPtr& loop_manager, size_t loop_id, bool has_outer_loop) {
-    const auto loop_info = loop_manager->get_loop_info(loop_id);
-    auto loop_entries = loop_info->entry_points;
-    auto loop_exits = loop_info->exit_points;
-    const auto work_amount = loop_info->work_amount;
-    const auto work_amount_increment = loop_info->increment;
-    const auto dim_idx = loop_info->dim_idx;
-
-    LinearIR::constExprIt loop_begin_pos, loop_end_pos;
-    loop_manager->get_loop_bounds(linear_ir, loop_id, loop_begin_pos, loop_end_pos);
-
-    // Remove non MemoryAccess ports since Loop can have only GPR inputs
-    filter_ports(loop_entries, loop_exits);
-
-    const auto ptr_increments = init_ptr_increments(loop_entries, loop_exits, loop_manager, loop_id, work_amount, dim_idx);
-    const auto finalization_offsets = init_finalization_offsets(ptr_increments, work_amount);
-    const auto io_data_sizes = init_element_type_sizes(loop_entries, loop_exits);
-
-    const auto& loop_begin = std::make_shared<op::LoopBegin>();
-    const auto& loop_begin_expr = linear_ir.create_expression(loop_begin, std::vector<PortConnectorPtr>{});
-    linear_ir.insert(loop_begin_pos, loop_begin_expr);
-
-    const auto& loop_end = std::make_shared<op::LoopEnd>(
-            loop_begin->output(0), work_amount, work_amount_increment, ptr_increments, finalization_offsets,
-            io_data_sizes, loop_entries.size(), loop_exits.size(), loop_id);
-    loop_end->has_outer_loop = has_outer_loop;
-
-    std::vector<PortConnectorPtr> loop_end_inputs;
-    for (const auto& expr_point : loop_entries)
-        loop_end_inputs.push_back(expr_point.expr_port->get_port_connector_ptr());
-    for (const auto& expr_port : loop_exits)
-        loop_end_inputs.push_back(expr_port.expr_port->get_port_connector_ptr());
-    loop_end_inputs.push_back(loop_begin_expr->get_output_port_connector(0));
-
-    const auto& loop_end_expr = linear_ir.create_expression(loop_end, loop_end_inputs);
-    const auto& it = linear_ir.insert(loop_end_pos, loop_end_expr);
-
-    const auto outer_loop_ids = get_outer_loop_ids(*std::prev(it), loop_id);
-    loop_begin_expr->set_loop_ids(outer_loop_ids);
-    loop_end_expr->set_loop_ids(outer_loop_ids);
 }
 
 bool InitLoops::run(LinearIR& linear_ir) {
@@ -199,28 +117,18 @@ bool InitLoops::run(LinearIR& linear_ir) {
         return false;
 
     const auto& loop_manager = linear_ir.get_loop_manager();
+    const auto& loops = loop_manager->get_map();
+    for (const auto& loop : loops) {
+        const auto loop_id = loop.first;
+        const auto loop_info = loop.second;
 
-    std::set<size_t> inserted_loops;
-    for (auto expr_it = linear_ir.begin(); expr_it != linear_ir.end(); expr_it++) {
-        const auto expr = *expr_it;
-        const auto& node = expr->get_node();
-        if (ov::is_type<op::LoopBase>(node) ||
-            ov::is_type<op::Buffer>(node) ||     // Need to cover Buffer
-            ov::is_type<ov::op::v0::Parameter>(node) ||
-            ov::is_type<ov::op::v0::Result>(node))
-            continue;
+        const auto work_amount = loop_info->work_amount;
+        const auto work_amount_increment = loop_info->increment;
+        const auto dim_idx = loop_info->dim_idx;
 
-        // Outer Loop ----> Inner Loop
-        const auto expr_loops = expr->get_loop_ids();
-        const auto loop_depth = expr_loops.size();
-        for (size_t i = 0; i < loop_depth; ++i) {
-            const auto loop_id = expr_loops[i];
-            if (inserted_loops.count(loop_id) == 0) {
-                const bool has_outer_loop = i > 0 && inserted_loops.find(expr_loops[i - 1]) != inserted_loops.end();
-                insertion(linear_ir, loop_manager, loop_id, has_outer_loop);
-                inserted_loops.insert(loop_id);  // save Loop ID
-            }
-        }
+        init_ptr_increments(loop_info->entry_points, loop_info->exit_points, loop_manager, loop_id, work_amount, dim_idx);
+        init_finalization_offsets(loop_info->entry_points, loop_info->exit_points, work_amount);
+        init_element_type_sizes(loop_info->entry_points, loop_info->exit_points);
     }
 
     return true;

@@ -59,7 +59,7 @@ std::shared_ptr<op::LoopEnd> InsertTailLoop::create_tail_loop(LinearIR& linear_i
         const auto inner_tail_increment = inner_loop_end->get_increment();
         inner_loop_end->set_increment(std::min(inner_tail_increment, tail_size));
         inner_loop_end->set_work_amount(tail_size);
-        inner_loop_end->set_finalization_offsets(InitLoops::init_finalization_offsets(inner_loop_end->get_ptr_increments(), tail_size));
+        //inner_loop_end->set_finalization_offsets(InitLoops::init_finalization_offsets(inner_loop_end->get_ptr_increments(), tail_size));
         tail_transformations(linear_ir, std::find(tail_begin, it, linear_ir.get_expr_by_node(inner_loop_begin)), std::next(tail_end), tail_size);
         inner_tail = true;
     }
