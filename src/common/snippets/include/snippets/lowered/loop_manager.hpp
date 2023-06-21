@@ -130,6 +130,8 @@ public:
                                 LinearIR::constExprIt& loop_end_pos,
                                 size_t loop_id, bool loop_ops_inserted = false);
 
+    LoopPort get_loop_port_by_expr_port(const ExpressionPort& expr_port, const size_t loop_id);
+
 private:
     static void get_io_loop_ports(LinearIR::constExprIt loop_begin_pos,
                                   LinearIR::constExprIt loop_end_pos,

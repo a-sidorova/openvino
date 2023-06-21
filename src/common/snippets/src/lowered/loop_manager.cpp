@@ -113,6 +113,18 @@ void LinearIR::LoopManager::get_loop_bounds(const LinearIR &linear_ir,
     }
 }
 
+LinearIR::LoopManager::LoopPort LinearIR::LoopManager::get_loop_port_by_expr_port(const ExpressionPort& expr_port, const size_t loop_id) {
+    auto get_loop_port = [&](const std::vector<LinearIR::LoopManager::LoopPort>& ports) {
+        auto it = std::find_if(ports.cbegin(), ports.cend(), [&](const LinearIR::LoopManager::LoopPort& p) { return *p.expr_port == expr_port; });
+        if (it == ports.cend())
+            OPENVINO_THROW("Expression has not been found in loop with id " + std::to_string(loop_id));
+        return *it;
+    };
+    const auto& loop_info = get_loop_info(loop_id);
+    return expr_port.get_type() == ExpressionPort::Input ? get_loop_port(loop_info->entry_points)
+                                                         : get_loop_port(loop_info->exit_points);
+}
+
 void LinearIR::LoopManager::get_io_loop_ports(LinearIR::constExprIt loop_begin_pos,
                                               LinearIR::constExprIt loop_end_pos,
                                               std::vector<ExpressionPort> &entries,

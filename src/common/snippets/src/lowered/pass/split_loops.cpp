@@ -41,19 +41,20 @@ bool SplitLoops::run(LinearIR& linear_ir) {
         const auto& loop_id = loop_ids.front();
         const auto loop = loop_manager->get_loop_info(loop_id);
         for (const auto& entry_point : loop->entry_points) {
-            const auto expr_parent = entry_point.expr_port->get_port_connector_ptr()->get_source().get_expr();
-            const auto& parent_loop_ids = expr_parent->get_loop_ids();
+            const auto parent_expr_port = entry_point.expr_port->get_port_connector_ptr()->get_source();
+            const auto parent_expr = parent_expr_port.get_expr();
+            const auto& parent_loop_ids = parent_expr->get_loop_ids();
             if (parent_loop_ids.empty())
                 continue;
 
             const auto& parent_loop_id = parent_loop_ids.front();
-            const auto parent_port = loop_manager->get_loop_port_by_expr(expr_parent, parent_loop_id);
-            // if (parent_port.is_incremented != entry_point.is_incremented)
-            //     continue;
+            const auto parent_loop_port = loop_manager->get_loop_port_by_expr_port(parent_expr_port, parent_loop_id);
+            if (parent_loop_port.is_incremented != entry_point.is_incremented)
+                continue;
 
             const auto parent_loop = loop_manager->get_loop_info(parent_loop_id);
             if (can_be_split(loop, parent_loop)) {
-                const std::string parent_type = expr_parent->get_node()->get_type_name();
+                const std::string parent_type = parent_expr->get_node()->get_type_name();
                 std::cout << "parent_type: " << parent_type << std::endl;
                 const std::string name = expr->get_node()->get_type_name();
                 std::cout << name << std::endl;
