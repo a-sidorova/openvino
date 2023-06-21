@@ -6,7 +6,7 @@
 
 #include "snippets/lowered/linear_ir.hpp"
 #include "snippets/lowered/loop_manager.hpp"
-#include "snippets/lowered/pass/init_loops.hpp"
+#include "snippets/lowered/pass/insert_loops.hpp"
 #include "snippets/snippets_isa.hpp"
 #include "snippets/itt.hpp"
 
@@ -22,8 +22,7 @@ std::shared_ptr<op::LoopEnd> InsertTailLoop::create_tail_loop(LinearIR& linear_i
                                                               LinearIR::constExprIt& tail_end,
                                                               const LinearIR::LoopManager::LoopInfoPtr& tail_loop_info,
                                                               const std::shared_ptr<op::LoopEnd>& vector_loop_end,
-                                                              bool need_vector_loop,
-                                                              const std::vector<int64_t>& tail_finalization_offsets) {
+                                                              bool need_vector_loop) {
     // tail is required => transform the body into a tail representation
     // tail loop is fake loop because for tail we should calculate only
     // finalization offsets which are supported by LoopEnd.
@@ -44,7 +43,6 @@ std::shared_ptr<op::LoopEnd> InsertTailLoop::create_tail_loop(LinearIR& linear_i
         tail_end = vector_end;
     }
 
-    bool inner_tail = false;
     const auto& loop_manager = linear_ir.get_loop_manager();
     const auto current_dim_idx = loop_manager->get_loop_info(vector_loop_end->get_id())->dim_idx;
     for (auto it = std::next(tail_begin); it != std::prev(tail_end); ++it) {
@@ -58,40 +56,35 @@ std::shared_ptr<op::LoopEnd> InsertTailLoop::create_tail_loop(LinearIR& linear_i
         const auto inner_loop_begin = inner_loop_end->get_loop_begin();
         const auto inner_tail_info = loop_info->tail_info;
         OPENVINO_ASSERT(inner_tail_info != nullptr, "All Splitted Loops should have Tail LoopInfo");
+
+        std::vector<int64_t> ptr_increments, finalization_offsets, io_data_sizes;
+        InsertLoops::init_scheduling_parameters(tail_loop_info->entry_points, tail_loop_info->exit_points,
+                                                ptr_increments, finalization_offsets, io_data_sizes);
         inner_loop_end->set_work_amount(inner_tail_info->work_amount);
         inner_loop_end->set_increment(inner_tail_info->increment);
-
-        std::vector<int64_t> ptr_increments, finalization_offsets;
-        std::vector<PortConnectorPtr> loop_end_inputs;
-        const auto in_out_num = inner_loop_end->get_input_num() + inner_loop_end->get_output_num();
-        ptr_increments.reserve(in_out_num);
-        finalization_offsets.reserve(in_out_num);
-
-        auto init_params = [&ptr_increments, &finalization_offsets](const std::vector<LinearIR::LoopManager::LoopPort>& ports) {
-            for (const auto& port : ports) {
-                ptr_increments.push_back(port.ptr_increment);
-                finalization_offsets.push_back(port.finalization_offset);
-            }
-        };
-        init_params(inner_tail_info->entry_points);
-        init_params(inner_tail_info->exit_points);
+        inner_loop_end->set_ptr_increments(ptr_increments);
+        inner_loop_end->set_finalization_offsets(finalization_offsets);
 
         const auto begin_it = std::find(tail_begin, it, linear_ir.get_expr_by_node(inner_loop_begin));
         const auto end_it = std::next(tail_end);
         OPENVINO_ASSERT(begin_it != it, "LoopBegin has not been found");
         tail_transformations(linear_ir, begin_it, end_it, inner_tail_info->work_amount);
-        inner_tail = true;
     }
 
     const auto tail_size = tail_loop_info->work_amount;
     tail_transformations(linear_ir, tail_begin, tail_end, tail_size);
+
+    std::vector<int64_t> ptr_increments, finalization_offsets, io_data_sizes;
+    InsertLoops::init_scheduling_parameters(tail_loop_info->entry_points, tail_loop_info->exit_points,
+                                            ptr_increments, finalization_offsets, io_data_sizes);
+
     std::shared_ptr<op::LoopEnd> tail_loop_end = ov::as_type_ptr<op::LoopBegin>((*tail_begin)->get_node())->get_loop_end();
-    const auto vector_increment = vector_loop_end->get_increment();
-    tail_loop_end->set_increment(tail_size);
-    // ptr increments were set to the old increment, need to update them in accordance with the new one
+    tail_loop_end->set_increment(tail_loop_info->increment);
     tail_loop_end->set_work_amount(tail_size);
-    tail_loop_end->set_finalization_offsets(tail_finalization_offsets);
+    tail_loop_end->set_ptr_increments(ptr_increments);
+    tail_loop_end->set_finalization_offsets(finalization_offsets);
     tail_loop_end->has_outer_loop = vector_loop_end->has_outer_loop;
+
     return tail_loop_end;
 }
 
@@ -201,17 +194,14 @@ bool InsertTailLoop::run(LinearIR& linear_ir) {
         const auto need_tail = tail_loop_info != nullptr && tail_loop_info->work_amount > 0 &&  // is there non-zero work amount
                                !is_inner_splitted_loop;  // not inner splitted loop
         const auto need_vector_loop = work_amount >= increment;
-        // Note, that finalization_offsets could be modified inside optimize_single_evaluation,
-        // so need to save them here to cover (evaluate_once vector with non-zero finalization_offsets + tail)
-        const auto tail_finalization_offsets = need_tail ? loop_end->get_finalization_offsets() : std::vector<int64_t>{};
+
         // vector loops are required => Just copy the body, original loop is already a vector one
         if (need_vector_loop) {
             // Note that finalization offsets should be applied after the last iteration.
             // So if there is a tail, then we should apply offsets after it, but not now.
             if (need_tail)
-                loop_end->set_finalization_offsets(std::vector<int64_t>(tail_finalization_offsets.size(), 0));
+                loop_end->set_finalization_offsets(std::vector<int64_t>(loop_end->get_finalization_offsets().size(), 0));
 
-            // force ptr increments if there is tail or buffers (to reset data ptrs)
             optimize_single_evaluation(loop_end);
         }
 
@@ -224,9 +214,8 @@ bool InsertTailLoop::run(LinearIR& linear_ir) {
             OPENVINO_ASSERT(begin_it != linear_ir.end(), "LoopBegin has not been found in Linear IR");
             LinearIR::constExprIt tail_begin, tail_end;
             const auto tail_loop_end = create_tail_loop(linear_ir, begin_it, std::next(expr_it), tail_begin, tail_end,
-                                                        tail_loop_info, loop_end, need_vector_loop, tail_finalization_offsets);
-            // Note: despite the fact that the tail loop is always executed once, we still need
-            // to keep finalization_offsets to reset Buffer
+                                                        tail_loop_info, loop_end, need_vector_loop);
+
             optimize_single_evaluation(tail_loop_end);
             // Skip new tail loop. Note: tail_end refs to the next expression after LoopEnd of tail
             expr_it = std::prev(tail_end);

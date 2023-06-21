@@ -545,7 +545,7 @@ void snippets::op::Subgraph::control_flow_transformations(lowered::LinearIR& lin
 
     lowered::pass::PassPipeline final_pipeline;
     final_pipeline.register_pass<lowered::pass::PropagateLayout>();
-    final_pipeline.register_pass<lowered::pass::CleanupLoopOffsets>();
+    //final_pipeline.register_pass<lowered::pass::CleanupLoopOffsets>();
     final_pipeline.run(linear_ir);
 
     m_buffer_scratchpad = buffer_allocation_pass->get_scratchpad_size();

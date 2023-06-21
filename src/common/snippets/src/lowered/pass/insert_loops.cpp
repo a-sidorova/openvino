@@ -44,6 +44,26 @@ void InsertLoops::filter_ports(std::vector<LoopPort>& loop_entries, std::vector<
     loop_exits = new_loop_exits;
 }
 
+
+void InsertLoops::init_scheduling_parameters(const std::vector<LinearIR::LoopManager::LoopPort>& loop_entries,
+                                             const std::vector<LinearIR::LoopManager::LoopPort>& loop_exits,
+                                             std::vector<int64_t>& increments, std::vector<int64_t>& offsets, std::vector<int64_t>& data_sizes) {
+    auto init_params = [&increments, &offsets, &data_sizes](const std::vector<LoopPort>& ports) {
+        for (const auto& port : ports) {
+            increments.push_back(port.ptr_increment);
+            offsets.push_back(port.finalization_offset);
+            data_sizes.push_back(port.data_size);
+        }
+    };
+
+    const auto in_out_num = loop_entries.size() + loop_exits.size();
+    increments.reserve(in_out_num);
+    offsets.reserve(in_out_num);
+    data_sizes.reserve(in_out_num);
+    init_params(loop_entries);
+    init_params(loop_exits);
+}
+
 void InsertLoops::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPtr& loop_manager, size_t loop_id, bool has_outer_loop) {
     const auto loop_info = loop_manager->get_loop_info(loop_id);
     auto loop_entries = loop_info->entry_points;
@@ -57,24 +77,8 @@ void InsertLoops::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPtr&
     // Remove non MemoryAccess ports since Loop can have only GPR inputs
     filter_ports(loop_entries, loop_exits);
 
-    const auto in_out_num = loop_entries.size() + loop_exits.size();
     std::vector<int64_t> ptr_increments, finalization_offsets, io_data_sizes;
-    std::vector<PortConnectorPtr> loop_end_inputs;
-    ptr_increments.reserve(in_out_num);
-    finalization_offsets.reserve(in_out_num);
-    io_data_sizes.reserve(in_out_num);
-    loop_end_inputs.reserve(in_out_num);
-
-    auto init_params = [&ptr_increments, &finalization_offsets, &io_data_sizes, &loop_end_inputs](const std::vector<LoopPort>& ports) {
-        for (const auto& port : ports) {
-            ptr_increments.push_back(port.ptr_increment);
-            finalization_offsets.push_back(port.finalization_offset);
-            io_data_sizes.push_back(port.data_size);
-            loop_end_inputs.push_back(port.expr_port->get_port_connector_ptr());
-        }
-    };
-    init_params(loop_entries);
-    init_params(loop_exits);
+    init_scheduling_parameters(loop_entries, loop_exits, ptr_increments, finalization_offsets, io_data_sizes);
 
     const auto& loop_begin = std::make_shared<op::LoopBegin>();
     const auto& loop_begin_expr = linear_ir.create_expression(loop_begin, std::vector<PortConnectorPtr>{});
@@ -85,7 +89,11 @@ void InsertLoops::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPtr&
             io_data_sizes, loop_entries.size(), loop_exits.size(), loop_id);
     loop_end->has_outer_loop = has_outer_loop;
 
-    // Add LoopBegin port connector
+    std::vector<PortConnectorPtr> loop_end_inputs;
+    for (const auto& expr_point : loop_entries)
+        loop_end_inputs.push_back(expr_point.expr_port->get_port_connector_ptr());
+    for (const auto& expr_port : loop_exits)
+        loop_end_inputs.push_back(expr_port.expr_port->get_port_connector_ptr());
     loop_end_inputs.push_back(loop_begin_expr->get_output_port_connector(0));
 
     const auto& loop_end_expr = linear_ir.create_expression(loop_end, loop_end_inputs);

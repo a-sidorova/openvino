@@ -33,8 +33,7 @@ private:
                                                          LinearIR::constExprIt& tail_end,
                                                          const LinearIR::LoopManager::LoopInfoPtr& tail_loop_info,
                                                          const std::shared_ptr<op::LoopEnd>& vector_loop_end,
-                                                         bool need_vector_loop,
-                                                         const std::vector<int64_t>& tail_finalization_offsets);
+                                                         bool need_vector_loop);
     static void tail_transformations(LinearIR& linear_ir,
                                      LinearIR::constExprIt tail_begin,
                                      LinearIR::constExprIt tail_end,

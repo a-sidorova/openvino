@@ -59,19 +59,36 @@ int64_t get_dim_stride(const LinearIR::LoopManagerPtr& loop_manager, const std::
 InitLoops::InitLoops() : Pass() {}
 
 void InitLoops::init(const LinearIR::LoopManagerPtr& loop_manager, const LinearIR::LoopManager::LoopInfoPtr& loop_info, size_t loop_id, bool is_tail) {
-    const auto work_amount = loop_info->work_amount;
-    const auto work_amount_increment = loop_info->increment;
+    // the exact number of iterations without remainder
+    //const auto iter_count = static_cast<size_t>(loop_info->work_amount / loop_info->increment) * loop_info->increment;
     const auto dim_idx = loop_info->dim_idx;
 
-    init_ptr_increments(loop_info->entry_points, loop_info->exit_points, loop_manager, loop_id, work_amount, dim_idx, is_tail);
-    init_finalization_offsets(loop_info->entry_points, loop_info->exit_points, work_amount);
+    init_ptr_increments(loop_info->entry_points, loop_info->exit_points, loop_manager, loop_id, dim_idx, is_tail);
+    init_finalization_offsets(loop_info->entry_points, loop_info->exit_points, loop_info->work_amount);
     init_element_type_sizes(loop_info->entry_points, loop_info->exit_points);
 }
 
-void InitLoops::init_ptr_increments(std::vector<LoopPort>& loop_inputs,
-                                    std::vector<LoopPort>& loop_outputs,
-                                    const LinearIR::LoopManagerPtr& loop_manager,
-                                    size_t loop_id, size_t work_amount, size_t dim_idx, bool is_tail) {
+void InitLoops::init_ptr_increments(std::vector<LoopPort>& loop_inputs, std::vector<LoopPort>& loop_outputs,
+                                    const LinearIR::LoopManagerPtr& loop_manager, size_t loop_id, size_t dim_idx, bool is_tail) {
+    // Find dimension to figure out there is broadcasting by this input/output or not for each loop port
+    size_t broadcastable_dim = 1;
+    for (auto& loop_input : loop_inputs) {
+        const auto& port = loop_input.expr_port;
+        // For strides we have to use layout from source since source writes data by special rules
+        const auto& layout = port->get_descriptor_ptr()->get_layout();
+        const auto& shape = port->get_descriptor_ptr()->get_shape();
+        const auto& dim = *(layout.rbegin() + dim_idx);
+        broadcastable_dim = std::max(broadcastable_dim, shape[dim]);
+    }
+
+    for (auto& loop_output : loop_outputs) {
+        const auto& port = loop_output.expr_port;
+        const auto& layout = port->get_descriptor_ptr()->get_layout();
+        const auto& shape = port->get_descriptor_ptr()->get_shape();
+        const auto& dim = *(layout.rbegin() + dim_idx);
+        broadcastable_dim = std::max(broadcastable_dim, shape[dim]);
+    }
+
     for (auto& loop_input : loop_inputs) {
         const auto& port = loop_input.expr_port;
         // For strides we have to use layout from source since source writes data by special rules
@@ -82,7 +99,7 @@ void InitLoops::init_ptr_increments(std::vector<LoopPort>& loop_inputs,
         const auto& dim = *(layout.rbegin() + dim_idx);
         loop_input.ptr_increment = 0;
         // If relevant dim is not broadcasted, then ptr_increment is the dim stride in the new layout
-        if (loop_input.is_incremented && !(shape[dim] == 1 && work_amount != 1)) {
+        if (loop_input.is_incremented && !(shape[dim] == 1 && broadcastable_dim != 1)) {
             loop_input.ptr_increment = get_dim_stride(loop_manager, loop_ids, loop_id, dim, dim_idx,
                                                       source.get_descriptor_ptr()->get_layout(), shape, is_tail);
         }
@@ -99,7 +116,7 @@ void InitLoops::init_ptr_increments(std::vector<LoopPort>& loop_inputs,
         std::iota(planar_layout.begin(), planar_layout.end(), 0);
         loop_output.ptr_increment = 0;
         // If relevant dim is not broadcasted, then ptr_increment is the dim stride in the new layout
-        if (loop_output.is_incremented && !(shape[dim] == 1 && work_amount != 1)) {
+        if (loop_output.is_incremented && !(shape[dim] == 1 && broadcastable_dim != 1)) {
             loop_output.ptr_increment = get_dim_stride(loop_manager, loop_ids, loop_id, dim, dim_idx,
                                                        planar_layout, shape, is_tail);
         }
