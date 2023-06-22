@@ -78,6 +78,7 @@ bool SplitLoops::run(LinearIR& linear_ir) {
                                                                                 loop_to_split->dim_idx,
                                                                                 loop_to_split->entry_points,
                                                                                 loop_to_split->exit_points);
+                split_loop->outer_splited_loop = true;
                 std::cout << "on 2 parts." << std::endl;
                 std::cout << "\tnew_wa=" << loop_to_split->work_amount << ",inc=" << loop_to_split->increment << std::endl;
                 std::cout << "\tnew_wa=" << split_loop->work_amount << ",inc=" << split_loop->increment << std::endl;
