@@ -336,14 +336,14 @@ class BrgemmEmitter : public jit_emitter {
 public:
     BrgemmEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa, const std::shared_ptr<ov::Node>& n);
 
-    size_t get_inputs_num() const override { return m_with_scratch ? 3 : 2; }
+    size_t aux_gprs_count() const override;
+    size_t get_inputs_num() const override;
     static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ngraph::Node>& node = nullptr);
 
 private:
     void emit_impl(const std::vector<size_t>& in,
                    const std::vector<size_t>& out) const override;
 
-    std::vector<size_t> io_data_size {};
     struct brgemmCtx {
         size_t M, N, K, LDA, LDB, LDC;
         dnnl_data_type_t dt_in0, dt_in1;
@@ -353,22 +353,36 @@ private:
         float beta;
     };
     void initBrgemm(brgemmCtx& ctx, std::unique_ptr<dnnl::impl::cpu::x64::brgemm_kernel_t>& brgKernel, bool use_amx) const;
+    void init_registers(const std::vector<size_t>& in, const std::vector<size_t>& out,
+                        Xbyak::Reg64& addr_in_0, Xbyak::Reg64& addr_in_1, Xbyak::Reg64& addr_in_2, Xbyak::Reg64& addr_out_0,
+                        Xbyak::Reg64& offset_in_0, Xbyak::Reg64& offset_in_1, Xbyak::Reg64& offset_in_2, Xbyak::Reg64& offset_out_0,
+                        Xbyak::Reg64& work_amount_n, Xbyak::Reg64& work_amount_k) const;
+    void init_offset(const Xbyak::Reg64& addr, size_t value) const;
+    void add_offset(const Xbyak::Reg64& addr, size_t offset) const;
+    void sub_offset(const Xbyak::Reg64& addr, size_t offset) const;
     size_t getBrgIdx(size_t kIdx, size_t nIdx) const;
 
-    void emit_brgemm_kernel_call(const dnnl::impl::cpu::x64::brgemm_kernel_t* brg_kernel, const brgemmCtx& ctx,
-                                 Xbyak::Reg64 addr_A, Xbyak::Reg64 addr_B, Xbyak::Reg64 scratch, Xbyak::Reg64 addr_C,
-                                 const size_t in0_kernel_offset, const size_t in1_kernel_offset,
-                                 const size_t in2_kernel_offset, const size_t out0_kernel_offset) const;
+    void emit_N_block_loop(size_t k, Xbyak::Reg64 addr_in_0, Xbyak::Reg64 addr_in_1, Xbyak::Reg64 addr_in_2, Xbyak::Reg64 addr_out_0,
+                           Xbyak::Reg64 offset_in_0, Xbyak::Reg64 offset_in_1, Xbyak::Reg64 offset_in_2, Xbyak::Reg64 offset_out_0,
+                           Xbyak::Reg64 work_amount_n) const;
+    void emit_kernel_call(const dnnl::impl::cpu::x64::brgemm_kernel_t* brg_kernel, const brgemmCtx& ctx,
+                          Xbyak::Reg64 addr_in_0, Xbyak::Reg64 addr_in_1, Xbyak::Reg64 addr_in_2, Xbyak::Reg64 addr_out_0,
+                          Xbyak::Reg64 offset_in_0, Xbyak::Reg64 offset_in_1, Xbyak::Reg64 offset_in_2, Xbyak::Reg64 offset_out_0) const;
     static void kernel_execute(const dnnl::impl::cpu::x64::brgemm_kernel_t *brg_kernel, const void *A, const void *B, void *C, void *scratch, int with_comp);
 
-    static constexpr size_t BRGEMM_KERNELS_NUM = 8;
-    brgemmCtx m_brgCtxs0[BRGEMM_KERNELS_NUM];
-    std::unique_ptr<dnnl::impl::cpu::x64::brgemm_kernel_t> m_brgKernels0[BRGEMM_KERNELS_NUM];
+    // Note: K dimension is covered by TWO blocked kernels (with beta = 0 and 1) + 1 for tail
+    static constexpr size_t BRGEMM_K_KERNEL_NUM = 3;
+    static constexpr size_t BRGEMM_N_KERNEL_NUM = 2;
+    brgemmCtx m_brgCtxs[BRGEMM_K_KERNEL_NUM * BRGEMM_N_KERNEL_NUM];
+    std::unique_ptr<dnnl::impl::cpu::x64::brgemm_kernel_t> m_brgKernels[BRGEMM_K_KERNEL_NUM * BRGEMM_N_KERNEL_NUM];
 
     size_t m_M;
     size_t m_K, m_K_blk, m_K_tail;
     size_t m_N, m_N_blk, m_N_tail;
     size_t m_brg0VnniFactor;
+
+    bool m_N_blk_loop = false;
+    bool m_K_blk_loop = false;
 
     bool m_with_scratch = false;
     bool m_with_comp = false;
@@ -377,6 +391,8 @@ private:
     size_t m_load_offset_b = 0lu;
     size_t m_load_offset_scratch = 0lu;
     size_t m_store_offset_c = 0lu;
+
+    std::vector<size_t> io_data_size {};
 };
 
 class BrgemmCopyBEmitter : public jit_emitter {
