@@ -32,6 +32,13 @@ void change_desc_shape(const T& port) {
         desc->set_shape(shape);
     }
 }
+auto readEnv = [](const char* envVar) {
+    const char* env = std::getenv(envVar);
+    if (env && *env) { // set and non-empty
+        return env;
+    }
+    return (const char*)nullptr;
+};
 } // namespace
 
 pass::SetBrgemmCPUBlockingParams::SetBrgemmCPUBlockingParams() {
@@ -56,13 +63,10 @@ pass::SetBrgemmCPUBlockingParams::SetBrgemmCPUBlockingParams() {
 
         // Ticket: 113745
         // TODO: extend block size selection heuristics
-        const size_t brgemm_block_size_m = 32;
-        const size_t brgemm_block_size_k = [&]() {
-            if (input_1_precision != ov::element::f32)
-                return K;
-            return K > 1024 ? 1024 : K > 512 ? 512 : K;
-        }();
-        const size_t brgemm_block_size_n = input_1_precision != ov::element::f32 ? N : 64;
+        const size_t brgemm_block_size_m = std::stoi(std::string(readEnv("M_BLK")));
+        const size_t brgemm_block_size_k = std::stoi(std::string(readEnv("K_BLK")));
+        const size_t brgemm_block_size_n = std::stoi(std::string(readEnv("N_BLK")));
+        std::cout << "Parameters: " << brgemm_block_size_m << " " << brgemm_block_size_k << " " << brgemm_block_size_n << std::endl;
 
         brgemm->set_m_block_size(brgemm_block_size_m);
         brgemm->set_k_block_size(brgemm_block_size_k);

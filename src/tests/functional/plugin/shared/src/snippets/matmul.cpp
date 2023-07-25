@@ -33,6 +33,16 @@ void MatMul::SetUp() {
     std::vector<ov::PartialShape> input_shapes;
     std::vector<ov::element::Type> elem_types;
     std::tie(input_shapes, elem_types, ref_num_nodes, ref_num_subgraphs, targetDevice) = this->GetParam();
+
+    for (size_t i = 0; i < input_shapes.size(); ++i) {
+        const auto env_name = "SHAPE" + std::to_string(i);
+        const char* env = std::getenv(env_name.c_str());
+        if (env && *env) { // set and non-empty
+            input_shapes[i] = ov::PartialShape(env);
+        }
+        std::cout << "InputShape" << std::to_string(i) << ": " << input_shapes[i].get_shape() << std::endl;
+    }
+
     init_input_shapes(static_partial_shapes_to_test_representation(input_shapes));
 
     init_subgraph(input_shapes, elem_types);
@@ -45,6 +55,9 @@ void MatMul::SetUp() {
 void MatMul::init_subgraph(const std::vector<PartialShape>& inputShapes, const std::vector<ov::element::Type>& types) {
     auto f = ov::test::snippets::MatMulFunction(inputShapes, types);
     function = f.getOriginal();
+    function->input(0).set_names({"input0"});
+    function->input(1).set_names({"input1"});
+    ov::pass::Serialize("matmul.xml", "matmul.bin").run_on_model(function);
 }
 
 void MatMulFQ::init_subgraph(const std::vector<PartialShape>& inputShapes, const std::vector<ov::element::Type>& types) {

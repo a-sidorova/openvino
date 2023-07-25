@@ -315,26 +315,13 @@ void summary_perf(const Graph &graph) {
     {
         std::cout << " perf_by_node:" << std::endl;
         std::vector<std::pair<NodePtr, double> > A;
-        for (auto& it : perf_by_node)
-            A.push_back(it);
-        sort(A.begin(), A.end(),
-            [](std::pair<NodePtr, double>& a,
-                std::pair<NodePtr, double>& b){
-            return a.second > b.second;
-        });
-
-        for (auto& it : A) {
-            std::stringstream ss;
-            auto percentage = it.second*100/total_avg;
-            auto node = it.first;
-            if (node->PerfCounter().count() == 0) continue;
-            if (node->PerfCounter().avg() < 1) continue;
-            ss << std::setw(10) << std::right << std::fixed << std::setprecision(2) << percentage << " %  "
-               << std::setw(8) << std::right  << node->PerfCounter().avg() << "(us)x" << node->PerfCounter().count()
-               << " #" << node->getExecIndex()
-               << " " << node->getName()
-               << " " << node->getTypeStr() + "_" + node->getPrimitiveDescriptorType() << std::endl;
-            std::cout << ss.str();
+        for (const auto& it : perf_by_node) {
+            const auto& node = it.first;
+            if (node->getType() == Type::Subgraph || node->getType() == Type::MatMul) {
+                std::stringstream ss;
+                ss << "Time: " << node->PerfCounter().avg() << "us" << " #" << node->getTypeStr() + "_" + node->getPrimitiveDescriptorType() << std::endl;
+                std::cout << ss.str();
+            }
         }
     }
 }

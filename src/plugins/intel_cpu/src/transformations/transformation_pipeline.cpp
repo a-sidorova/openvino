@@ -570,6 +570,9 @@ void Transformations::PostLpt() {
 }
 
 void Transformations::MainSnippets(void) {
+    const char* env = std::getenv("SNIPPETS");
+    if (!env)
+        return;
     if (snippetsMode == Config::SnippetsMode::Disable ||
         !dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx2)) // snippets are implemented only for relevant platforms (avx2+ extensions)
         return;
@@ -657,7 +660,7 @@ void Transformations::MainSnippets(void) {
                 //  they can be tokenized only as a part of complex patterns
                 const bool is_disabled_tokenization = (ov::is_type<const ov::op::v1::Softmax>(n) ||
                                                        ov::is_type<const ov::op::v8::Softmax>(n) ||
-                                                       ov::is_type<const ov::op::v0::MatMul>(n) ||
+                                                       //ov::is_type<const ov::op::v0::MatMul>(n) ||
                                                        ov::is_type<const ov::op::v1::Transpose>(n) ||
                                                        ov::is_type<const ov::op::v1::Broadcast>(n) ||
                                                        ov::is_type<const ov::op::v3::Broadcast>(n));
