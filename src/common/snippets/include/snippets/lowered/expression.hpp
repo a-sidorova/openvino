@@ -24,8 +24,13 @@ class Expression : public std::enable_shared_from_this<Expression> {
     friend class ExpressionPort;
 
 public:
-    Expression() = default;
-    virtual ~Expression() = default;
+    Expression() {
+        ID = std::rand() % 1000;
+        std::cout << "Expression " << ID << " constructor" << std::endl;
+    }
+    virtual ~Expression() {
+        std::cout << "Expression " << ID << " destructor " << get_node()->get_friendly_name() << std::endl;
+    }
 
     std::shared_ptr<Node> get_node() const;
     std::shared_ptr<Emitter> get_emitter() const;
@@ -71,6 +76,8 @@ protected:
     // The order Loops identifies: Outer ---> Inner
     // Note: The loops with the same dimension index (splitted dimension) should be successively nested
     std::vector<size_t> m_loop_ids;
+
+    size_t ID = 0;
 };
 using ExpressionPtr = std::shared_ptr<Expression>;
 

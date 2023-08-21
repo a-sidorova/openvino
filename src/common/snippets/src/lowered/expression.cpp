@@ -24,6 +24,9 @@ Expression::Expression(const std::shared_ptr<Node>& n)
     for (const auto& output : n->outputs()) {
         m_output_port_descriptors.push_back(PortDescriptorUtils::get_port_descriptor_ptr(output));
     }
+
+    ID = std::rand() % 1000;
+    std::cout << "Expression " << ID << " constructor" << std::endl;
 }
 
 const PortConnectorPtr& Expression::get_input_port_connector(size_t i) const {
