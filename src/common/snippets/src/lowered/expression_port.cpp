@@ -15,25 +15,26 @@ ExpressionPort::ExpressionPort(const std::shared_ptr<Expression>& expr, Type typ
         : m_expr(expr), m_type(type), m_port_index(port) {}
 
 const PortDescriptorPtr& ExpressionPort::get_descriptor_ptr() const {
-    const auto& descs = m_type == Type::Input ? m_expr->m_input_port_descriptors
-                                              : m_expr->m_output_port_descriptors;
+    const auto& descs = m_type == Type::Input ? get_expr()->m_input_port_descriptors
+                                              : get_expr()->m_output_port_descriptors;
     OPENVINO_ASSERT(m_port_index < descs.size(), "Incorrect index of port");
     return descs[m_port_index];
 }
 
 const std::shared_ptr<PortConnector>& ExpressionPort::get_port_connector_ptr() const {
-    const auto& connectors = m_type == Type::Input ? m_expr->m_input_port_connectors
-                                                : m_expr->m_output_port_connectors;
+    const auto& connectors = m_type == Type::Input ? get_expr()->m_input_port_connectors
+                                                : get_expr()->m_output_port_connectors;
     OPENVINO_ASSERT(m_port_index < connectors.size(), "Incorrect index of port");
     return connectors[m_port_index];
 }
 
 std::set<ExpressionPort> ExpressionPort::get_connected_ports() const {
+    const auto expr = get_expr();
     if (ExpressionPort::m_type == Type::Input) {
-        return { m_expr->m_input_port_connectors[m_port_index]->get_source() };
+        return { expr->m_input_port_connectors[m_port_index]->get_source() };
     }
     if (ExpressionPort::m_type == Type::Output) {
-        return m_expr->m_output_port_connectors[m_port_index]->get_consumers();
+        return expr->m_output_port_connectors[m_port_index]->get_consumers();
     }
     OPENVINO_THROW("ExpressionPort supports only Input and Output types");
 }
