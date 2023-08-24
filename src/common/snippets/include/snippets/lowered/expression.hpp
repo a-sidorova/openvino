@@ -55,12 +55,15 @@ public:
     std::vector<size_t> get_loop_ids() const;
     void set_loop_ids(const std::vector<size_t>& loops);
 
+    float get_execution_order() const { return m_execution_order; }
+
 protected:
     // Note: The constructor initialization is private since an expression can be created only by Linear IR.
     //       The method must be used only by Linear IR builder of expressions!
     explicit Expression(const std::shared_ptr<Node>& n);
 
     void replace_input(size_t port, PortConnectorPtr to);
+    void set_execution_order(float order);
 
     std::shared_ptr<Node> m_source_node{nullptr};
     std::shared_ptr<Emitter> m_emitter{nullptr};
@@ -71,6 +74,7 @@ protected:
     // The order Loops identifies: Outer ---> Inner
     // Note: The loops with the same dimension index (splitted dimension) should be successively nested
     std::vector<size_t> m_loop_ids;
+    float m_execution_order = 0;
 };
 using ExpressionPtr = std::shared_ptr<Expression>;
 

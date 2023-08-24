@@ -102,13 +102,17 @@ public:
 
     const LoopManagerPtr& get_loop_manager() const { return m_loop_manager; }
 
+    void reorder_expressions() const;
+
 private:
     static ov::NodeVector get_ordered_ops(const std::shared_ptr<ov::Model>& model);
     // Default ctor - can be called only from Linear IR initialization as default way
     ExpressionPtr create_expression(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model = nullptr);
 
-    void register_expression(const ExpressionPtr& expr, bool io_allowed = false);
+    void register_expression(const ExpressionPtr& expr, float exec_order = 0, bool io_allowed = false);
     void unregister_expression(const ExpressionPtr& expr);
+
+    float get_expr_execution_order(constExprIt left_pos, constExprIt right_pos, size_t div = 2) const;
 
     container m_expressions{};
     std::unordered_map<std::shared_ptr<Node>, std::shared_ptr<Expression>> m_node2expression_map;

@@ -106,6 +106,11 @@ void Expression::set_loop_ids(const std::vector<size_t>& loops) {
     m_loop_ids = loops;
 }
 
+void Expression::set_execution_order(float order) {
+    //OPENVINO_ASSERT(order >= 0, "Expression support only non-negative execution order");
+    m_execution_order = std::move(order);
+}
+
 ExpressionPort Expression::get_input_port(size_t i) {
     return ExpressionPort(this->shared_from_this(), ExpressionPort::Type::Input, i);
 }

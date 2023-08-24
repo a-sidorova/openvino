@@ -32,7 +32,7 @@ LinearIR::LinearIR(const std::shared_ptr<ov::Model>& model, Config config)
             insertion_pos = std::next(last_param);
         }
 
-        register_expression(expr, true);
+        register_expression(expr, 0, true);
         const auto& it = m_expressions.insert(insertion_pos, expr);
 
         if (const auto io_expr = std::dynamic_pointer_cast<IOExpression>(expr)) {
@@ -41,6 +41,8 @@ LinearIR::LinearIR(const std::shared_ptr<ov::Model>& model, Config config)
                 last_param = it;
         }
     }
+
+    reorder_expressions();
 }
 
 ExpressionPtr LinearIR::create_expression(const std::shared_ptr<Node>& n, const std::shared_ptr<ov::Model>& model) {
@@ -98,6 +100,7 @@ LinearIR::container LinearIR::deep_copy_range(LinearIR::container::const_iterato
         // copy by value, so result shared_pointer point to new objects
         Expression new_expr = **it;
         new_expr.m_source_node = node_map[(*it)->get_node().get()];
+        new_expr.m_execution_order = (*it)->m_execution_order;
         deep_clone_ports(new_expr.m_input_port_descriptors);
         deep_clone_ports(new_expr.m_output_port_descriptors);
         result.emplace_back(std::make_shared<Expression>(new_expr));
@@ -120,7 +123,7 @@ void LinearIR::debug_print(bool tds_as_pointers) const {
     int counter = 0;
     for (const auto& expr : m_expressions) {
         const auto& node = expr->get_node();
-        std::cerr << counter++ << " : " <<
+        std::cerr << counter++ << " (" << expr->get_execution_order() << ") : " <<
                   node->get_friendly_name() << " :  ";
         if (tds_as_pointers) {
             for (const auto& in : expr->m_input_port_connectors) {
@@ -186,15 +189,14 @@ void LinearIR::replace_input(const ExpressionPort& expr_port, const PortConnecto
     expr->replace_input(port, to);
 }
 
-void LinearIR::register_expression(const ExpressionPtr& expr, bool io_allowed) {
+void LinearIR::register_expression(const ExpressionPtr& expr, float exec_order, bool io_allowed) {
     const auto& node = expr->get_node();
     if (!io_allowed && (is_type<ov::op::v0::Result>(node) || is_type<ov::op::v0::Parameter>(node)))
         OPENVINO_THROW("LinearIR::insert can't be used to add Parameters or Results to IR");
-    {
-        const auto& res = m_node2expression_map.insert({node, expr});
-        if (!res.second)
-            OPENVINO_THROW("Duplicate node is detected in linear IR: " + std::string(node->get_friendly_name()));
-    }
+    const auto& res = m_node2expression_map.insert({node, expr});
+    if (!res.second)
+        OPENVINO_THROW("Duplicate node is detected in linear IR: " + std::string(node->get_friendly_name()));
+    expr->set_execution_order(exec_order);
 }
 
 void LinearIR::unregister_expression(const ExpressionPtr& expr) {
@@ -207,12 +209,12 @@ void LinearIR::unregister_expression(const ExpressionPtr& expr) {
 }
 
 LinearIR::exprIt LinearIR::insert(constExprIt pos, container::value_type&& value) {
-    register_expression(value);
+    register_expression(value, get_expr_execution_order(std::prev(pos), pos));
     return m_expressions.insert(pos, value);
 }
 
 LinearIR::exprIt LinearIR::insert(constExprIt pos, const container::value_type& value) {
-    register_expression(value);
+    register_expression(value, get_expr_execution_order(std::prev(pos), pos));
     return m_expressions.insert(pos, value);
 }
 
@@ -223,16 +225,21 @@ LinearIR::exprIt LinearIR::insert(constExprIt pos, exprIt begin, exprIt end) {
 }
 
 LinearIR::exprIt LinearIR::insert(constExprIt pos, constExprIt begin, constExprIt end) {
-    for (auto b = begin; b != end; b++)
-        register_expression(*b);
+    const auto count = std::distance(begin, end);
+    const auto common_order = get_expr_execution_order(std::prev(pos), pos, count + 1);
+    auto it = begin;
+    for (size_t idx = 0; it != end; ++idx, ++it) {
+        register_expression(*it, idx * common_order);
+    }
     return m_expressions.insert(pos, begin, end);
 }
 
 LinearIR::exprIt LinearIR::insert(LinearIR::constExprIt pos, const NodeVector& nodes) {
+    const auto common_order = get_expr_execution_order(std::prev(pos), pos, nodes.size() + 1);
     auto ret = m_expressions.end();
-    for (const auto& n : nodes) {
-        const auto& expr = create_expression(n);
-        register_expression(expr);
+    for (size_t idx = 0; idx < nodes.size(); ++idx) {
+        const auto& expr = create_expression(nodes[idx]);
+        register_expression(expr, idx * common_order);
         ret = m_expressions.insert(pos, expr);
     }
     // Need to return iterator to the first of the inserted values
@@ -241,7 +248,7 @@ LinearIR::exprIt LinearIR::insert(LinearIR::constExprIt pos, const NodeVector& n
 
 LinearIR::exprIt LinearIR::insert(LinearIR::constExprIt pos, const std::shared_ptr<Node>& n) {
     const auto& expr = create_expression(n);
-    register_expression(expr);
+    register_expression(expr, get_expr_execution_order(std::prev(pos), pos));
     return m_expressions.insert(pos, expr);
 }
 
@@ -256,6 +263,7 @@ LinearIR::exprIt LinearIR::erase(LinearIR::constExprIt pos) {
 }
 
 void LinearIR::move(LinearIR::constExprIt from, LinearIR::constExprIt to) {
+    from->get()->set_execution_order(get_expr_execution_order(std::prev(to), to));
     // Instead of `insert()` + `erase()`, we use `splice()` for the same list
     m_expressions.splice(to, m_expressions, from);
 }
@@ -278,6 +286,39 @@ LinearIR::constExprIt LinearIR::find_after(LinearIR::constExprIt it, const Expre
 template<>
 LinearIR::constExprReverseIt LinearIR::find_after(LinearIR::constExprReverseIt it, const ExpressionPtr& target) const {
     return find(it, crend(), target);
+}
+
+void LinearIR::reorder_expressions() const {
+    float order = 0;
+    for (const auto& expr : m_expressions) {
+        expr->set_execution_order(order++);
+    }
+}
+
+float LinearIR::get_expr_execution_order(constExprIt left_pos, constExprIt right_pos, size_t div) const {
+    if (m_expressions.empty())
+        return 0;
+
+    auto mid = [div](float a, float b) {
+        if (a >= b)
+            std::cout << std::endl;
+        OPENVINO_ASSERT(a < b, "Incorrect expression order");
+        return (a + b) / div;
+    };
+    float left_order = 0, right_order = 0;
+    if (right_pos == cbegin() && left_pos == std::prev(right_pos)) {    // On the list begin
+        right_order = right_pos->get()->get_execution_order();
+        left_order = right_order - 1;
+    } else if (right_pos == cend() && std::next(left_pos) == cend()) {  // On the list end
+        left_order = left_pos->get()->get_execution_order();
+        right_order = left_order + 1;
+    } else if (left_pos != cend() && right_pos != cend()) {             // In the list middle
+        left_order = left_pos->get()->get_execution_order();
+        right_order = right_pos->get()->get_execution_order();
+    } else {
+        OPENVINO_THROW("Failed to calculate execution order of expressions: incorrect data to calculate the order");
+    }
+    return mid(left_order, right_order);
 }
 
 
