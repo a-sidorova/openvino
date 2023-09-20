@@ -559,32 +559,56 @@ void Transformations::PostLpt() {
 
     CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::ConstantFolding);
 
-    // FP32 MHA already works optimized using Snippets (even better than MHA Custom)
-    // BF16 + INT8 works on Snippets side better since MHA Custom doesn't support mixed precision
-    // Tokenize MHA Custom only if subgraph is quantized with inference precision f32
-    // NOTE: Snippets may brake MHA patterns so the fusion has to performed before
-    if (inferencePrecision == ov::element::f32) {
-        // Snippets may brake MHA patterns so the fusion has to performed before
-        CPU_REGISTER_PASS_X64(postLPTPassManager, MHAQuantFusion);
-        CPU_REGISTER_PASS_X64(postLPTPassManager, MHAQuantFusion2);
-
-        CPU_SET_CALLBACK_X64(postLPTPassManager,
-            ([this](const std::shared_ptr<const ov::Node>& n) -> bool {
-                std::string errorMessage;
-
-                if (!node::MHA::isSupportedOperation(n, errorMessage))
-                    return true;
-
-                // BF16 case works on Snippets side
-                if (n->get_input_element_type(0) == element::bf16)
-                    return true;
-
-                return false;
-            }),
-            MHAQuantFusion, MHAQuantFusion2);
-    }
-
+    // Snippets may brake MHA patterns so the fusion has to performed before
+    CPU_REGISTER_PASS_X64(postLPTPassManager, MHAFusion);
     CPU_REGISTER_PASS_X64(postLPTPassManager, FuseFQtoInteraction);
+
+    // Callback for BF16 case
+    CPU_SET_CALLBACK_X64(postLPTPassManager,
+        ([this](const std::shared_ptr<const ov::Node>& n) -> bool {
+            std::string errorMessage;
+
+            if (!node::MHA::isSupportedOperation(n, errorMessage))
+                return true;
+
+            // If it's not BF16 case, don't tokenize
+            if (!(n->get_input_element_type(0) == element::bf16 || (n->get_input_element_type(0) == element::f32 && inferencePrecision == ov::element::bf16)))
+                return true;
+
+            // Implementation calls AMX BF16 brgemm only for tensors with K and N aligned on 2, otherwise fallbacks on vector impl
+            // Vector madd BF16 instruction on SPR has reduced performance on HW level, which results in overall perf degradation
+            size_t bf16Factor = 2;
+            if (dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core_amx) &&
+                (n->get_input_shape(0)[3] % bf16Factor != 0 || n->get_input_shape(1)[1] % bf16Factor != 0 || n->get_input_shape(3)[3] % bf16Factor != 0)) {
+                return true;
+            }
+
+            return false;
+        }),
+        MHAFloatFusion, MHAFloatFusion2);
+
+    // Callback for INT8 case
+    CPU_SET_CALLBACK_X64(postLPTPassManager,
+        ([this](const std::shared_ptr<const ov::Node>& n) -> bool {
+            std::string errorMessage;
+
+            if (!node::MHA::isSupportedOperation(n, errorMessage))
+                return true;
+            
+            // BF16 + INT8 MHA is performed on Snippets side better than on CPU Plugin side
+            // Second input is Add input
+            if (n->get_input_element_type(2) == element::bf16)
+                return true;
+
+            return false;
+        }),
+        MHAQuantFusion, MHAQuantFusion2);
+
+    // BF16 + INT8 MHA is performed on Snippets side better than on CPU Plugin side
+    if (inferencePrecision == ov::element::bf16) {
+        CPU_DISABLE_PASS_X64(postLPTPassManager, MHAQuantFusion);
+        CPU_DISABLE_PASS_X64(postLPTPassManager, MHAQuantFusion2);
+    }
 
     // Execute before snippets. Otherwise FQ will be converted to Subgraph
     CPU_REGISTER_PASS_X64(postLPTPassManager, ConvertFqRnnToQuantizedRnn);
