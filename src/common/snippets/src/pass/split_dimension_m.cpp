@@ -33,8 +33,8 @@ bool ov::snippets::pass::SplitDimensionM::can_be_optimized(const std::shared_ptr
     const auto current_parallel_work_amount =
         std::accumulate(mm_shape.rbegin() + 2, mm_shape.rend(), size_t(1), std::multiplies<size_t>());
     const auto dim_M = *(mm_shape.rbegin() + 1);
-    return (current_parallel_work_amount < concurrency) &&
-           (current_parallel_work_amount * dim_M >= concurrency);
+    const auto new_parallel_work_amount = current_parallel_work_amount * dim_M;
+    return static_cast<float>(new_parallel_work_amount) >= concurrency * m_optimal_thread_num_percent;
 }
 
 std::shared_ptr<ov::op::v0::MatMul> ov::snippets::pass::SplitDimensionM::get_matmul(const std::shared_ptr<op::Subgraph>& subgraph) {
@@ -103,7 +103,6 @@ bool ov::snippets::pass::SplitDimensionM::get_optimized_dimensions(const ov::Sha
         // The most optimal and possible case is [5, 3, 128, 32] - almost all threads executes kernel twice
         // Heuristic value for a quick exit from the algorithm.
         // The value shows the number of threads in percentages that perform the most equal work
-        const auto optimal_thread_num_percent = 0.8;
         size_t optimal_remainder = 1;
         auto get_remainder = [batch_dim, optimal_parallelism_work_amount](const size_t potential_batch_dim) {
             return (batch_dim * potential_batch_dim) % optimal_parallelism_work_amount;
@@ -129,7 +128,7 @@ bool ov::snippets::pass::SplitDimensionM::get_optimized_dimensions(const ov::Sha
 
             update_optimal_params(divisor_0, divisor_1);
             update_optimal_params(divisor_1, divisor_0);
-            if ((static_cast<float>(optimal_remainder) / static_cast<float>(optimal_parallelism_work_amount) > optimal_thread_num_percent) ||
+            if ((static_cast<float>(optimal_remainder) / static_cast<float>(optimal_parallelism_work_amount) > m_optimal_thread_num_percent) ||
                 (optimal_remainder == 0)) {
                 break;
             }

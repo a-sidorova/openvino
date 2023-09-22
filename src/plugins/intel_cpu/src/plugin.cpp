@@ -499,16 +499,16 @@ Engine::LoadExeNetworkImpl(const InferenceEngine::CNNNetwork &network, const std
 
     DEBUG_LOG(PrintableModel(*nGraphFunc, "org_"));
 
-    Transformations transformations(nGraphFunc, enableLPT, inferencePrecision, isLegacyAPI(), snippetsMode, engConfig);
+    // update the props after the perf mode translated to configs
+    // TODO: Clarify the behavior of SetConfig method. Skip eng_config or not?
+    Config conf = engConfig;
+
+    Transformations transformations(nGraphFunc, enableLPT, inferencePrecision, isLegacyAPI(), snippetsMode, conf);
     transformations.UpToLpt();
 
     if (!is_cpu_map_available()) {
         ApplyPerformanceHints(config, nGraphFunc);
     }
-
-    // update the props after the perf mode translated to configs
-    // TODO: Clarify the behavior of SetConfig method. Skip eng_config or not?
-    Config conf = engConfig;
 
     conf.readProperties(config, modelType);
     CalculateStreams(conf, nGraphFunc);

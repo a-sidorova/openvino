@@ -36,6 +36,7 @@ private:
     void reshape_subgraph(const std::shared_ptr<op::Subgraph>& subgraph, const ov::Shape& shape, size_t batch_m_dim, size_t new_m_dim);
 
     size_t m_concurrency;
+    static constexpr float m_optimal_thread_num_percent = 0.8;
 };
 
 
