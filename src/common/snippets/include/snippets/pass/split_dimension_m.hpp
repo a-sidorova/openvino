@@ -31,12 +31,12 @@ public:
 
 private:
     static std::shared_ptr<ov::op::v0::MatMul> get_matmul(const std::shared_ptr<op::Subgraph>& subgraph);
-    bool get_optimized_dimensions(const ov::Shape& shape, size_t& batch_m_dim, size_t& new_m_dim) const;
+    static std::pair<size_t, size_t> get_splited_dimensions(size_t batch_dim, size_t m_dim, size_t optimal_parallelism_work_amount);
+    static bool split(const ov::Shape& shape, size_t optimal_parallelism_work_amount, size_t& batch_m_dim, size_t& new_m_dim);
 
     void reshape_subgraph(const std::shared_ptr<op::Subgraph>& subgraph, const ov::Shape& shape, size_t batch_m_dim, size_t new_m_dim);
 
     size_t m_concurrency;
-    static constexpr float m_optimal_thread_num_percent = 0.8;
 };
 
 
