@@ -75,19 +75,19 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHA_3D, MHA,
                                  ::testing::Values(ov::element::f32),
                                  ::testing::ValuesIn({false, true}),
                                  ::testing::Values(0),
-                                 ::testing::Values(1),
-                                 ::testing::Values(1),
+                                 ::testing::Values(5), // [122706]: Subgraph + 4 Transpose
+                                 ::testing::Values(2), // decomposed Transpose + MHA
                                  ::testing::Values(ov::test::utils::DEVICE_CPU),
                                  ::testing::Values(CPUTestUtils::cpuEmptyPluginConfig)),
                          MHA::getTestCaseName);
 
 INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHA_4D_SplitDimensionM, MHA,
                          ::testing::Combine(
-                                 ::testing::Values(std::vector<ov::PartialShape>{{1, 128, 8, 64}, {1, 128, 8, 64}, {1, 8, 1, 1}, {1, 128, 8, 64}}),
+                                 ::testing::Values(std::vector<ov::PartialShape>{{1, 128, 2, 64}, {1, 128, 2, 64}, {1, 1, 1, 1}, {1, 128, 2, 64}}),
                                  ::testing::ValuesIn(precision_f32(4)),
                                  ::testing::Values(ov::element::f32),
                                  ::testing::Values(true),
-                                 ::testing::Values(16),
+                                 ::testing::Values(4), // 4 Threads
                                  ::testing::Values(6), // Subgraph + 4 Reshapes on inputs and 1 Reshape on output
                                  ::testing::Values(1),
                                  ::testing::Values(ov::test::utils::DEVICE_CPU),
@@ -96,13 +96,13 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHA_4D_SplitDimensionM, MHA,
 
 INSTANTIATE_TEST_SUITE_P(smoke_Snippets_MHA_3D_SplitDimensionM, MHA,
                          ::testing::Combine(
-                                 ::testing::Values(std::vector<ov::PartialShape>{{384, 8, 64}, {384, 8, 64}, {1, 384, 384}, {384, 8, 64}}),
+                                 ::testing::Values(std::vector<ov::PartialShape>{{384, 2, 64}, {384, 2, 64}, {1, 384, 384}, {384, 2, 64}}),
                                  ::testing::ValuesIn(precision_f32(4)),
                                  ::testing::Values(ov::element::f32),
                                  ::testing::Values(true),
-                                 ::testing::Values(12),
-                                 ::testing::Values(6), // Subgraph + 4 Reshapes on inputs and 1 Reshape on output
-                                 ::testing::Values(1),
+                                 ::testing::Values(4), // 4 Threads
+                                 ::testing::Values(10), // Subgraph + 4 Reshapes on inputs and 1 Reshape on output + 4 Transposes
+                                 ::testing::Values(1), // MHA
                                  ::testing::Values(ov::test::utils::DEVICE_CPU),
                                  ::testing::Values(enable_callback())),
                          MHA::getTestCaseName);
