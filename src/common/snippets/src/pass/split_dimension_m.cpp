@@ -32,8 +32,17 @@ bool ov::snippets::pass::SplitDimensionM::is_supported_matmul(const std::shared_
 std::pair<size_t, size_t> ov::snippets::pass::SplitDimensionM::get_splited_dimensions(size_t batch_dim, size_t m_dim,
                                                                                       size_t optimal_parallelism_work_amount) {
     std::pair<size_t, size_t> splited = { 1, m_dim };
-    size_t upper_bound = 2 * optimal_parallelism_work_amount / batch_dim;
-    for (size_t divisor_0 = upper_bound; divisor_0 > 1; divisor_0--) {
+
+    const size_t lower_bound = optimal_parallelism_work_amount / batch_dim;
+    if (lower_bound * batch_dim == optimal_parallelism_work_amount && m_dim % lower_bound == 0) {
+        splited.first = lower_bound;
+        splited.second = m_dim / lower_bound;
+        OPENVINO_ASSERT(splited.first * splited.second == m_dim, "Incorrect dimension M splitting!");
+        return splited;
+    }
+
+    const size_t upper_bound = utils::div_up(2 * optimal_parallelism_work_amount, batch_dim);
+    for (size_t divisor_0 = upper_bound - 1; divisor_0 > 1; divisor_0--) {
         size_t divisor_1 = m_dim / divisor_0;
         if (divisor_1 * divisor_0 == m_dim) {
             splited.first = divisor_0;
@@ -79,7 +88,7 @@ bool ov::snippets::pass::SplitDimensionM::split(const ov::Shape& shape, size_t o
         return false;
 
     auto is_optimized = [&](size_t batch_dim) {
-        return batch_dim > optimal_parallelism_work_amount;
+        return batch_dim >= optimal_parallelism_work_amount;
     };
 
     // We skip optimization if the current batch is optimal for concurrency
