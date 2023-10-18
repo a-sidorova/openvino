@@ -492,16 +492,68 @@ void Snippet::SnippetJitExecutor::update_ptrs(jit_snippets_call_args& call_args,
     }
 }
 
+void Snippet::SnippetJitExecutor::update_ptrs(jit_snippets_dynamic_call_args& call_args,
+                                              const int64_t indexes[5],
+                                              const std::vector<MemoryPtr>& inMemPtrs,
+                                              const std::vector<MemoryPtr>& outMemPtrs) {
+    for (size_t i = 0; i < outMemPtrs.size(); i++)
+        call_args.dst_ptrs[i] = reinterpret_cast<uint8_t*>(outMemPtrs[i]->getData()) + start_offset_out[i];
+
+    const auto& dynamic_kernel = std::dynamic_pointer_cast<KernelDynamicEmitter>(schedule.lowering_result.m_saved_emitters.back());
+    OPENVINO_ASSERT(dynamic_kernel, "KernelDynamicEmitter is expected but not found");
+
+    // todo: avoid this repacking. Either store io_shapes in snippetAttrs or make calculate_data_offsets take in and out args separately
+    std::vector<std::vector<size_t>> io_shapes = snippetAttrs.inMemBlockedDims;
+    io_shapes.insert(io_shapes.end(), snippetAttrs.outMemBlockedDims.begin(), snippetAttrs.outMemBlockedDims.end());
+
+    auto data_offsets = dynamic_kernel->calculate_data_offsets(io_shapes);
+    OPENVINO_ASSERT(data_offsets.front().size() == tensorRank - 1, "Data offsets with invalid ranks detected");
+
+    for (size_t i = 0; i < inMemPtrs.size(); i++) {
+        auto i_ptr = reinterpret_cast<uint8_t*>(inMemPtrs[i]->getData()) + start_offset_in[i];
+        for (size_t j = 0; j < tensorRank - 1; j++) {
+           // todo: do we need to skip empty dimensions like in static case? Same true for dst_ptrs
+          //if (master_shape[j] != 1)
+                i_ptr += (data_offsets[i][j] * indexes[j]);
+        }
+        call_args.src_ptrs[i] = i_ptr;
+    }
+    for (size_t i = 0; i < outMemPtrs.size(); i++) {
+        auto i_ptr = reinterpret_cast<uint8_t*>(outMemPtrs[i]->getData()) + start_offset_out[i];
+        for (size_t j = 0; j < tensorRank - 1; j++) {
+            i_ptr += (data_offsets[i + inMemPtrs.size()][j] * indexes[j]);
+        }
+        call_args.dst_ptrs[i] = i_ptr;
+    }
+    // todo: remove this assert when jit_snippets_dynamic_call_args are in the final state
+    OPENVINO_ASSERT(std::is_standard_layout<jit_snippets_dynamic_call_args>::value, "JIT dynamic call args are not standard-layout class");
+}
+
+
 void Snippet::SnippetJitExecutor::schedule_6d(const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs) {
     const auto& dom = parallel_exec_domain;
     // < N, C, H, W > < 1, 1, N, C*H*W>
-    const auto& callable = schedule.get_callable<kernel>();
+    const auto& callable = schedule.get_callable<dynamic_kernel>();
+    std::vector<jit_snippets_dynamic_call_args::loop_args_t> loop_args;
+    loop_args.reserve(2);
+    // Note: we need to multiply ptr_increments by wa_increment and data_size here, in Configurator
+    loop_args.emplace_back(16,
+                           std::vector<int64_t>{1 * 16 * 4, 1 * 16 * 4, 1 * 16 * 4},
+                           std::vector<int64_t>{0, 0, 0});
+    loop_args.emplace_back(29,
+                           std::vector<int64_t>{0, 0, 0},
+                           std::vector<int64_t>{0, 0, 0});
+
     parallel_for5d(dom[0], dom[1], dom[2], dom[3], dom[4],
         [&](int64_t d0, int64_t d1, int64_t d2, int64_t d3, int64_t d4) {
             int64_t indexes[] = {d0, d1, d2, d3, d4};
-            jit_snippets_call_args call_args;
-            update_ptrs(call_args, inMemPtrs, outMemPtrs);
-            callable(indexes, &call_args);
+            // todo: jit_snippets_dynamic_call_args are destructed at the end of this lambda.
+            //  It means that rather expensive memory allocation-deallocation is performed inside this loop.
+            //  A possible solution is to create thread-local jit_snippets_dynamic_call_args that would be reused here.
+            jit_snippets_dynamic_call_args dynamic_call_args;
+            dynamic_call_args.register_loops(loop_args);
+            update_ptrs(dynamic_call_args, indexes, inMemPtrs, outMemPtrs);
+            callable(&dynamic_call_args);
         });
 }
 

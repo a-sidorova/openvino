@@ -13,6 +13,8 @@
 #include "transformations/snippets/x64/op/brgemm_copy_b.hpp"
 #include "transformations/snippets/x64/op//brgemm_cpu.hpp"
 #include "snippets/op/rank_normalization.hpp"
+// todo: for reg printing. remove before merge
+#include "emitters/utils.hpp"
 
 using namespace InferenceEngine;
 using namespace Xbyak;
@@ -30,12 +32,7 @@ namespace {
 constexpr size_t gpr_size = 8;
 } // namespace
 
-inline static void transform_idxs_to_regs(const std::vector<size_t>& idxs, std::vector<Reg64>& regs) {
-    regs.resize(idxs.size());
-    std::transform(idxs.begin(), idxs.end(), regs.begin(), [](size_t idx){return Reg64(static_cast<int>(idx));});
-}
-
-jit_container_emitter::jit_container_emitter(jit_generator* h, cpu_isa_t isa, const ExpressionPtr& expr)
+jit_container_emitter::jit_container_emitter(jit_generator* h, cpu_isa_t isa)
     : jit_emitter(h, isa) {
     in_out_type_ = emitter_in_out_map::gpr_to_gpr;
 }
@@ -98,28 +95,17 @@ void jit_container_emitter::map_abstract_registers(mapping_info& gpr_map_pool,  
     }
 }
 
-KernelEmitter::KernelEmitter(jit_generator* h, cpu_isa_t isa, const ExpressionPtr& expr)
-    : jit_container_emitter(h, isa, expr),
-      reg_indexes_idx(abi_param1.getIdx()),
-      reg_const_params_idx(abi_param2.getIdx()) {
+void KernelEmitter::init_body_parameters(const ExpressionPtr& expr) {
     const auto kernel = ov::as_type_ptr<snippets::op::Kernel>(expr->get_node());
-    if (!kernel)
-        OPENVINO_THROW("KernelEmitter invoked with invalid op argument");
-    if (kernel->region.empty())
-        OPENVINO_THROW("KernelEmitter invoked with empty body");
-    if (kernel->compile_params == nullptr)
-        OPENVINO_THROW("KernelEmitter invoked with op::Kernel that contains no compile_params");
+    OPENVINO_ASSERT(kernel, "KernelEmitter invoked with invalid op argument");
+    OPENVINO_ASSERT(!kernel->region.empty(), "KernelEmitter invoked with empty body");
     body = kernel->region;
-    jcp = *reinterpret_cast<const jit_snippets_compile_args*>(kernel->compile_params);
-    master_shape = body.get_master_shape();
-    // Note: plugin can prepend master shape with 1 to facilitate parallel execution (usually up to 6D tensor)
-    //       so we have to reproduce this behavior here
-    master_shape.insert(master_shape.begin(), jcp.parallel_executor_ndims - master_shape.size(), 1);
     const auto& io_exprs = body.get_IO_ops();
     num_inputs = 0;
     num_outputs = 0;
     for (const auto& expr : io_exprs) {
         snippets::lowered::PortDescriptorPtr desc = nullptr;
+        mem_access_exprs.emplace_back(expr);
         element::Type etype;
         switch (expr->get_type()) {
             case snippets::lowered::IOExpression::io_type::INPUT: {
@@ -151,37 +137,11 @@ KernelEmitter::KernelEmitter(jit_generator* h, cpu_isa_t isa, const ExpressionPt
         io_data_layouts.push_back(layout);
         io_data_sizes.push_back(etype.size());
     }
-
-    // Initialize pools of gp and vec registers
-    gp_regs_pool.resize(16);
-    vec_regs_pool.resize(16);
-    // It's easier to remove the last item during mapping, so fill descending to map ascending
-    for (size_t i = 0; i < 16; i++)
-        gp_regs_pool[i] = vec_regs_pool[i] = 15 - i;
-    // todo: it's more convenient to use std::set as a pool container (unique and always sorted),
-    //  but pools are vectors to align with emit_code signature. Change signature?
-    auto remove_regs_from_pool = [](std::vector<size_t>& pool, const std::set<size_t>& to_remove) {
-        // It's important to keep the order of other elements
-        pool.erase(std::remove_if(pool.begin(), pool.end(),
-                                       [&](size_t x) {return to_remove.count(x) != 0;}), pool.end());
-    };
-    // Reserve stack base and pointer for push(...) and pop(...) operations
-    // Reserve abi_param1 and abi_param2, since they'll be used to pass runtime call args to kernel
-    remove_regs_from_pool(gp_regs_pool, {Xbyak::Operand::RSP, Xbyak::Operand::RBP,
-                                         reg_indexes_idx, reg_const_params_idx});
-
-    mapping_info gpr_map_pool({}, gp_regs_pool);
-    mapping_info vec_map_pool({}, vec_regs_pool);
-    snippets::lowered::LinearIR::container mem_access_exprs;
-    snippets::lowered::LinearIR::container general_exprs;
     std::set<size_t> unique_buffers;
-
     for (const auto& expr : body) {
         // Brgemm is a special case since it incorporates input and output (we use onednn kernel)
         // Just like Load & Store it requires offsets calculation
-        if (std::dynamic_pointer_cast<snippets::lowered::IOExpression>(expr)) {
-            mem_access_exprs.emplace_back(expr);
-        } else if (const auto buffer = ov::as_type_ptr<snippets::op::Buffer>(expr->get_node())) {
+        if (const auto buffer = ov::as_type_ptr<snippets::op::Buffer>(expr->get_node())) {
             const auto buffer_id = buffer->get_id();
             if (unique_buffers.count(buffer_id) == 0) {
                 mem_access_exprs.push_back(expr);
@@ -192,16 +152,59 @@ KernelEmitter::KernelEmitter(jit_generator* h, cpu_isa_t isa, const ExpressionPt
         }
     }
     num_unique_buffers = unique_buffers.size();
+    OPENVINO_ASSERT(kernel->compile_params, "KernelEmitter invoked with op::Kernel that contains no compile_params");
+    jcp = *reinterpret_cast<const jit_snippets_compile_args*>(kernel->compile_params);
+    // Note that master_shape could be dynamic in a general case
+    master_shape = body.get_master_shape();
+    // Note: plugin can prepend master shape with 1 to facilitate parallel execution (usually up to 6D tensor)
+    //       so we have to reproduce this behavior here
+    master_shape.insert(master_shape.begin(), jcp.parallel_executor_ndims - master_shape.size(), 1);
+}
 
-    // Note that we can't use reg_indexes_idx or reg_const_params_idx to store data pointers because these two
+void KernelEmitter::init_reg_pools(const std::set<size_t>& gpr_blacklist, const std::set<size_t>& vec_blacklist) {
+    gp_regs_pool.resize(16);
+    vec_regs_pool.resize(16);
+    // It's easier to remove the last item during mapping, so fill descending to map ascending
+    for (size_t i = 0; i < 16; i++)
+        gp_regs_pool[i] = vec_regs_pool[i] = 15 - i;
+    auto remove_regs_from_pool = [](std::vector<size_t>& pool, const std::set<size_t>& to_remove) {
+        // It's important to keep the order of other elements
+        pool.erase(std::remove_if(pool.begin(), pool.end(),
+                                  [&](size_t x) {return to_remove.count(x) != 0;}), pool.end());
+    };
+    // Reserve stack base and pointer for push(...) and pop(...) operations
+    std::set<size_t> gprs_blacklist_extended{Xbyak::Operand::RSP, Xbyak::Operand::RBP};
+    gprs_blacklist_extended.insert(gpr_blacklist.begin(), gpr_blacklist.end());
+    // Reserve abi_param1 and abi_param2, since they'll be used to pass runtime call args to kernel
+    remove_regs_from_pool(gp_regs_pool, gprs_blacklist_extended);
+    remove_regs_from_pool(vec_regs_pool, vec_blacklist);
+}
+
+KernelEmitter::KernelEmitter(dnnl::impl::cpu::x64::jit_generator* h, dnnl::impl::cpu::x64::cpu_isa_t isa)
+    : jit_container_emitter(h, isa) {
+}
+
+KernelEmitter::KernelEmitter(jit_generator* h, cpu_isa_t isa, const ExpressionPtr& expr)
+    : jit_container_emitter(h, isa),
+      reg_indexes_idx(abi_param1.getIdx()),
+      reg_runtime_params_idx(abi_param2.getIdx()) {
+    init_body_parameters(expr);
+    // Initialize pools of gp and vec registers
+    // Reserve abi_param1 and abi_param2, since they'll be used to pass runtime call args to kernel
+    init_reg_pools({reg_indexes_idx, reg_runtime_params_idx}, {});
+
+    mapping_info gpr_map_pool({}, gp_regs_pool);
+    mapping_info vec_map_pool({}, vec_regs_pool);
+
+    // Note that we can't use reg_indexes_idx or reg_runtime_params_idx to store data pointers because these two
     // regs are used to calculate offsets for the data pointers
     map_abstract_registers(gpr_map_pool, vec_map_pool, mem_access_exprs);
     for (const auto& abstract_to_physical : gpr_map_pool.first)
         data_ptr_regs_idx.push_back(abstract_to_physical.second);
-    // However we can use reg_indexes_idx and reg_const_params_idx for other operations since we won't need them
+    // However we can use reg_indexes_idx and reg_runtime_params_idx for other operations since we won't need them
     // after offsets calculation
     gpr_map_pool.second.push_back(reg_indexes_idx);
-    gpr_map_pool.second.push_back(reg_const_params_idx);
+    gpr_map_pool.second.push_back(reg_runtime_params_idx);
     map_abstract_registers(gpr_map_pool, vec_map_pool, general_exprs);
 }
 
@@ -227,8 +230,7 @@ void KernelEmitter::validate_arguments(const std::vector<size_t> &in,
             data_ptr_regs_idx.size());
 }
 
-void KernelEmitter::init_data_pointers(const Xbyak::Reg64& reg_indexes, const Xbyak::Reg64& reg_const_params,
-                                       const std::vector<Xbyak::Reg64>& data_ptr_regs) const {
+std::vector<std::vector<size_t>> KernelEmitter::calculate_data_offsets(const std::vector<std::vector<size_t>>& runtime_io_shapes) const {
     const auto num_params = num_inputs + num_outputs;
     // Note that we don't need offset for the last dim, since it's handled directly by Tile emitter
     const size_t offset_rank = master_shape.size() - 1;
@@ -270,6 +272,15 @@ void KernelEmitter::init_data_pointers(const Xbyak::Reg64& reg_indexes, const Xb
     for (size_t i = 0; i < num_params; i++) {
         data_offsets[i] = offset_calculation(io_shapes[i],  io_data_layouts[i], io_data_sizes[i], i < num_inputs);
     }
+    return data_offsets;
+}
+
+void KernelEmitter::init_data_pointers(const Xbyak::Reg64& reg_indexes, const Xbyak::Reg64& reg_const_params,
+                                       const std::vector<Xbyak::Reg64>& data_ptr_regs) const {
+    const auto num_params = num_inputs + num_outputs;
+    // Note that we don't need offset for the last dim, since it's handled directly by Tile emitter
+    const size_t offset_rank = master_shape.size() - 1;
+    std::vector<std::vector<size_t>> data_offsets = calculate_data_offsets(io_shapes);
     // master_shape size must be valid in both static and dynamic cases
     std::function<void(Reg64, const std::vector<size_t>&, Reg64)> init_ptr_with_offset;
     init_ptr_with_offset = [&](Reg64 pointer, const std::vector<size_t>& offsets, Reg64 reg_tmp) {
@@ -283,7 +294,7 @@ void KernelEmitter::init_data_pointers(const Xbyak::Reg64& reg_indexes, const Xb
     };
     const auto spare_corruptable_gpr = std::find_if(gp_regs_pool.begin(), gp_regs_pool.end(),
                                                    [this](size_t reg) {
-                                                        return reg != reg_indexes_idx && reg != reg_const_params_idx;
+                                                        return reg != reg_indexes_idx && reg != reg_runtime_params_idx;
                                                    });
     const bool last_iter_explicitly = spare_corruptable_gpr == gp_regs_pool.end();
     Reg64 reg_tmp = last_iter_explicitly ? data_ptr_regs[num_params - 1] : Reg64(static_cast<int>(*spare_corruptable_gpr));
@@ -320,7 +331,7 @@ void KernelEmitter::emit_impl(const std::vector<size_t>& in,
     h->preamble();
 
     Reg64 reg_indexes = Reg64(static_cast<int>(reg_indexes_idx));
-    Reg64 reg_const_params = Reg64(static_cast<int>(reg_const_params_idx));
+    Reg64 reg_const_params = Reg64(static_cast<int>(reg_runtime_params_idx));
     std::vector<Reg64> data_ptr_regs;
     transform_idxs_to_regs(data_ptr_regs_idx, data_ptr_regs);
 
@@ -614,6 +625,9 @@ void LoadEmitter::emit_isa(const std::vector<size_t> &in, const std::vector<size
     if (!load_emitter)
         OPENVINO_THROW("Load CPU emitter isn't initialized for LoadEmitter!");
     load_emitter->emit_code({in[0], byte_offset}, {out[0]}, aux_vec_idxs, aux_gpr_idxs);
+
+//     todo: remove reg printing
+//    RegPrinter::print<float>(*h,  Xbyak::Zmm(out[0]), "LoadEmitter_result");
 }
 
 void LoadEmitter::emit_data() const {
