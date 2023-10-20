@@ -169,9 +169,13 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
         OPENVINO_ASSERT(index < size, "Incorrect index for broadcasting");
         const auto lhs_value = index < lhs_size ? *(lhs.crbegin() + index) : 1;
         const auto rhs_value = index < rhs_size ? *(rhs.crbegin() + index) : 1;
-        OPENVINO_ASSERT(lhs_value == rhs_value || lhs_value == 1 || rhs_value == 1,
-                        "Output shapes of Loop must be broadcastable!");
-        *(lhs.rbegin() + index) = std::max(lhs_value, rhs_value);
+        if (lhs_value == rhs_value || lhs_value == 1 || lhs_value == IShapeInferSnippets::DYNAMIC_DIMENSION) {
+            *(lhs.rbegin() + index) = rhs_value;
+        } else if (rhs_value == 1 || rhs_value == IShapeInferSnippets::DYNAMIC_DIMENSION) {
+            *(lhs.rbegin() + index) = lhs_value;
+        } else {
+            OPENVINO_THROW("Output shapes of Loop must be broadcastable!");
+        }
     };
 
     auto is_outside_loop = [](const std::vector<size_t>& subtensor) {
