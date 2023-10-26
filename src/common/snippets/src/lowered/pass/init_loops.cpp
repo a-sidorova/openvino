@@ -6,6 +6,7 @@
 
 #include "snippets/lowered/linear_ir.hpp"
 #include "snippets/lowered/loop_manager.hpp"
+#include "snippets/utils.hpp"
 #include "snippets/itt.hpp"
 
 namespace ov {
@@ -16,11 +17,15 @@ namespace pass {
 using LoopPort = LinearIR::LoopManager::LoopPort;
 
 namespace {
-int64_t get_dim_stride(size_t dim, const std::vector<size_t>& layout, const std::vector<size_t>& shape) {
+int64_t get_dim_stride(size_t dim_idx, const std::vector<size_t>& layout, const std::vector<size_t>& shape) {
     int64_t stride = 1;
     for (int i = static_cast<int>(layout.size()) - 1; i >= 0; i--) {
-        if (layout[i] == dim) {
+        if (layout[i] == dim_idx) {
             break;
+        }
+        const auto dim = shape[layout[i]];
+        if (utils::is_dynamic_vdim(dim)) {
+            return IShapeInferSnippets::DYNAMIC_DIMENSION;
         }
         stride *= static_cast<int64_t>(shape[layout[i]]);
     }
@@ -68,19 +73,15 @@ void InitLoops::init_ptr_increments(std::vector<LoopPort>& loop_inputs, std::vec
     }
 }
 
-void InitLoops::init_finalization_offsets(std::vector<LinearIR::LoopManager::LoopPort>& loop_inputs,
-                                          std::vector<LinearIR::LoopManager::LoopPort>& loop_outputs,
-                                          size_t work_amount) {
-    for (auto& loop_input : loop_inputs) {
-        loop_input.finalization_offset = -1 * loop_input.ptr_increment * work_amount;
-    }
-    for (auto& loop_output : loop_outputs) {
-        loop_output.finalization_offset = -1 * loop_output.ptr_increment * work_amount;
-    }
+void InitLoops::init_finalization_offsets(std::vector<LoopPort>& loop_inputs, std::vector<LoopPort>& loop_outputs, size_t work_amount) {
+    auto init = [&](LoopPort& port) {
+        port.finalization_offset = utils::is_dynamic_vdim(port.ptr_increment) ? port.ptr_increment : -1 * port.ptr_increment * work_amount;
+    };
+    std::for_each(loop_inputs.begin(), loop_inputs.end(), [&](LoopPort& port) { init(port); });
+    std::for_each(loop_outputs.begin(), loop_outputs.end(), [&](LoopPort& port) { init(port); });
 }
 
-void InitLoops::init_element_type_sizes(std::vector<LoopPort>& loop_inputs,
-                                        std::vector<LoopPort>& loop_outputs) {
+void InitLoops::init_element_type_sizes(std::vector<LoopPort>& loop_inputs, std::vector<LoopPort>& loop_outputs) {
     for (auto& loop_input : loop_inputs) {
         const auto& port = loop_input.expr_port;
         loop_input.data_size = static_cast<int64_t>(port->get_expr()->get_node()->get_input_element_type(port->get_index()).size());

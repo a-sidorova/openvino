@@ -58,7 +58,14 @@ constexpr inline bool implication(bool cause, bool cond) {
 VectorDims get_planar_vdims(const VectorDims& shape, const std::vector<size_t>& layout);
 VectorDims get_planar_vdims(const snippets::lowered::PortDescriptorPtr& port_desc);
 VectorDims get_planar_vdims(const snippets::lowered::ExpressionPort& expr_port);
-bool is_dynamic_vdims(const VectorDims& shape);
+
+inline bool is_dynamic_vdim(const VectorDims::value_type& dim) {
+    return dim == IShapeInferSnippets::DYNAMIC_DIMENSION;
+}
+
+inline bool is_dynamic_vdims(const VectorDims& shape) {
+    return std::any_of(shape.cbegin(), shape.cend(), [](size_t v){ return is_dynamic_vdim(v); });
+}
 
 } // namespace utils
 } // namespace snippets
