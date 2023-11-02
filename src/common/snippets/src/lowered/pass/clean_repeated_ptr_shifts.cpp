@@ -5,6 +5,7 @@
 #include "snippets/lowered/pass/clean_repeated_ptr_shifts.hpp"
 
 #include "snippets/lowered/linear_ir.hpp"
+#include "snippets/lowered/loop_manager.hpp"
 #include "snippets/snippets_isa.hpp"
 #include "snippets/itt.hpp"
 
@@ -17,6 +18,9 @@ bool CleanRepeatedDataPointerShifts::reuse_increments(const LinearIR& linear_ir,
     const auto loop_end = ov::as_type_ptr<op::LoopEnd>(loop_end_expr->get_node());
     if (!loop_end)
         return false;
+
+    const auto& loop_manager = linear_ir.get_loop_manager();
+    const auto loop_info = loop_manager->get_loop_info(loop_end->get_id());
 
     const auto loop_connectors = loop_end_expr->get_input_port_connectors();
     const auto input_count = loop_end->get_input_num();
@@ -83,6 +87,10 @@ bool CleanRepeatedDataPointerShifts::reuse_increments(const LinearIR& linear_ir,
     for (auto idx_to_drop : resetting_data_indexes) {
         new_ptr_increments[idx_to_drop] = 0;
         new_finalization_offsets[idx_to_drop] = 0;
+        if (idx_to_drop < input_count)
+            loop_info->entry_points[idx_to_drop].is_incremented = false;
+        else
+            loop_info->exit_points[idx_to_drop - input_count].is_incremented = false;
     }
     loop_end->set_ptr_increments(new_ptr_increments);
     loop_end->set_finalization_offsets(new_finalization_offsets);
