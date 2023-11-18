@@ -6,17 +6,22 @@
 
 #include "fuse_load_store_and_convert.hpp"
 #include "snippets/snippets_isa.hpp"
+#include "snippets/lowered/loop_manager.hpp"
 
 #include "transformations/snippets/x64/op/load_convert.hpp"
 #include "transformations/snippets/x64/op/store_convert.hpp"
 
+#include "utils/general_utils.h"
+
 
 bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_load_convert(snippets::lowered::LinearIR& linear_ir,
                                                                   snippets::lowered::LinearIR::constExprIt& convert_it) {
+    const auto& loop_manager = linear_ir.get_loop_manager();
     const auto& convert_expr = *convert_it;
     const auto& convert = ov::as_type_ptr<ov::op::v0::Convert>(convert_expr->get_node());
     const auto& input_connector = convert_expr->get_input_port_connector(0);
-    if (convert->get_destination_type() != ov::element::f32 && convert->get_destination_type() != ov::element::i32)
+    // supported output precision by emitter
+    if (!one_of(convert->get_destination_type(), ov::element::f32, ov::element::i32))
         return false;
 
     const auto& load_output = input_connector->get_source();
@@ -24,11 +29,12 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_load_convert(snippets::lowe
     const auto load = ov::as_type_ptr<snippets::op::Load>(load_expr->get_node());
     if (!load ||
         ov::is_type<snippets::op::LoadReshape>(load_expr->get_node()) ||
-        ov::is_type<snippets::op::BroadcastLoad>(load_expr->get_node()))
+        ov::is_type<snippets::op::BroadcastLoad>(load_expr->get_node()) ||
+        ov::is_type<ov::intel_cpu::LoadConvertSaturation>(load_expr->get_node()) ||
+        ov::is_type<ov::intel_cpu::LoadConvertTruncation>(load_expr->get_node()))
         return false;
 
-    const auto consumers = input_connector->get_consumers();
-    if (consumers.size() != 1)
+    if (input_connector->get_consumers().size() != 1)
         return false;
 
     std::shared_ptr<ov::Node> load_convert = nullptr;
@@ -51,6 +57,9 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_load_convert(snippets::lowe
     const auto convert_expr_it = convert_it;
     const auto insertion_pos = std::next(convert_it);
     convert_it = linear_ir.insert(insertion_pos, load_convert_expr);
+    // Copy Loop identifies
+    load_convert_expr->set_loop_ids(load_expr->get_loop_ids());
+    loop_manager->update_loops_port(load_expr->get_loop_ids(), load_expr->get_input_port(0), {load_convert_expr->get_input_port(0)}, true);
     linear_ir.erase(std::find(linear_ir.cbegin(), convert_expr_it, load_expr));
     linear_ir.erase(convert_expr_it);
     linear_ir.replace_input(convert_consumers, load_convert_expr->get_output_port_connector(0));
@@ -59,11 +68,13 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_load_convert(snippets::lowe
 
 bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_store_convert(snippets::lowered::LinearIR& linear_ir,
                                                                    snippets::lowered::LinearIR::constExprIt& convert_it) {
+    const auto& loop_manager = linear_ir.get_loop_manager();
     const auto& convert_expr = *convert_it;
     const auto& convert = convert_expr->get_node();
     const auto& input_connector = convert_expr->get_input_port_connector(0);
     const auto& output_connector = convert_expr->get_output_port_connector(0);
-    if (convert->get_input_element_type(0) != ov::element::f32 && convert->get_input_element_type(0) != ov::element::i32)
+    // supported input precision by emitter
+    if (!one_of(convert->get_input_element_type(0), ov::element::f32, ov::element::i32))
         return false;
 
     const auto consumers = output_connector->get_consumers();
@@ -73,7 +84,9 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_store_convert(snippets::low
     const auto store_input = *(consumers.begin());
     const auto& store_expr = store_input.get_expr();
     const auto store = ov::as_type_ptr<snippets::op::Store>(store_expr->get_node());
-    if (!store)
+    if (!store ||
+        ov::is_type<ov::intel_cpu::StoreConvertSaturation>(store_expr->get_node()) ||
+        ov::is_type<ov::intel_cpu::StoreConvertTruncation>(store_expr->get_node()))
         return false;
 
     std::shared_ptr<ov::Node> store_convert = nullptr;
@@ -96,6 +109,9 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_store_convert(snippets::low
     const auto convert_expr_it = convert_it;
     const auto insertion_pos = std::next(convert_it);
     convert_it = linear_ir.insert(insertion_pos, store_convert_expr);
+     // Copy Loop identifies
+    store_convert_expr->set_loop_ids(store_expr->get_loop_ids());
+    loop_manager->update_loops_port(store_expr->get_loop_ids(), store_expr->get_output_port(0), {store_convert_expr->get_input_port(0)}, false);
     linear_ir.erase(std::find(convert_expr_it, linear_ir.cend(), store_expr));
     linear_ir.erase(convert_expr_it);
     linear_ir.replace_input(store_consumers, store_convert_expr->get_output_port_connector(0));
