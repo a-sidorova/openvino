@@ -525,6 +525,10 @@ void Snippet::SnippetJitExecutor::update_ptrs(jit_snippets_dynamic_call_args& ca
         }
         call_args.dst_ptrs[i] = i_ptr;
     }
+    if (buffer_scratchpad_size > 0) {
+        call_args.buffer_scratchpad_ptr =
+                reinterpret_cast<uint8_t*>(buffer_scratchpad.data()) + parallel_get_thread_num() * buffer_scratchpad_size;
+    }
     // todo: remove this assert when jit_snippets_dynamic_call_args are in the final state
     OPENVINO_ASSERT(std::is_standard_layout<jit_snippets_dynamic_call_args>::value, "JIT dynamic call args are not standard-layout class");
 }
