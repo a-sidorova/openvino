@@ -33,7 +33,6 @@
 #include "snippets/lowered/pass/insert_broadcastmove.hpp"
 #include "snippets/lowered/pass/load_movebroadcast_to_broadcastload.hpp"
 #include "snippets/lowered/pass/allocate_buffers.hpp"
-#include "snippets/lowered/pass/propagate_layout.hpp"
 #include "snippets/lowered/pass/cleanup_loop_offsets.hpp"
 #include "snippets/lowered/pass/softmax_decomposition.hpp"
 #include "snippets/lowered/pass/move_scalar_to_consumer.hpp"
@@ -462,7 +461,6 @@ void Subgraph::control_flow_transformations(lowered::LinearIR& linear_ir,
     buffer_pipeline.run(linear_ir);
 
     lowered::pass::PassPipeline final_pipeline;
-    final_pipeline.register_pass<lowered::pass::PropagateLayout>();
     final_pipeline.register_pass<lowered::pass::CleanupLoopOffsets>();
     final_pipeline.register_pass<lowered::pass::NormalizeLoopIDs>();
     final_pipeline.run(linear_ir);
