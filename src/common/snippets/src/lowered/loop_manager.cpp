@@ -57,6 +57,12 @@ std::shared_ptr<LoopInfo> LoopInfo::clone_with_new_expr(const ExressionMap& expr
     return new_loop_info;
 }
 
+std::vector<LoopPort> LoopInfo::get_all_ports() const {
+    auto loop_ports = entry_points;
+    loop_ports.insert(loop_ports.end(), exit_points.cbegin(), exit_points.cend());
+    return loop_ports;
+}
+
 std::shared_ptr<LoopManager> LoopManager::clone_with_new_expr(const ExressionMap& expr_map) const {
     auto new_loop_manager = std::make_shared<LoopManager>();
     for (const auto& id_info : m_map)
@@ -64,6 +70,7 @@ std::shared_ptr<LoopManager> LoopManager::clone_with_new_expr(const ExressionMap
     new_loop_manager->next_id = next_id;
     return new_loop_manager;
 }
+
 
 bool operator==(const LinearIR::LoopManager::LoopPort& lhs, const LinearIR::LoopManager::LoopPort& rhs) {
     if (&lhs == &rhs)

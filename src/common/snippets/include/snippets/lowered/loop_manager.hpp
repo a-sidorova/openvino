@@ -53,6 +53,8 @@ public:
 
         std::shared_ptr<LoopInfo> clone_with_new_expr(const ExressionMap& expr_map) const;
 
+        std::vector<LoopPort> get_all_ports() const;
+
         size_t work_amount = 0;
         size_t increment = 0;
         size_t dim_idx = 0;  // The numeration begins from the end (dim_idx = 0 -> is the most inner dimension)
