@@ -168,6 +168,10 @@ void LoopEnd::set_evaluate_once(bool once) {
     m_evaluate_once = once;
 }
 
+void LoopEnd::set_id(size_t id) {
+    m_id = id;
+}
+
 void LoopEnd::validate_and_infer_types() {
     NODE_VALIDATION_CHECK(this, get_input_size() == 1, "LoopEnd must have one input");
     const auto loop_begin = ov::as_type_ptr<LoopBegin>(get_input_node_shared_ptr(0));

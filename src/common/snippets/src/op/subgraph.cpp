@@ -43,6 +43,7 @@
 #include "snippets/lowered/pass/validate_loops.hpp"
 #include "snippets/lowered/pass/insert_loops.hpp"
 #include "snippets/lowered/pass/optimize_domain.hpp"
+#include "snippets/lowered/pass/normalize_loop_ids.hpp"
 
 #include "transformations/utils/utils.hpp"
 
@@ -463,6 +464,7 @@ void Subgraph::control_flow_transformations(lowered::LinearIR& linear_ir,
     lowered::pass::PassPipeline final_pipeline;
     final_pipeline.register_pass<lowered::pass::PropagateLayout>();
     final_pipeline.register_pass<lowered::pass::CleanupLoopOffsets>();
+    final_pipeline.register_pass<lowered::pass::NormalizeLoopIDs>();
     final_pipeline.run(linear_ir);
 
     lowering_result.buffer_scratchpad_size = buffer_allocation_pass->get_scratchpad_size();

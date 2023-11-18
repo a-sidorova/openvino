@@ -91,6 +91,7 @@ public:
     void set_work_amount(size_t new_work_amount);
     void set_increment(size_t new_increment);
     void set_evaluate_once(bool once);
+    void set_id(size_t id);
     // Used to propagate information about Loop structure, needed to simplify some optimizations. For example,
     // to skip pointer increments when outer Loop is empty, and work_amount == vector_size (one inner vector Loop)
     // true by default, the optimizations enabled if it's false;

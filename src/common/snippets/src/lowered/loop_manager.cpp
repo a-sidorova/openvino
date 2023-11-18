@@ -156,6 +156,43 @@ void LinearIR::LoopManager::get_loop_bounds(const LinearIR &linear_ir,
     }
 }
 
+bool LinearIR::LoopManager::normalize(const LinearIR& linear_ir) {
+    // [ original Loop ID -> new normalized and sorted ]
+    std::map<size_t, size_t> loop_id_map;
+    for (const auto& expr : linear_ir) {
+        const auto& node = expr->get_node();
+        if (const auto loop_end = ov::as_type_ptr<op::LoopEnd>(node)) {
+            const auto new_id = loop_id_map.size();
+            const auto old_id = loop_end->get_id();
+            OPENVINO_ASSERT(loop_id_map.count(old_id) == 0, "Loop IDs must be unique for normalization");
+            loop_id_map[old_id] = new_id;
+            loop_end->set_id(new_id);
+        }
+    }
+    OPENVINO_ASSERT(loop_id_map.size() == m_map.size(), "The count of Loops in LinearIR and in LoopManager is inconsistent!");
+    // If all new IDs are the same as original - nothing to update
+    if (std::all_of(loop_id_map.cbegin(), loop_id_map.cend(), [](const std::pair<size_t, size_t>& p) { return p.first == p.second; })) {
+        return false;
+    }
+
+    // create new sorted map of loop infos
+    std::map<size_t, LoopInfoPtr> new_map;
+    for (const auto& loop_pair : loop_id_map) {
+        new_map[loop_pair.second] = get_loop_info(loop_pair.first);
+    }
+    m_map = std::move(new_map);
+
+    // update Loop IDs for expressions
+    for (const auto& expr : linear_ir) {
+        auto expr_loop_ids = expr->get_loop_ids();
+        if (expr_loop_ids.empty()) continue;
+        for (auto& id : expr_loop_ids)
+            id = loop_id_map[id];
+        expr->set_loop_ids(expr_loop_ids);
+    }
+    return true;
+}
+
 LinearIR::LoopManager::LoopPort LinearIR::LoopManager::get_loop_port_by_expr_port(const ExpressionPort& expr_port, const size_t loop_id) {
     auto get_loop_port = [&](const std::vector<LinearIR::LoopManager::LoopPort>& ports) {
         auto it = std::find_if(ports.cbegin(), ports.cend(), [&](const LinearIR::LoopManager::LoopPort& p) { return *p.expr_port == expr_port; });
