@@ -4,9 +4,10 @@
 
 #pragma once
 
-#include "openvino/op/op.hpp"
 #include "snippets/emitter.hpp"
-#include "openvino/op/parameter.hpp"
+#include "snippets/runtime_config.hpp"
+
+#include "openvino/op/op.hpp"
 
 namespace ov {
 namespace snippets {
@@ -75,32 +76,33 @@ public:
             std::vector<int64_t> ptr_increments, std::vector<int64_t> finalization_offsets,
             std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num, size_t id);
     LoopEnd() = default;
-    std::shared_ptr<LoopBegin> get_loop_begin();
+
     void validate_and_infer_types() override;
+    bool visit_attributes(AttributeVisitor& visitor) override;
     std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& inputs)  const override;
-    const std::vector<int64_t>& get_finalization_offsets() const;
-    const std::vector<int64_t>& get_ptr_increments() const;
-    const std::vector<int64_t>& get_element_type_sizes() const;
-    size_t get_input_num() const;
-    size_t get_output_num() const;
-    void set_finalization_offsets(std::vector<int64_t> offsets);
-    void set_ptr_increments(std::vector<int64_t> new_ptr_increments);
+
+    void update(const RuntimeConfig::LoopDescriptor& descriptor);
     // update_ptr_increments resets non-zero increments to the new_increments. It's used when work_amount_increment is
     // updated and we need to refresh ptr increments accordingly while respecting the broadcasting pattern
     void update_ptr_increments(int64_t new_increment);
+
+    std::shared_ptr<LoopBegin> get_loop_begin();
+    const std::vector<int64_t>& get_finalization_offsets() const;
+    const std::vector<int64_t>& get_ptr_increments() const;
+    const std::vector<int64_t>& get_element_type_sizes() const;
+    size_t get_work_amount() const;
+    size_t get_increment() const;
+    size_t get_id() const;
+    size_t get_input_num() const;
+    size_t get_output_num() const;
+    bool get_evaluate_once() const;
+
+    void set_finalization_offsets(std::vector<int64_t> offsets);
+    void set_ptr_increments(std::vector<int64_t> new_ptr_increments);
     void set_work_amount(size_t new_work_amount);
     void set_increment(size_t new_increment);
     void set_evaluate_once(bool once);
     void set_id(size_t id);
-    // Used to propagate information about Loop structure, needed to simplify some optimizations. For example,
-    // to skip pointer increments when outer Loop is empty, and work_amount == vector_size (one inner vector Loop)
-    // true by default, the optimizations enabled if it's false;
-    bool has_outer_loop = true;
-    size_t get_work_amount() const;
-    size_t get_increment() const;
-    bool get_evaluate_once() const;
-    size_t get_id() const;
-    bool visit_attributes(AttributeVisitor& visitor) override;
 
 private:
     std::vector<int64_t> m_ptr_increments = {};

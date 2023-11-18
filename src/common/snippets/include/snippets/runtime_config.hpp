@@ -71,7 +71,7 @@ public:
      * @brief Initialize config using LinearIR state
      * @param tlinear_ir the updated LinearIR
      */
-    void init(const lowered::LinearIR& linear_ir);
+    void update(const lowered::LinearIR& linear_ir);
 
 private:
     using LinearIR = lowered::LinearIR;

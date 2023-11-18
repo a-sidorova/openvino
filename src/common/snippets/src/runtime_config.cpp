@@ -40,7 +40,7 @@ bool RuntimeConfig::get_loop_desc(size_t loop_id, LoopDescriptor::Type type, Loo
     return false;
 }
 
-void RuntimeConfig::init(const lowered::LinearIR& linear_ir) {
+void RuntimeConfig::update(const lowered::LinearIR& linear_ir) {
     const auto& loop_manager = linear_ir.get_loop_manager();
     init_loop_descriptors(loop_manager);
     optimize_single_evaluation();

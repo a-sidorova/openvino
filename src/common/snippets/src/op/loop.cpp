@@ -52,7 +52,6 @@ LoopEnd::LoopEnd(const Output<Node>& loop_begin, size_t work_amount, size_t work
                  std::vector<bool> apply_increments, std::vector<int64_t> finalization_offsets,
                  std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num, size_t id)
         : LoopBase({loop_begin}),
-        has_outer_loop(true),
         m_finalization_offsets(std::move(finalization_offsets)),
         m_element_type_sizes(std::move(element_type_sizes)),
         m_work_amount(work_amount),
@@ -73,7 +72,6 @@ LoopEnd::LoopEnd(const Output<Node>& loop_begin, size_t work_amount, size_t work
                  std::vector<int64_t> ptr_increments, std::vector<int64_t> finalization_offsets,
                  std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num, size_t id)
         : LoopBase({loop_begin}),
-        has_outer_loop(true),
         m_ptr_increments(std::move(ptr_increments)),
         m_finalization_offsets(std::move(finalization_offsets)),
         m_element_type_sizes(std::move(element_type_sizes)),
@@ -170,6 +168,14 @@ void LoopEnd::set_evaluate_once(bool once) {
 
 void LoopEnd::set_id(size_t id) {
     m_id = id;
+}
+
+void LoopEnd::update(const RuntimeConfig::LoopDescriptor& descriptor) {
+    set_work_amount(descriptor.work_amount);
+    set_increment(descriptor.increment);
+    set_ptr_increments(descriptor.ptr_increments);
+    set_finalization_offsets(descriptor.finalization_offsets);
+    set_evaluate_once(descriptor.work_amount < 2 * descriptor.increment);
 }
 
 void LoopEnd::validate_and_infer_types() {

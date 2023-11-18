@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-#pragma once
-
 #include "jit_snippets_emitters_dynamic.hpp"
 #include "emitters/utils.hpp"
 

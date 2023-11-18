@@ -4,16 +4,15 @@
 
 #pragma once
 
-#include <memory>
-
-#include <openvino/core/model.hpp>
-#include <openvino/op/util/sub_graph_base.hpp>
+#include "openvino/core/model.hpp"
+#include "openvino/op/util/sub_graph_base.hpp"
 #include "openvino/op/op.hpp"
 #include "openvino/core/rt_info.hpp"
+
 #include "snippets/pass/manager.hpp"
 #include "snippets/shape_inference/shape_inference.hpp"
 #include "snippets/lowered/pass/pass.hpp"
-
+#include "snippets/runtime_config.hpp"
 #include "snippets/generator.hpp"
 
 namespace ov {
@@ -147,6 +146,8 @@ public:
     convert_body_to_linear_ir(const std::shared_ptr<IShapeInferSnippetsFactory>& shape_infer_factory = std::make_shared<IShapeInferSnippetsFactory>());
     std::shared_ptr<Subgraph> clone() const;
 
+    RuntimeConfig configure();
+
 private:
     void control_flow_transformations(lowered::LinearIR& linear_ir,
                                       LoweringResult& lowering_result,
@@ -186,6 +187,7 @@ private:
     } config;
 
     std::shared_ptr<ShapeInferSnippetsNode> m_shape_infer = nullptr;
+    RuntimeConfig m_runtime_config;
 
     class OVShapeInfer : public ShapeInferSnippetsNode {
         std::shared_ptr<ov::Model> m_ov_body;

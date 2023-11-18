@@ -10,6 +10,7 @@
 
 #include "snippets/op/kernel.hpp"
 
+#include "snippets/runtime_config.hpp"
 #include "snippets/itt.hpp"
 
 namespace ov {
@@ -21,12 +22,15 @@ void Generator::generate(lowered::LinearIR& linear_ir, LoweringResult& result, c
     if (!target->is_supported())
         OPENVINO_THROW("unsupported architecture for code generation");
 
+    RuntimeConfig runtime_config;
+    runtime_config.update(linear_ir);
+
     std::function<opRegType(const std::shared_ptr<Node>& op)> reg_type_mapper = [&](const std::shared_ptr<Node>& op) -> opRegType {
         return get_op_reg_type(op);
     };
     lowered::pass::PassPipeline lowered_pipeline;
     lowered_pipeline.register_pass<lowered::pass::AssignRegisters>(reg_type_mapper);
-    lowered_pipeline.register_pass<lowered::pass::InsertTailLoop>();
+    lowered_pipeline.register_pass<lowered::pass::InsertTailLoop>(runtime_config);
     lowered_pipeline.run(linear_ir);
     linear_ir.init_emitters(target);
 

@@ -25,8 +25,6 @@ std::vector<size_t> get_outer_loop_ids(const ExpressionPtr& expr, size_t loop_id
 }
 }  // namespace
 
-InsertLoops::InsertLoops() : Pass() {}
-
 void InsertLoops::filter_ports(std::vector<LoopPort>& loop_entries, std::vector<LoopPort>& loop_exits) {
     std::vector<LoopPort> new_loop_entries;
     std::vector<LoopPort> new_loop_exits;
@@ -53,7 +51,7 @@ void InsertLoops::filter_ports(std::vector<LoopPort>& loop_entries, std::vector<
     loop_exits = new_loop_exits;
 }
 
-void InsertLoops::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPtr& loop_manager, size_t loop_id, bool has_outer_loop) {
+void InsertLoops::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPtr& loop_manager, size_t loop_id) {
     const auto loop_info = loop_manager->get_loop_info(loop_id);
     auto loop_entries = loop_info->entry_points;
     auto loop_exits = loop_info->exit_points;
@@ -92,7 +90,6 @@ void InsertLoops::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPtr&
     const auto& loop_end = std::make_shared<op::LoopEnd>(
             loop_begin->output(0), work_amount, work_amount_increment, ptr_increments, finalization_offsets,
             io_data_sizes, loop_entries.size(), loop_exits.size(), loop_id);
-    loop_end->has_outer_loop = has_outer_loop;
 
     // Add LoopBegin port connector
     loop_end_inputs.push_back(loop_begin_expr->get_output_port_connector(0));
@@ -127,8 +124,7 @@ bool InsertLoops::run(LinearIR& linear_ir) {
         for (size_t i = 0; i < loop_depth; ++i) {
             const auto loop_id = expr_loops[i];
             if (inserted_loops.count(loop_id) == 0) {
-                const bool has_outer_loop = i > 0 && inserted_loops.find(expr_loops[i - 1]) != inserted_loops.end();
-                insertion(linear_ir, loop_manager, loop_id, has_outer_loop);
+                insertion(linear_ir, loop_manager, loop_id);
                 inserted_loops.insert(loop_id);  // save Loop ID
             }
         }
