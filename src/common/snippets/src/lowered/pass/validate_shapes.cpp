@@ -6,6 +6,7 @@
 
 #include "snippets/lowered/linear_ir.hpp"
 #include "snippets/shape_inference/shape_inference.hpp"
+#include "snippets/op/loop.hpp"
 #include "snippets/itt.hpp"
 
 namespace ov {
@@ -17,6 +18,8 @@ bool ValidateShapes::run(LinearIR& linear_ir) {
     OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "Snippets::ValidateShapes")
 
     for (const auto& expr : linear_ir) {
+        if (ov::is_type<ov::snippets::op::LoopBase>(expr->get_node()))
+            continue;
         const auto num_inputs = expr->get_input_count();
         const auto& port_connectors = expr->get_input_port_connectors();
         const auto& port_descriptors = expr->get_input_port_descriptors();
