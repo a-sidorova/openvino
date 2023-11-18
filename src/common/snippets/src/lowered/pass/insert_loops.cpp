@@ -53,8 +53,8 @@ void InsertLoops::filter_ports(std::vector<LoopPort>& loop_entries, std::vector<
 
 void InsertLoops::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPtr& loop_manager, size_t loop_id) {
     const auto loop_info = loop_manager->get_loop_info(loop_id);
-    auto loop_entries = loop_info->entry_points;
-    auto loop_exits = loop_info->exit_points;
+    auto& loop_entries = loop_info->entry_points;
+    auto& loop_exits = loop_info->exit_points;
     const auto work_amount = loop_info->work_amount;
     const auto work_amount_increment = loop_info->increment;
 

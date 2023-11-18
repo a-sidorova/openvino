@@ -149,7 +149,7 @@ void RuntimeConfig::init_inner_splited_tail_loop_descriptors(const LinearIR::Loo
         // check if the target outer splited loop is really outer loop of the analyzed loop using loop IDs of ports
         OPENVINO_ASSERT(!loop_info->entry_points.empty(), "Each Loop must have one entry port at least!");
         const auto loop_port = loop_info->entry_points.front();
-        const auto outer_loop_ids = LinearIR::LoopManager::get_outer_expr_loops(loop_port.expr_port->get_expr(), outer_loop_id);
+        const auto outer_loop_ids = LinearIR::LoopManager::get_outer_expr_loops(loop_port.expr_port->get_expr(), loop_id);
         if (std::find(outer_loop_ids.cbegin(), outer_loop_ids.cend(), outer_loop_id) == outer_loop_ids.cend())
             continue;
 

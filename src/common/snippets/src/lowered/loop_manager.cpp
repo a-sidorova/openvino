@@ -408,7 +408,7 @@ void LinearIR::LoopManager::update_loop_port(size_t loop_id, const ExpressionPor
                        return copy;
                    });
     port_it = ports.erase(port_it);
-    ports.insert(port_it, target_ports.cbegin(), target_ports.cend());
+    ports.insert(port_it, target_loop_ports.cbegin(), target_loop_ports.cend());
 }
 
 template<>
