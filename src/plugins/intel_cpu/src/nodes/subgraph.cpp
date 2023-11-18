@@ -534,15 +534,13 @@ void Snippet::SnippetJitExecutor::schedule_6d(const std::vector<MemoryPtr>& inMe
     const auto& dom = parallel_exec_domain;
     // < N, C, H, W > < 1, 1, N, C*H*W>
     const auto& callable = schedule.get_callable<dynamic_kernel>();
+    const auto runtime_config = snippetAttrs.snippet->configure();
     std::vector<jit_snippets_dynamic_call_args::loop_args_t> loop_args;
-    loop_args.reserve(2);
-    // Note: we need to multiply ptr_increments by wa_increment and data_size here, in Configurator
-    loop_args.emplace_back(16,
-                           std::vector<int64_t>{1 * 16 * 4, 1 * 16 * 4, 1 * 16 * 4},
-                           std::vector<int64_t>{0, 0, 0});
-    loop_args.emplace_back(29,
-                           std::vector<int64_t>{0, 0, 0},
-                           std::vector<int64_t>{0, 0, 0});
+    for (const auto& loops : runtime_config.get_loops()) {
+        for (const auto& loop : loops.second) {
+            loop_args.emplace_back(loop.work_amount, loop.ptr_increments, loop.finalization_offsets);
+        }
+    }
 
     parallel_for5d(dom[0], dom[1], dom[2], dom[3], dom[4],
         [&](int64_t d0, int64_t d1, int64_t d2, int64_t d3, int64_t d4) {

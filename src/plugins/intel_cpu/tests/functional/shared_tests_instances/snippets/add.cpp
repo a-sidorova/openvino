@@ -13,20 +13,15 @@ namespace snippets {
 namespace {
 // ===================================Add=========================================================//
 // These  inputs are needed to test static Loop optimizations (emit the whole tile, body with increments, set WA etc)
-//std::vector<ov::test::InputShape> inShapesStatic1{{{}, {{1, 16, 29, 1}}},
-//                                                  {{}, {{1, 16, 29, 7}}},
-//                                                  {{}, {{1, 16, 29, 8}}},
-//                                                  {{}, {{1, 16, 29, 15}}},
-//                                                  {{}, {{1, 16, 29, 16}}},
-//                                                  {{}, {{1, 16, 29, 31}}}};
-//std::vector<ov::test::InputShape> inShapesStatic2{{{}, {{1, 16, 29, 1}}},
-//                                                  {{}, {{1, 16, 1, 1}}},
-//                                                  {{}, {{1, 1, 1, 1}}}};
-
-std::vector<ov::test::InputShape> inShapesStatic1{{{}, {{2, 3, 29, 16}}}
-                                                  };
-std::vector<ov::test::InputShape> inShapesStatic2{{{}, {{2, 3, 29, 16}}}
-                                                 };
+std::vector<ov::test::InputShape> inShapesStatic1{{{}, {{1, 16, 29, 1}}},
+                                                  {{}, {{1, 16, 29, 7}}},
+                                                  {{}, {{1, 16, 29, 8}}},
+                                                  {{}, {{1, 16, 29, 15}}},
+                                                  {{}, {{1, 16, 29, 16}}},
+                                                  {{}, {{1, 16, 29, 31}}}};
+std::vector<ov::test::InputShape> inShapesStatic2{{{}, {{1, 16, 29, 1}}},
+                                                  {{}, {{1, 16, 1, 1}}},
+                                                  {{}, {{1, 1, 1, 1}}}};
 
 INSTANTIATE_TEST_SUITE_P(smoke_Snippets_Eltwise, Add,
                          ::testing::Combine(
@@ -37,29 +32,29 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_Eltwise, Add,
                              ::testing::Values(1), // Subgraph is created, since the inputs are followed by converts
                              ::testing::Values(ov::test::utils::DEVICE_CPU)),
                          Add::getTestCaseName);
-/*
+
 // DS
-std::vector<InputShape> inShapesDynamic1{
-        {
-        {{ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()},
-        {{1, 3, 1, 10}, {1, 3, 10, 10}, {1, 3, 1, 10}}},
-        }
-};
-std::vector<InputShape> inShapesDynamic2{
-        {
-        {{ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()},
-        {{1, 3, 10, 1}, {1, 3, 1, 1}, {1, 3, 10, 1}}},
-        }
-};
-INSTANTIATE_TEST_SUITE_P(smoke_Snippets_Eltwise_Add, Add,
-                         ::testing::Combine(
-                                 ::testing::ValuesIn(inShapesDynamic1),
-                                 ::testing::ValuesIn(inShapesDynamic2),
-                                 ::testing::Values(ov::element::f32),
-                                 ::testing::Values(1),
-                                 ::testing::Values(1), // Subgraph is created, since the inputs are followed by converts
-                                 ::testing::Values(ov::test::utils::DEVICE_CPU)),
-                         Add::getTestCaseName);
+//std::vector<InputShape> inShapesDynamic1{
+//        {
+//        {{ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()},
+//        {{1, 3, 1, 10}, {1, 3, 10, 10}, {1, 3, 1, 10}}},
+//        }
+//};
+//std::vector<InputShape> inShapesDynamic2{
+//        {
+//        {{ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()},
+//        {{1, 3, 10, 1}, {1, 3, 1, 1}, {1, 3, 10, 1}}},
+//        }
+//};
+//INSTANTIATE_TEST_SUITE_P(smoke_Snippets_Eltwise_Add, Add,
+//                         ::testing::Combine(
+//                                 ::testing::ValuesIn(inShapesDynamic1),
+//                                 ::testing::ValuesIn(inShapesDynamic2),
+//                                 ::testing::Values(ov::element::f32),
+//                                 ::testing::Values(1),
+//                                 ::testing::Values(1), // Subgraph is created, since the inputs are followed by converts
+//                                 ::testing::Values(ov::test::utils::DEVICE_CPU)),
+//                         Add::getTestCaseName);
 
 // ===================================AddPair=========================================================//
 // test cross-tile (vector vs scalar) optimizations in the absence of vector tile
@@ -77,10 +72,10 @@ std::vector<std::vector<InputShape>> inShapesAddPair {
         {{{}, {{2, 17, 3, 4}}}, {{}, {{1, 3, 4}}}},
         {{{}, {{2, 17, 3, 4}}}, {{}, {{1, 4}}}},
         // DS
-        {{{1, -1, {1, 10}, {1, 33}}, {{1, 128, 1, 1}, {1, 128, 1, 9}, {1, 128, 1, 17}, {1, 128, 1, 29}, {1, 128, 9, 1}, {1, 128, 1, 1}}},
-         {{{1, 1}, {128, 128}, {1, 10}, {1, 33}}, {{1, 128, 1, 1}, {1, 128, 1, 9}, {1, 128, 1, 17}, {1, 128, 1, 29}, {1, 128, 1, 30}, {1, 128, 1, 1}}}},
-        {{{1, -1, 1, {1, 32}}, {{1, 16, 1, 32}, {1, 16, 1, 32}, {1, 16, 1, 32}, {1, 16, 1, 32}}},
-         {{1, -1, 1, {1, 32}}, {{1, 16, 1, 32}, {1, 16, 1, 32}, {1, 16, 1, 32}, {1, 16, 1, 32}}}},
+        //{{{1, -1, {1, 10}, {1, 33}}, {{1, 128, 1, 1}, {1, 128, 1, 9}, {1, 128, 1, 17}, {1, 128, 1, 29}, {1, 128, 9, 1}, {1, 128, 1, 1}}},
+        // {{{1, 1}, {128, 128}, {1, 10}, {1, 33}}, {{1, 128, 1, 1}, {1, 128, 1, 9}, {1, 128, 1, 17}, {1, 128, 1, 29}, {1, 128, 1, 30}, {1, 128, 1, 1}}}},
+        //{{{1, -1, 1, {1, 32}}, {{1, 16, 1, 32}, {1, 16, 1, 32}, {1, 16, 1, 32}, {1, 16, 1, 32}}},
+        // {{1, -1, 1, {1, 32}}, {{1, 16, 1, 32}, {1, 16, 1, 32}, {1, 16, 1, 32}, {1, 16, 1, 32}}}},
 };
 INSTANTIATE_TEST_SUITE_P(smoke_Snippets_Eltwise, AddPair,
                          ::testing::Combine(
@@ -93,9 +88,9 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_Eltwise, AddPair,
 
 // ===================================AddConst, AddRollConst=========================================================//
 std::vector<ov::test::InputShape> inShapesAddConst{{{}, {{1, 2, 3,  32}}},
-                                                   {{}, {{1, 3, 17, 33}}},
-                                                   {{-1, -1, -1, -1}, {{1, 3, 17, 33}, {1, 2, 1, 65}, {1, 3, 17, 33}}},
-                                                   {{1, {1, 10}, {1, 8}, {1, 4}}, {{1, 2, 8, 4}, {1, 8, 1, 1}, {1, 2, 8, 4}}}};
+                                                   {{}, {{1, 3, 17, 33}}}};
+                                                   //{{-1, -1, -1, -1}, {{1, 3, 17, 33}, {1, 2, 1, 65}, {1, 3, 17, 33}}},
+                                                   //{{1, {1, 10}, {1, 8}, {1, 4}}, {{1, 2, 8, 4}, {1, 8, 1, 1}, {1, 2, 8, 4}}}};
 std::vector<PartialShape> inShapesConstAddConst{{1, 1, 1, 1}};
 
 INSTANTIATE_TEST_SUITE_P(smoke_Snippets_Eltwise, AddConst,
@@ -128,7 +123,7 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_Eltwise_BF16, AddRollConst,
                 ::testing::Values(1), // Subgraph is created, since the inputs are followed by converts
                 ::testing::Values(ov::test::utils::DEVICE_CPU)),
         AddRollConst::getTestCaseName);
-*/
+
 } // namespace
 } // namespace snippets
 } // namespace test
