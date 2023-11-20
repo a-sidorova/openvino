@@ -20,11 +20,15 @@ public:
     LoopManager() = default;
 
     struct LoopPort {
+        enum { DYNAMIC_VALUE = std::numeric_limits<int64_t>::max() };
+
         LoopPort() = default;
         LoopPort(const ExpressionPort& port, bool is_scheduled = true)
             : expr_port(std::make_shared<ExpressionPort>(port)), is_incremented(is_scheduled) {}
 
         std::shared_ptr<LoopPort> clone_with_new_expr(const ExpressionPtr& new_expr) const;
+
+        static bool is_dynamic_value(int64_t value) { return value == DYNAMIC_VALUE; }
 
         friend bool operator==(const LoopPort& lhs, const LoopPort& rhs);
         friend bool operator!=(const LoopPort& lhs, const LoopPort& rhs);

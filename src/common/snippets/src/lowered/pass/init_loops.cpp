@@ -6,6 +6,7 @@
 
 #include "snippets/lowered/linear_ir.hpp"
 #include "snippets/lowered/loop_manager.hpp"
+#include "snippets/utils.hpp"
 #include "snippets/itt.hpp"
 
 namespace ov {
@@ -22,6 +23,9 @@ int64_t get_input_stride(size_t dim, const std::vector<size_t>& layout, const Ve
         if (layout[i] == dim) {
             break;
         }
+        if (utils::is_dynamic_vdim(shape[layout[i]])) {
+            return LoopPort::DYNAMIC_VALUE;
+        }
         stride *= static_cast<int64_t>(shape[layout[i]]);
     }
     return stride;
@@ -29,13 +33,14 @@ int64_t get_input_stride(size_t dim, const std::vector<size_t>& layout, const Ve
 int64_t get_output_stride(size_t dim, const VectorDims& shape) {
     int64_t stride = 1;
     for (size_t i = dim + 1; i < shape.size(); ++i) {
+        if (utils::is_dynamic_vdim(shape[shape[i]])) {
+            return LoopPort::DYNAMIC_VALUE;
+        }
         stride *= static_cast<int64_t>(shape[i]);
     }
     return stride;
 }
 }  // namespace
-
-InitLoops::InitLoops() : Pass() {}
 
 void InitLoops::init_ptr_increments(std::vector<LoopPort>& loop_inputs, std::vector<LoopPort>& loop_outputs, size_t work_amount, size_t dim_idx) {
     for (auto& loop_input : loop_inputs) {
@@ -77,10 +82,14 @@ void InitLoops::init_finalization_offsets(std::vector<LinearIR::LoopManager::Loo
                                           std::vector<LinearIR::LoopManager::LoopPort>& loop_outputs,
                                           size_t work_amount) {
     for (auto& loop_input : loop_inputs) {
-        loop_input.finalization_offset = -1 * loop_input.ptr_increment * work_amount;
+        loop_input.finalization_offset =
+            utils::is_dynamic_vdim(work_amount) || LoopPort::is_dynamic_value(loop_input.ptr_increment) ? LoopPort::DYNAMIC_VALUE
+                                                                                                        : -1 * loop_input.ptr_increment * work_amount;
     }
     for (auto& loop_output : loop_outputs) {
-        loop_output.finalization_offset = -1 * loop_output.ptr_increment * work_amount;
+        loop_output.finalization_offset =
+            utils::is_dynamic_vdim(work_amount) || LoopPort::is_dynamic_value(loop_output.ptr_increment) ? LoopPort::DYNAMIC_VALUE
+                                                                                                        : -1 * loop_output.ptr_increment * work_amount;
     }
 }
 
@@ -111,7 +120,8 @@ bool InitLoops::run(LinearIR& linear_ir) {
 
         init_ptr_increments(loop_info->entry_points, loop_info->exit_points, work_amount, dim_idx);
         init_finalization_offsets(loop_info->entry_points, loop_info->exit_points, work_amount);
-        init_element_type_sizes(loop_info->entry_points, loop_info->exit_points);
+        if (!m_only_runtime_params)
+            init_element_type_sizes(loop_info->entry_points, loop_info->exit_points);
     }
 
     return true;

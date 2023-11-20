@@ -21,7 +21,7 @@ namespace pass {
 class InitLoops : public Pass {
 public:
     OPENVINO_RTTI("InitLoops", "Pass")
-    InitLoops();
+    InitLoops(bool only_runtime_params = false) : m_only_runtime_params(only_runtime_params) {}
     bool run(LinearIR& linear_ir) override;
 
 private:
@@ -33,6 +33,8 @@ private:
                                           size_t work_amount);
     static void init_element_type_sizes(std::vector<LinearIR::LoopManager::LoopPort>& loop_inputs,
                                         std::vector<LinearIR::LoopManager::LoopPort>& loop_outputs);
+
+    bool m_only_runtime_params = false;
 };
 
 } // namespace pass

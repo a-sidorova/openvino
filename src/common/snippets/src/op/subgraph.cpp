@@ -531,7 +531,7 @@ RuntimeConfig Subgraph::configure() {
     // Firstly, update LoopInfo of loops
     lowered::pass::PassPipeline common_pipeline;
     common_pipeline.register_pass<lowered::pass::ValidateShapes>();
-    common_pipeline.register_pass<lowered::pass::InitLoops>();
+    common_pipeline.register_pass<lowered::pass::InitLoops>(true);
     common_pipeline.run(*m_linear_ir);
 
     // Secondly, update runtime config
