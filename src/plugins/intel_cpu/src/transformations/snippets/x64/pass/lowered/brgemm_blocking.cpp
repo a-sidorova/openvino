@@ -10,6 +10,7 @@
 #include "snippets/lowered/linear_ir.hpp"
 #include "snippets/lowered/loop_manager.hpp"
 #include "snippets/snippets_isa.hpp"
+#include "snippets/utils.hpp"
 #include "transformations/snippets/x64/op/brgemm_cpu.hpp"
 
 
@@ -68,7 +69,9 @@ bool BrgemmBlocking::run(snippets::lowered::LinearIR& linear_ir) {
         if (brgemm->is_with_scratchpad())
             entries.emplace_back(expr->get_input_port(2), false);
         std::vector<LoopPort> exits{LoopPort(expr->get_output_port(0), true)};
-        loop_manager->mark_loop(expr_it, std::next(expr_it), work_amount, increment, dim_idx, entries, exits);
+        // Add smart condition
+        const auto is_dynamic = snippets::utils::is_dynamic_vdim(work_amount);
+        loop_manager->mark_loop(expr_it, std::next(expr_it), work_amount, increment, dim_idx, entries, exits, is_dynamic);
     }
 
     return modified;

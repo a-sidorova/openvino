@@ -44,12 +44,14 @@ public:
         LoopInfo() = default;
         LoopInfo(size_t work_amount, size_t increment, size_t dim_idx,
                  const std::vector<LoopPort>& entries,
-                 const std::vector<LoopPort>& exits)
+                 const std::vector<LoopPort>& exits,
+                 bool is_dynamic = false)
             : work_amount(work_amount), increment(increment), dim_idx(dim_idx),
-              entry_points(entries), exit_points(exits), outer_splited_loop(false) {}
+              entry_points(entries), exit_points(exits), is_dynamic(is_dynamic), outer_splited_loop(false) {}
         LoopInfo(size_t work_amount, size_t increment, size_t dim_idx,
                  const std::vector<ExpressionPort>& entries,
-                 const std::vector<ExpressionPort>& exits);
+                 const std::vector<ExpressionPort>& exits,
+                 bool is_dynamic = false);
 
         std::shared_ptr<LoopInfo> clone_with_new_expr(const ExressionMap& expr_map) const;
 
@@ -64,6 +66,8 @@ public:
         // Note: Scalars aren't entry expressions but can be before first entry expr in Linear IR
         std::vector<LoopPort> entry_points = {};
         std::vector<LoopPort> exit_points = {};
+        // True if original Loop is dynamic (contain expressions with dynamic shapes)
+        bool is_dynamic = true;
         // True if this Loop is outer Loop for nested Loops that splits the same dimension
         bool outer_splited_loop = false;
     };
@@ -88,8 +92,9 @@ public:
                     LinearIR::constExprIt loop_end_pos,
                     size_t work_amount, size_t work_amount_increment, size_t dim_idx,
                     const std::vector<T>& entries,
-                    const std::vector<T>& exits) {
-        const auto loop_info = std::make_shared<LoopManager::LoopInfo>(work_amount, work_amount_increment, dim_idx, entries, exits);
+                    const std::vector<T>& exits,
+                    bool is_dynamic) {
+        const auto loop_info = std::make_shared<LoopManager::LoopInfo>(work_amount, work_amount_increment, dim_idx, entries, exits, is_dynamic);
         const auto loop_id = this->add_loop_info(loop_info);
         for (auto expr_it = loop_begin_pos; expr_it != loop_end_pos; ++expr_it) {
             insert_loop_id(*expr_it, loop_id);

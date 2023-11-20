@@ -124,11 +124,18 @@ VectorDims get_planar_vdims(const snippets::lowered::ExpressionPort& expr_port);
  */
 VectorDims get_preordered_vdims(const snippets::lowered::ExpressionPort& expr_port);
 
-bool is_dynamic_vdims(const VectorDims& shape);
+/* --------------------------- */
+
+inline bool is_dynamic_vdim(const VectorDims::value_type& dim) {
+    return dim == IShapeInferSnippets::DYNAMIC_DIMENSION;
+}
+
+inline bool is_dynamic_vdims(const VectorDims& shape) {
+    return std::any_of(shape.cbegin(), shape.cend(), [](size_t v){ return is_dynamic_vdim(v); });
+}
 
 VectorDims pshape_to_vdims(const PartialShape&);
 ov::PartialShape vdims_to_pshape(const VectorDims&);
-/* --------------------------- */
 
 } // namespace utils
 } // namespace snippets

@@ -26,8 +26,8 @@ std::shared_ptr<LoopPort> LoopPort::clone_with_new_expr(const ExpressionPtr& new
 }
 
 LoopInfo::LoopInfo(size_t work_amount, size_t increment, size_t dim_idx,
-                   const std::vector<ExpressionPort>& entries, const std::vector<ExpressionPort>& exits)
-    : work_amount(work_amount), increment(increment), dim_idx(dim_idx), outer_splited_loop(false) {
+                   const std::vector<ExpressionPort>& entries, const std::vector<ExpressionPort>& exits, bool is_dynamic)
+    : work_amount(work_amount), increment(increment), dim_idx(dim_idx), is_dynamic(is_dynamic), outer_splited_loop(false) {
     entry_points.reserve(entries.size());
     exit_points.reserve(exits.size());
     for (const auto& port : entries)
@@ -238,6 +238,8 @@ void LinearIR::LoopManager::get_io_loop_ports(LinearIR::constExprIt loop_begin_p
 void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
                                       LinearIR::constExprIt loop_end_pos,
                                       size_t loop_depth, size_t vector_size) {
+    const auto FULL_DIM = PortDescriptor::ServiceDimensions::FULL_DIM;
+
     std::vector<ExpressionPort> loop_entry_points, loop_exit_points;
     LoopManager::get_io_loop_ports(loop_begin_pos, loop_end_pos, loop_entry_points, loop_exit_points);
 
@@ -251,17 +253,17 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
         OPENVINO_ASSERT(index < size, "Incorrect index for broadcasting");
         const auto lhs_value = index < lhs_size ? *(lhs.crbegin() + index) : 1;
         const auto rhs_value = index < rhs_size ? *(rhs.crbegin() + index) : 1;
-        if (lhs_value == rhs_value || lhs_value == 1 || lhs_value == IShapeInferSnippets::DYNAMIC_DIMENSION) {
+        if (lhs_value == rhs_value || lhs_value == 1 || utils::is_dynamic_vdim(lhs_value)) {
             *(lhs.rbegin() + index) = rhs_value;
-        } else if (rhs_value == 1 || rhs_value == IShapeInferSnippets::DYNAMIC_DIMENSION) {
+        } else if (rhs_value == 1 || utils::is_dynamic_vdim(rhs_value)) {
             *(lhs.rbegin() + index) = lhs_value;
         } else {
             OPENVINO_THROW("Output shapes of Loop must be broadcastable!");
         }
     };
 
-    auto is_outside_loop = [](const std::vector<size_t>& subtensor) {
-        return std::all_of(subtensor.begin(), subtensor.end(), [](size_t lhs) { return lhs == PortDescriptor::ServiceDimensions::FULL_DIM; });
+    auto is_outside_loop = [FULL_DIM](const std::vector<size_t>& subtensor) {
+        return std::all_of(subtensor.begin(), subtensor.end(), [FULL_DIM](size_t lhs) { return lhs == FULL_DIM; });
     };
 
     std::vector<size_t> loop_subtensor;
@@ -274,7 +276,7 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
             subtensor[subtensor.size() - 1] = vector_size;
         }
 
-        const size_t resizing_value = is_outside_loop(subtensor) ? PortDescriptor::ServiceDimensions::FULL_DIM : 1;
+        const size_t resizing_value = is_outside_loop(subtensor) ? FULL_DIM : 1;
         while (subtensor.size() < loop_depth)
             subtensor.insert(subtensor.begin(), resizing_value);
         if (loop_subtensor.empty())
@@ -284,14 +286,15 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
                         "Incorrect scheduling parameters for loop");
 
         for (size_t dim_idx = 0; dim_idx < loop_depth; ++dim_idx) {
-            if (*(subtensor.rbegin() + dim_idx) != PortDescriptor::ServiceDimensions::FULL_DIM) {
+            if (*(subtensor.rbegin() + dim_idx) != FULL_DIM) {
                 broadcast(loop_tensor, shape, dim_idx);
             }
         }
     }
 
+    const bool is_dynamic = utils::is_dynamic_vdims(loop_tensor);
     for (size_t dim_idx = 0; dim_idx < loop_depth; ++dim_idx) {
-        if (*(loop_subtensor.rbegin() + dim_idx) == PortDescriptor::ServiceDimensions::FULL_DIM) {
+        if (*(loop_subtensor.rbegin() + dim_idx) == FULL_DIM) {
             continue;
         }
 
@@ -302,7 +305,7 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
         const auto work_amount_increment =
                 loop_subtensor.size() > dim_idx ? *(loop_subtensor.rbegin() + dim_idx)
                                                 : (dim_idx == 0 ? vector_size : 1);
-        mark_loop(loop_begin_pos, loop_end_pos, work_amount, work_amount_increment, dim_idx, loop_entry_points, loop_exit_points);
+        mark_loop(loop_begin_pos, loop_end_pos, work_amount, work_amount_increment, dim_idx, loop_entry_points, loop_exit_points, is_dynamic);
     }
 }
 
@@ -334,6 +337,7 @@ void LinearIR::LoopManager::fuse_loops(LinearIR::constExprIt loop_begin_target, 
     auto& loop_info = fuse_into_upper ? loop_info_upper : loop_info_lower;
     loop_info->entry_points = new_entries;
     loop_info->exit_points = new_exits;
+    loop_info->is_dynamic = loop_info_upper->is_dynamic || loop_info_lower->is_dynamic;
 
     const auto& from = fuse_into_upper ? loop_id_lower : loop_id_upper;
     const auto& to = fuse_into_upper ? loop_id_upper : loop_id_lower;

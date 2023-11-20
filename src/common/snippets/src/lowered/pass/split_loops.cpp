@@ -84,7 +84,8 @@ bool SplitLoops::run(LinearIR& linear_ir) {
                                                                    loop_to_fuse->increment,
                                                                    loop_to_split->dim_idx,
                                                                    loop_to_split->entry_points,
-                                                                   loop_to_split->exit_points);
+                                                                   loop_to_split->exit_points,
+                                                                   loop_to_split->is_dynamic);
                 loop_manager->get_loop_info(split_loop_id)->outer_splited_loop = true;
                 break;
             }

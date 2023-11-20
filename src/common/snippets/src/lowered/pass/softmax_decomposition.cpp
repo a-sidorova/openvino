@@ -8,6 +8,7 @@
 #include "snippets/lowered/loop_manager.hpp"
 #include "snippets/lowered/pass/mark_loops.hpp"
 #include "snippets/snippets_isa.hpp"
+#include "snippets/utils.hpp"
 #include "snippets/itt.hpp"
 
 #include "openvino/pass/pattern/op/wrap_type.hpp"
@@ -66,7 +67,8 @@ bool SoftmaxDecomposition::run(LinearIR& linear_ir) {
             loop_manager->mark_loop(max.first, horizon_max.first, inner_work_amount, m_vector_size, 0,
                                     std::vector<ExpressionPort>{(*max.first)->get_input_port(0),
                                                                 (*max.first)->get_input_port(1)},
-                                    std::vector<ExpressionPort>{(*max.first)->get_output_port(0)});
+                                    std::vector<ExpressionPort>{(*max.first)->get_output_port(0)},
+                                    utils::is_dynamic_vdim(inner_work_amount));
             const auto broadcast_horizon_max = push_node(
                     std::make_shared<op::BroadcastMove>(horizon_max.second, broadcasted_shape));
             const auto vector_buffer_sum = push_node(std::make_shared<op::VectorBuffer>());
@@ -86,7 +88,8 @@ bool SoftmaxDecomposition::run(LinearIR& linear_ir) {
                                                                 (*sub.first)->get_input_port(1),
                                                                 (*sum.first)->get_input_port(1)},
                                     std::vector<ExpressionPort>{(*exp.first)->get_output_port(0),
-                                                                (*sum.first)->get_output_port(0)});
+                                                                (*sum.first)->get_output_port(0)},
+                                    utils::is_dynamic_vdim(inner_work_amount));
 
             // Divide is expensive operation, so we decompose it into 1 / x * y, where 1 / x is executed outside loop
             const auto pow = push_node(std::make_shared<op::PowerStatic>(horizon_sum.second, -1.f));
@@ -104,7 +107,8 @@ bool SoftmaxDecomposition::run(LinearIR& linear_ir) {
             loop_manager->mark_loop(mul.first, expr_it, inner_work_amount, m_vector_size, 0,
                                     std::vector<ExpressionPort>{(*mul.first)->get_input_port(0),
                                                                 (*mul.first)->get_input_port(1)},
-                                    std::vector<ExpressionPort>{(*mul.first)->get_output_port(0)});
+                                    std::vector<ExpressionPort>{(*mul.first)->get_output_port(0)},
+                                    utils::is_dynamic_vdim(inner_work_amount));
 
             // Update Loop info for outer loops
             const auto entry_points = std::vector<ExpressionPort>{(*max.first)->get_input_port(0),

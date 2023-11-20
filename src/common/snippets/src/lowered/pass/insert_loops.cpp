@@ -16,15 +16,6 @@ namespace pass {
 
 using LoopPort = LinearIR::LoopManager::LoopPort;
 
-namespace {
-std::vector<size_t> get_outer_loop_ids(const ExpressionPtr& expr, size_t loop_id) {
-    const auto loop_ids = expr->get_loop_ids();
-    const auto it = std::find(loop_ids.cbegin(), loop_ids.cend(), loop_id);
-    OPENVINO_ASSERT(it != loop_ids.cend(), "Loop ID hasn't been found");
-    return std::vector<size_t>(loop_ids.cbegin(), it);
-}
-}  // namespace
-
 void InsertLoops::filter_ports(std::vector<LoopPort>& loop_entries, std::vector<LoopPort>& loop_exits) {
     std::vector<LoopPort> new_loop_entries;
     std::vector<LoopPort> new_loop_exits;
@@ -97,7 +88,7 @@ void InsertLoops::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPtr&
     const auto& loop_end_expr = linear_ir.create_expression(loop_end, loop_end_inputs);
     const auto& it = linear_ir.insert(loop_end_pos, loop_end_expr);
 
-    const auto outer_loop_ids = get_outer_loop_ids(*std::prev(it), loop_id);
+    const auto outer_loop_ids = LinearIR::LoopManager::get_outer_expr_loops(*std::prev(it), loop_id);
     loop_begin_expr->set_loop_ids(outer_loop_ids);
     loop_end_expr->set_loop_ids(outer_loop_ids);
 }
