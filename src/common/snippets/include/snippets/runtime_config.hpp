@@ -5,7 +5,6 @@
 #pragma once
 
 #include "snippets/shape_inference/shape_inference.hpp"
-
 #include "snippets/lowered/linear_ir.hpp"
 #include "snippets/lowered/loop_manager.hpp"
 
@@ -131,7 +130,7 @@ private:
      * @return True if needed otherwise returns False
      */
     inline static bool is_vector_loop_needed(const LinearIR::LoopManager::LoopInfoPtr& loop_info) {
-        return loop_info->work_amount >= loop_info->increment;
+        return loop_info->work_amount >= loop_info->increment || loop_info->is_dynamic;
     }
     /**
      * @brief Check if tail loop is needed
@@ -139,7 +138,7 @@ private:
      * @return True if needed otherwise returns False
      */
     inline static bool is_tail_loop_needed(const LinearIR::LoopManager::LoopInfoPtr& loop_info) {
-        return loop_info->work_amount % loop_info->increment != 0;
+        return loop_info->work_amount % loop_info->increment != 0 || loop_info->is_dynamic;
     }
 
     // [loop_id -> loop descriptors]
