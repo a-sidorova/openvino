@@ -21,6 +21,7 @@ public:
     // True if we should check runtime info for nodes to call specific needed transformations
     bool m_need_fill_tail_register = false;
     size_t m_loop_depth = 1;
+    size_t m_tensor_rank = 1;
     // Some Subgraphs doesn't support domain optimization due to operations' semantics
     bool m_enable_domain_optimization = false;
     // Minimal advised work amount for parallel execution.
@@ -54,10 +55,14 @@ public:
                                                LinearIR::container::const_iterator end,
                                                ExressionMap& expression_map);
 
-    const container& get_ops() const {return m_expressions; }
-    const io_container& get_IO_ops() const {return m_io_expressions; }
-    Config get_config() {return m_config; }
+    const container& get_ops() const { return m_expressions; }
+    const io_container& get_IO_ops() const { return m_io_expressions; }
+    Config get_config() const { return m_config; }
+
     void set_loop_depth(size_t loop_depth) { m_config.m_loop_depth = loop_depth; }
+    void set_tensor_rank(size_t tensor_rank) { m_config.m_tensor_rank = tensor_rank; }
+    void set_min_parallel_work_amount(size_t min_parallel_work_amount) { m_config.m_min_parallel_work_amount = min_parallel_work_amount; }
+    void set_min_kernel_work_amount(size_t min_kernel_work_amount) { m_config.m_min_kernel_work_amount = min_kernel_work_amount; }
 
     const ExpressionPtr& get_expr_by_node(const std::shared_ptr<Node>& n) const;
 

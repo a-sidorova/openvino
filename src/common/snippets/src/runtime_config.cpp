@@ -4,6 +4,11 @@
 
 #include "snippets/runtime_config.hpp"
 
+#include "snippets/op/memory_access.hpp"
+#include "snippets/op/rank_normalization.hpp"
+#include "snippets/itt.hpp"
+
+
 namespace ov {
 namespace snippets {
 
@@ -44,9 +49,11 @@ void RuntimeConfig::update(const lowered::LinearIR& linear_ir) {
     const auto& loop_manager = linear_ir.get_loop_manager();
     init_loop_descriptors(loop_manager);
     optimize_single_evaluation();
+    init_data_offsets(linear_ir);
 }
 
 void RuntimeConfig::init_loop_descriptors(const lowered::LinearIR::LoopManagerPtr& loop_manager) {
+    OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "Snippets::RuntimeConfig::init_loop_descriptors")
     loops.clear();
     const auto& loop_map = loop_manager->get_map();
     for (const auto& loop_pair : loop_map) {
@@ -71,6 +78,7 @@ void RuntimeConfig::init_loop_descriptors(const lowered::LinearIR::LoopManagerPt
 }
 
 void RuntimeConfig::optimize_single_evaluation() {
+    OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "Snippets::RuntimeConfig::optimize_single_evaluation")
     for (auto& p : loops) {
         for (auto& loop_descriptor : p.second) {
             if (loop_descriptor.work_amount >= 2 * loop_descriptor.increment)
@@ -175,6 +183,80 @@ void RuntimeConfig::init_inner_splited_tail_loop_descriptors(const LinearIR::Loo
         if (!is_outer_vector_loop_needed) {
             loops[loop_id].erase(loops[loop_id].begin()); // since we check that there is only one descriptor above
         }
+    }
+}
+
+void RuntimeConfig::init_data_offsets(const LinearIR& linear_ir) {
+    OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "Snippets::RuntimeConfig::init_data_offsets")
+
+    const auto tensor_rank = linear_ir.get_config().m_tensor_rank;
+    const auto& io_exprs = linear_ir.get_IO_ops();
+    data_offsets.resize(io_exprs.size());
+
+    size_t idx = 0;
+    for (const auto& expr : io_exprs) {
+        lowered::PortDescriptorPtr desc = nullptr;
+        element::Type etype;
+        switch (expr->get_type()) {
+            case lowered::IOExpression::io_type::INPUT: {
+                // Note that here we consider only the first child (which is usually load),
+                // but often there is another child - LoopEnd
+                auto consumer_inputs = expr->get_output_port_connector(0)->get_consumers();
+                const auto& first_consumer = consumer_inputs.begin()->get_expr();
+                // If there is a RankNormalization op after a parameter - we should skip it
+                if (is_type<snippets::op::RankNormalization>(first_consumer->get_node()))
+                    consumer_inputs = first_consumer->get_output_port_connector(0)->get_consumers();
+                for (const auto& child_input : consumer_inputs) {
+                    if (ov::as_type_ptr<snippets::op::MemoryAccess>(child_input.get_expr()->get_node())) {
+                        desc = child_input.get_descriptor_ptr();
+                        break;
+                    }
+                }
+                etype = expr->get_node()->get_output_element_type(0);
+                break;
+            }
+            case lowered::IOExpression::io_type::OUTPUT: {
+                desc = expr->get_input_port_connector(0)->get_source().get_descriptor_ptr();
+                etype = expr->get_node()->get_input_element_type(0);
+                break;
+            } default : {
+                OPENVINO_THROW("Detected unsupported io_type");
+            }
+        }
+        offset_calculation(desc, etype.size(), expr->get_type() == lowered::IOExpression::io_type::INPUT, tensor_rank, data_offsets[idx++]);
+    }
+}
+
+void RuntimeConfig::offset_calculation(const lowered::PortDescriptorPtr& desc, size_t data_size, bool is_input, size_t rank, std::vector<int64_t>& offsets) {
+    // offsets represent distance between consecutive elements of corresponding dimension.
+    // If a dim size == 1, then the next dim starts immediately and the stride is 0
+    // case 1:
+    //    shape:         s0,    s1, s2, s3
+    //    offsets: s1*s2*s3, s2*s3, s3,  1
+    // case 2:
+    //    shape:      s0, s1, s2 == 1, s3
+    //    offsets: s1*s3, s3,       0,  1
+    const auto& shape = desc->get_shape();
+    const auto& layout = desc->get_layout();
+
+    offsets.resize(rank);
+    std::fill(offsets.begin(), offsets.end(), 0);
+    OPENVINO_ASSERT(rank >= shape.size(), "Incorrect tensor rank!");
+    const auto idx_stride = rank - shape.size();
+    int64_t dim_step = static_cast<int64_t>(data_size);
+    offsets[offsets.size() - 1] = dim_step;
+    for (int i = static_cast<int>(shape.size()) - 2; i >= 0; i--) {
+        dim_step *= static_cast<int64_t>(shape[i + 1]);
+        offsets[i + idx_stride] = shape[i] != 1 ? dim_step : 0;
+    }
+    if (!layout.empty()) {
+        std::vector<int64_t> reordered_offsets(offsets.size());
+        for (size_t i = 0; i < layout.size(); i++) {
+            const auto& src_idx = is_input ? layout[i] : i;
+            const auto& dst_idx = is_input ? i : layout[i];
+            reordered_offsets[idx_stride + dst_idx] = offsets[idx_stride + src_idx];
+        }
+        offsets = std::move(reordered_offsets);
     }
 }
 

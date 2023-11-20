@@ -111,7 +111,8 @@ private:
             inline void update_ptrs(jit_snippets_call_args&, const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs);
             inline void update_ptrs(jit_snippets_dynamic_call_args&, const int64_t indexes[5],
                                     const std::vector<MemoryPtr>& inMemPtrs,
-                                    const std::vector<MemoryPtr>& outMemPtrs);
+                                    const std::vector<MemoryPtr>& outMemPtrs,
+                                    const std::vector<std::vector<int64_t>>& data_offsets);
             // Evaluates generated snippet using parallel backend
             void schedule_6d(const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs);
             void schedule_nt(const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs);

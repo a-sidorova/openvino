@@ -70,12 +70,31 @@ void Subgraph::set_virtual_port_count(const size_t count) {
     m_virtual_port_count = count;
 }
 
+void Subgraph::set_tile_rank(size_t new_rank) {
+    tile_rank = new_rank;
+    if (m_linear_ir) {
+        m_linear_ir->set_loop_depth(new_rank);
+    }
+}
+void Subgraph::set_tensor_rank(size_t new_rank) {
+    tensor_rank = new_rank;
+    if (m_linear_ir) {
+        m_linear_ir->set_tensor_rank(new_rank);
+    }
+}
+
 void Subgraph::set_min_jit_work_amount(const size_t jit_work_amount) {
     config.m_min_jit_work_amount = jit_work_amount;
+    if (m_linear_ir) {
+        m_linear_ir->set_min_kernel_work_amount(jit_work_amount);
+    }
 }
 
 void Subgraph::set_min_parallel_work_amount(const size_t parallel_work_amount) {
     config.m_min_parallel_work_amount = parallel_work_amount;
+    if (m_linear_ir) {
+        m_linear_ir->set_min_parallel_work_amount(parallel_work_amount);
+    }
 }
 
 auto Subgraph::is_domain_sensitive_op(const std::shared_ptr<ov::Node>& op) -> bool {
@@ -352,7 +371,8 @@ Subgraph::convert_body_to_linear_ir(const std::shared_ptr<IShapeInferSnippetsFac
     lowered::Config lowering_config;
     lowering_config.m_save_expressions = config.m_has_domain_sensitive_ops;
     lowering_config.m_need_fill_tail_register = config.m_has_domain_sensitive_ops;
-    lowering_config.m_loop_depth = tileRank;
+    lowering_config.m_loop_depth = tile_rank;
+    lowering_config.m_tensor_rank = tensor_rank;
     lowering_config.m_enable_domain_optimization = !config.m_has_domain_sensitive_ops;
     lowering_config.m_min_parallel_work_amount = config.m_min_parallel_work_amount;
     lowering_config.m_min_kernel_work_amount = config.m_min_jit_work_amount;

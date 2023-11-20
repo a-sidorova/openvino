@@ -85,6 +85,20 @@ private:
      */
     void optimize_single_evaluation();
     /**
+     * @brief Initialize input and output data offsets
+     * @param linear_ir Linear IR
+     */
+    void init_data_offsets(const LinearIR& linear_ir);
+    /**
+     * @brief Calculate offset for input or output of body
+     * @param desc port descriptor
+     * @param data_size byte size of data type of input or output
+     * @param is_input true if it's input otherwise it's false
+     * @param rank common tensor rank
+     * @param offsets reference on the target offsets for update
+     */
+    static void offset_calculation(const lowered::PortDescriptorPtr& desc, size_t data_size, bool is_input, size_t rank, std::vector<int64_t>& offsets);
+    /**
      * @brief Initialize the vector loop descriptor
      * @param loop_info loop information of the corresponding loop
      * @param vector_loop_desc ref of the vector loop descriptor which should be inited

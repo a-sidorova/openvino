@@ -116,7 +116,8 @@ public:
     // plugin sets generator for a snippet to some specific generator.
     // it's going to be replaced with Jitters table later
     void set_generator(std::shared_ptr<ov::snippets::Generator> generator);
-    void set_tile_rank(size_t newRank) {tileRank = newRank;}
+    void set_tile_rank(size_t new_rank);
+    void set_tensor_rank(size_t new_rank);
     void set_virtual_port_count(size_t count);
     void set_min_jit_work_amount(size_t jit_work_amount);
     void set_min_parallel_work_amount(size_t parallel_work_amount);
@@ -162,7 +163,8 @@ private:
     Shape exec_domain = {};
     std::shared_ptr<ov::snippets::Generator> m_generator = nullptr;
 
-    size_t tileRank = 0; // set by plugin to specify the number of dimensions processed in a single kernel call
+    size_t tile_rank = 0; // set by plugin to specify the number of dimensions processed in a single kernel call
+    size_t tensor_rank = 0; // set by plugin to specify the number of broadcasted dimensions processed
     std::vector<size_t> appendOnesForCanonical;
     std::shared_ptr<lowered::LinearIR> m_linear_ir = nullptr;
 

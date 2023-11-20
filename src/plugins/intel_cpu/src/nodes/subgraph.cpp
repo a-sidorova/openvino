@@ -495,26 +495,15 @@ void Snippet::SnippetJitExecutor::update_ptrs(jit_snippets_call_args& call_args,
 void Snippet::SnippetJitExecutor::update_ptrs(jit_snippets_dynamic_call_args& call_args,
                                               const int64_t indexes[5],
                                               const std::vector<MemoryPtr>& inMemPtrs,
-                                              const std::vector<MemoryPtr>& outMemPtrs) {
-    for (size_t i = 0; i < outMemPtrs.size(); i++)
-        call_args.dst_ptrs[i] = reinterpret_cast<uint8_t*>(outMemPtrs[i]->getData()) + start_offset_out[i];
-
-    const auto& dynamic_kernel = std::dynamic_pointer_cast<KernelDynamicEmitter>(schedule.lowering_result.m_saved_emitters.back());
-    OPENVINO_ASSERT(dynamic_kernel, "KernelDynamicEmitter is expected but not found");
-
-    // todo: avoid this repacking. Either store io_shapes in snippetAttrs or make calculate_data_offsets take in and out args separately
-    std::vector<std::vector<size_t>> io_shapes = snippetAttrs.inMemBlockedDims;
-    io_shapes.insert(io_shapes.end(), snippetAttrs.outMemBlockedDims.begin(), snippetAttrs.outMemBlockedDims.end());
-
-    auto data_offsets = dynamic_kernel->calculate_data_offsets(io_shapes);
-    OPENVINO_ASSERT(data_offsets.front().size() == tensorRank - 1, "Data offsets with invalid ranks detected");
+                                              const std::vector<MemoryPtr>& outMemPtrs,
+                                              const std::vector<std::vector<int64_t>>& data_offsets) {
+    OPENVINO_ASSERT(data_offsets.front().size() == tensorRank, "Data offsets with invalid ranks detected");
+    OPENVINO_ASSERT(data_offsets.size() == inMemPtrs.size() + outMemPtrs.size(), "Incorrect data offset count!");
 
     for (size_t i = 0; i < inMemPtrs.size(); i++) {
         auto i_ptr = reinterpret_cast<uint8_t*>(inMemPtrs[i]->getData()) + start_offset_in[i];
         for (size_t j = 0; j < tensorRank - 1; j++) {
-           // todo: do we need to skip empty dimensions like in static case? Same true for dst_ptrs
-          //if (master_shape[j] != 1)
-                i_ptr += (data_offsets[i][j] * indexes[j]);
+            i_ptr += (data_offsets[i][j] * indexes[j]);
         }
         call_args.src_ptrs[i] = i_ptr;
     }
@@ -545,6 +534,7 @@ void Snippet::SnippetJitExecutor::schedule_6d(const std::vector<MemoryPtr>& inMe
             loop_args.emplace_back(loop.work_amount, loop.ptr_increments, loop.finalization_offsets);
         }
     }
+    const auto& data_offsets = runtime_config.get_data_offsets();
 
     parallel_for5d(dom[0], dom[1], dom[2], dom[3], dom[4],
         [&](int64_t d0, int64_t d1, int64_t d2, int64_t d3, int64_t d4) {
@@ -554,7 +544,7 @@ void Snippet::SnippetJitExecutor::schedule_6d(const std::vector<MemoryPtr>& inMe
             //  A possible solution is to create thread-local jit_snippets_dynamic_call_args that would be reused here.
             jit_snippets_dynamic_call_args dynamic_call_args;
             dynamic_call_args.register_loops(loop_args);
-            update_ptrs(dynamic_call_args, indexes, inMemPtrs, outMemPtrs);
+            update_ptrs(dynamic_call_args, indexes, inMemPtrs, outMemPtrs, data_offsets);
             callable(&dynamic_call_args);
         });
 }
@@ -603,6 +593,8 @@ Snippet::SnippetJitExecutor::SnippetJitExecutor(SnippetAttrs attrs, bool is_dyna
 
     // initialize by maximum output dimension. Dimensions of outputs should be broadcastable
     tensorRank = std::max(static_cast<size_t>(rank6D), canonicalShape.size());
+    snippetAttrs.snippet->set_tensor_rank(tensorRank);
+
     auto initDataSizes = [this]() {
         dataSize.resize(numInput + numOutput);
         for (size_t i = 0; i < numInput; i++)
