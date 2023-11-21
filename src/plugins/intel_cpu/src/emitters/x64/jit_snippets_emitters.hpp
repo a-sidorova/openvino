@@ -147,6 +147,7 @@ public:
                    const std::vector<size_t> &out) const;
     // todo: it is purely virtual in the base class, but do we need it?
     size_t get_inputs_num() const override {return 0;}
+    std::shared_ptr<const Xbyak::Label> get_begin_label() {return loop_begin_label;}
 
 private:
     using jit_emitter::emit_code;
@@ -155,7 +156,7 @@ private:
     void emit_impl(const std::vector<size_t>& in,
                    const std::vector<size_t>& out) const override;
 
-    std::shared_ptr<snippets::op::LoopBegin> loop_begin;
+    std::shared_ptr<Xbyak::Label> loop_begin_label;
     bool evaluate_once = false;
     size_t work_amount = 0; // need to store work_amount explicitly, since two loops can work on the same dim (e.g. vector + scalar)
 };
@@ -178,8 +179,7 @@ private:
     void emit_impl(const std::vector<size_t>& in,
                    const std::vector<size_t>& out) const override;
 
-    std::shared_ptr<snippets::op::LoopBegin> loop_begin;
-    std::shared_ptr<snippets::op::LoopEnd> loop_end;
+    std::shared_ptr<const Xbyak::Label> loop_begin_label;
 
     size_t num_inputs = 0;
     size_t num_outputs = 0;

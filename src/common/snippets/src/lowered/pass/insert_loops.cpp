@@ -74,23 +74,36 @@ void InsertLoops::insertion(LinearIR& linear_ir, const LinearIR::LoopManagerPtr&
     init_params(loop_entries);
     init_params(loop_exits);
 
-    const auto& loop_begin = std::make_shared<op::LoopBegin>();
+    const auto loop_begin = make_loop_begin(loop_info->is_dynamic);
     const auto& loop_begin_expr = linear_ir.create_expression(loop_begin, std::vector<PortConnectorPtr>{});
     linear_ir.insert(loop_begin_pos, loop_begin_expr);
-
-    const auto& loop_end = std::make_shared<op::LoopEnd>(
-            loop_begin->output(0), work_amount, work_amount_increment, ptr_increments, finalization_offsets,
-            io_data_sizes, loop_entries.size(), loop_exits.size(), loop_id);
-
     // Add LoopBegin port connector
     loop_end_inputs.push_back(loop_begin_expr->get_output_port_connector(0));
 
+    const auto loop_end = make_loop_end(loop_info->is_dynamic, loop_begin->output(0), work_amount, work_amount_increment, ptr_increments,
+                                        finalization_offsets, io_data_sizes, loop_entries.size(), loop_exits.size(), loop_id);
     const auto& loop_end_expr = linear_ir.create_expression(loop_end, loop_end_inputs);
     const auto& it = linear_ir.insert(loop_end_pos, loop_end_expr);
 
     const auto outer_loop_ids = LinearIR::LoopManager::get_outer_expr_loops(*std::prev(it), loop_id);
     loop_begin_expr->set_loop_ids(outer_loop_ids);
     loop_end_expr->set_loop_ids(outer_loop_ids);
+}
+
+std::shared_ptr<op::LoopBegin> InsertLoops::make_loop_begin(bool is_dynamic) {
+    if (is_dynamic)
+        return std::make_shared<op::LoopBeginDynamic>();
+    return std::make_shared<op::LoopBeginStatic>();
+}
+
+std::shared_ptr<op::LoopEnd> InsertLoops::make_loop_end(bool is_dynamic, const Output<Node>& loop_begin, size_t work_amount, size_t work_amount_increment,
+                                                        std::vector<int64_t> ptr_increments, std::vector<int64_t> finalization_offsets,
+                                                        std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num, size_t id) {
+    if (is_dynamic)
+        return std::make_shared<op::LoopEndDynamic>(loop_begin, work_amount, work_amount_increment, ptr_increments, finalization_offsets,
+                                                    element_type_sizes, input_num, output_num, id);
+    return std::make_shared<op::LoopEndStatic>(loop_begin, work_amount, work_amount_increment, ptr_increments, finalization_offsets,
+                                               element_type_sizes, input_num, output_num, id);
 }
 
 bool InsertLoops::run(LinearIR& linear_ir) {

@@ -9,15 +9,10 @@ namespace ov {
 namespace snippets {
 namespace op {
 
-LoopBase::LoopBase(const std::vector<Output<Node>> &args) : Op(args) {
-}
+LoopBase::LoopBase(const std::vector<Output<Node>> &args) : Op(args) {}
 
-LoopBegin::LoopBegin() : LoopBase(), begin_address(nullptr) {
+LoopBegin::LoopBegin() : LoopBase() {
     validate_and_infer_types_except_LoopEnd();
-}
-
-std::shared_ptr<Node> LoopBegin::clone_with_new_inputs(const OutputVector& inputs) const {
-    return std::make_shared<LoopBegin>();
 }
 
 void LoopBegin::validate_and_infer_types_except_LoopEnd() {
@@ -44,8 +39,12 @@ std::shared_ptr<LoopEnd> LoopBegin::get_loop_end() const {
     return  loop_end;
 }
 
-bool LoopBegin::visit_attributes(AttributeVisitor &visitor) {
-    return true;
+std::shared_ptr<Node> LoopBeginStatic::clone_with_new_inputs(const OutputVector& inputs) const {
+    return std::make_shared<LoopBeginStatic>();
+}
+
+std::shared_ptr<Node> LoopBeginDynamic::clone_with_new_inputs(const OutputVector& inputs) const {
+    return std::make_shared<LoopBeginDynamic>();
 }
 
 LoopEnd::LoopEnd(const Output<Node>& loop_begin, size_t work_amount, size_t work_amount_increment,
@@ -82,14 +81,6 @@ LoopEnd::LoopEnd(const Output<Node>& loop_begin, size_t work_amount, size_t work
         m_id(id),
         m_evaluate_once(false) {
     constructor_validate_and_infer_types();
-}
-
-std::shared_ptr<Node> LoopEnd::clone_with_new_inputs(const OutputVector& inputs) const {
-    check_new_args_count(this, inputs);
-    const auto loop_end = std::make_shared<LoopEnd>(inputs.at(0), m_work_amount, m_work_amount_increment, m_ptr_increments,
-                                                    m_finalization_offsets, m_element_type_sizes, m_input_num, m_output_num, m_id);
-    loop_end->m_evaluate_once = m_evaluate_once;
-    return loop_end;
 }
 
 std::shared_ptr<LoopBegin> LoopEnd::get_loop_begin() {
@@ -205,6 +196,32 @@ bool LoopEnd::visit_attributes(AttributeVisitor &visitor) {
     visitor.on_attribute("output_num", m_output_num);
     visitor.on_attribute("id", m_id);
     return true;
+}
+
+LoopEndStatic::LoopEndStatic(const Output<Node>& loop_begin, size_t work_amount, size_t work_amount_increment,
+                            std::vector<int64_t> ptr_increments, std::vector<int64_t> finalization_offsets,
+                            std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num, size_t id)
+    : LoopEnd(loop_begin, work_amount, work_amount_increment, ptr_increments, finalization_offsets, element_type_sizes, input_num, output_num, id) {}
+
+std::shared_ptr<Node> LoopEndStatic::clone_with_new_inputs(const OutputVector& inputs) const {
+    check_new_args_count(this, inputs);
+    const auto loop_end = std::make_shared<LoopEndStatic>(inputs.at(0), m_work_amount, m_work_amount_increment, m_ptr_increments,
+                                                          m_finalization_offsets, m_element_type_sizes, m_input_num, m_output_num, m_id);
+    loop_end->m_evaluate_once = m_evaluate_once;
+    return loop_end;
+}
+
+LoopEndDynamic::LoopEndDynamic(const Output<Node>& loop_begin, size_t work_amount, size_t work_amount_increment,
+                               std::vector<int64_t> ptr_increments, std::vector<int64_t> finalization_offsets,
+                               std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num, size_t id)
+    : LoopEnd(loop_begin, work_amount, work_amount_increment, ptr_increments, finalization_offsets, element_type_sizes, input_num, output_num, id) {}
+
+std::shared_ptr<Node> LoopEndDynamic::clone_with_new_inputs(const OutputVector& inputs) const {
+    check_new_args_count(this, inputs);
+    const auto loop_end = std::make_shared<LoopEndDynamic>(inputs.at(0), m_work_amount, m_work_amount_increment, m_ptr_increments,
+                                                           m_finalization_offsets, m_element_type_sizes, m_input_num, m_output_num, m_id);
+    loop_end->m_evaluate_once = m_evaluate_once;
+    return loop_end;
 }
 
 } // namespace op

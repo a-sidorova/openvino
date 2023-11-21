@@ -39,15 +39,26 @@ class LoopBegin : public LoopBase {
 public:
     OPENVINO_OP("LoopBegin", "SnippetsOpset", LoopBase);
     LoopBegin();
-    void validate_and_infer_types() override;
-    std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& inputs)  const override;
-    std::shared_ptr<LoopEnd> get_loop_end() const;
-    bool visit_attributes(AttributeVisitor& visitor) override;
-    // begin_address are needed to communicate information between LoopBegin and LoopEnd emitters
-    const uint8_t* begin_address;
 
-private:
+    void validate_and_infer_types() override;
+    std::shared_ptr<LoopEnd> get_loop_end() const;
+
+protected:
     void validate_and_infer_types_except_LoopEnd();
+};
+
+class LoopBeginStatic : public LoopBegin {
+public:
+    OPENVINO_OP("LoopBeginStatic", "SnippetsOpset", LoopBegin);
+    LoopBeginStatic() = default;
+    std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& inputs) const override;
+};
+
+class LoopBeginDynamic : public LoopBegin {
+public:
+    OPENVINO_OP("LoopBeginDynamic", "SnippetsOpset", LoopBegin);
+    LoopBeginDynamic() = default;
+    std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& inputs) const override;
 };
 
 /**
@@ -70,8 +81,8 @@ class LoopEnd : public LoopBase {
 public:
     OPENVINO_OP("LoopEnd", "SnippetsOpset", LoopBase);
     LoopEnd(const Output<Node>& loop_begin, size_t work_amount, size_t work_amount_increment,
-              std::vector<bool> apply_increment, std::vector<int64_t> finalization_offsets,
-              std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num, size_t id);
+            std::vector<bool> apply_increment, std::vector<int64_t> finalization_offsets,
+            std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num, size_t id);
     LoopEnd(const Output<Node>& loop_begin, size_t work_amount, size_t work_amount_increment,
             std::vector<int64_t> ptr_increments, std::vector<int64_t> finalization_offsets,
             std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num, size_t id);
@@ -79,7 +90,6 @@ public:
 
     void validate_and_infer_types() override;
     bool visit_attributes(AttributeVisitor& visitor) override;
-    std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& inputs)  const override;
 
     void update(const RuntimeConfig::LoopDescriptor& descriptor);
     // update_ptr_increments resets non-zero increments to the new_increments. It's used when work_amount_increment is
@@ -104,7 +114,7 @@ public:
     void set_evaluate_once(bool once);
     void set_id(size_t id);
 
-private:
+protected:
     std::vector<int64_t> m_ptr_increments = {};
     std::vector<int64_t> m_finalization_offsets = {};
     std::vector<int64_t> m_element_type_sizes = {};
@@ -114,6 +124,26 @@ private:
     size_t m_output_num = 0;
     size_t m_id = 0;  // the corresponding Loop identificator in LoopManager
     bool m_evaluate_once = false; // true if the Loop is executed only once, used to skip setting and testing the loop counter
+};
+
+class LoopEndStatic : public LoopEnd {
+public:
+    OPENVINO_OP("LoopEndStatic", "SnippetsOpset", LoopEnd);
+    LoopEndStatic() = default;
+    LoopEndStatic(const Output<Node>& loop_begin, size_t work_amount, size_t work_amount_increment,
+                  std::vector<int64_t> ptr_increments, std::vector<int64_t> finalization_offsets,
+                  std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num, size_t id);
+    std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& inputs) const override;
+};
+
+class LoopEndDynamic : public LoopEnd {
+public:
+    OPENVINO_OP("LoopEndDynamic", "SnippetsOpset", LoopEnd);
+    LoopEndDynamic() = default;
+    LoopEndDynamic(const Output<Node>& loop_begin, size_t work_amount, size_t work_amount_increment,
+                   std::vector<int64_t> ptr_increments, std::vector<int64_t> finalization_offsets,
+                   std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num, size_t id);
+    std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& inputs) const override;
 };
 
 } // namespace op

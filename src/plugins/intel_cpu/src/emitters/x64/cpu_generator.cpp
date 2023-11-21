@@ -157,8 +157,10 @@ intel_cpu::CPUTargetMachine::CPUTargetMachine(dnnl::impl::cpu::x64::cpu_isa_t ho
 //    jitters[snippets::op::LoopBegin::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(LoopBeginEmitter);
 //    jitters[snippets::op::LoopEnd::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(LoopEndEmitter);
     jitters[snippets::op::Kernel::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(KernelDynamicEmitter);
-    jitters[snippets::op::LoopBegin::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(LoopBeginDynamicEmitter);
-    jitters[snippets::op::LoopEnd::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(LoopEndDynamicEmitter);
+    jitters[snippets::op::LoopBeginStatic::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(LoopBeginEmitter);
+    jitters[snippets::op::LoopBeginDynamic::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(LoopBeginDynamicEmitter);
+    jitters[snippets::op::LoopEndStatic::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(LoopEndEmitter);
+    jitters[snippets::op::LoopEndDynamic::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(LoopEndDynamicEmitter);
 
     jitters[intel_cpu::BrgemmCPU::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(BrgemmEmitter);
     jitters[intel_cpu::BrgemmCopyB::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(BrgemmCopyBEmitter);

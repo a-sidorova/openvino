@@ -358,8 +358,9 @@ void KernelEmitter::emit_impl(const std::vector<size_t>& in,
     h->postamble();
 }
 
-LoopBeginEmitter::LoopBeginEmitter(jit_generator* h, cpu_isa_t isa, const ExpressionPtr& expr) : jit_emitter(h, isa) {
-    loop_begin = ov::as_type_ptr<snippets::op::LoopBegin>(expr->get_node());
+LoopBeginEmitter::LoopBeginEmitter(jit_generator* h, cpu_isa_t isa, const ExpressionPtr& expr)
+    : jit_emitter(h, isa), loop_begin_label{new Xbyak::Label()} {
+    const auto loop_begin = ov::as_type_ptr<snippets::op::LoopBegin>(expr->get_node());
     if (!loop_begin)
         OPENVINO_THROW("LoopBeginEmitter invoked with invalid op argument");
     const auto& target_inputs = loop_begin->output(loop_begin->get_output_size() - 1).get_target_inputs();
@@ -398,20 +399,13 @@ void LoopBeginEmitter::emit_impl(const std::vector<size_t>& in,
     if (!evaluate_once) {
         h->mov(reg_work_amount, work_amount);
     }
-    // Note: loop address is not calculated at this point, so need to call calcJmpAddress() which is protected
-    // or ready(), but they both set internal flags and that's not a desired way to use them.
-    // So the most obvious WA is just to use current address manually
-    loop_begin->begin_address = h->getCurr();
+    h->L(*loop_begin_label);
 }
 
 LoopEndEmitter::LoopEndEmitter(jit_generator* h, cpu_isa_t isa, const ExpressionPtr& expr) : jit_emitter(h, isa) {
-    loop_end = ov::as_type_ptr<snippets::op::LoopEnd>(expr->get_node());
+    const auto loop_end = ov::as_type_ptr<snippets::op::LoopEnd>(expr->get_node());
     if (!loop_end)
         OPENVINO_THROW("LoopEndEmitter invoked with invalid op argument");
-    loop_begin = loop_end->get_loop_begin();
-    // todo: this check could be excessive, since we check for it in validate_and_infer_types()
-    if (!loop_begin)
-        OPENVINO_THROW("LoopEndEmitter invoked with invalid configuration: the last arg must be LoopBegin");
     // Note that 1 edge connects LoopBegin and LoopEnd
     num_inputs = loop_end->get_input_num();
     num_outputs = loop_end->get_output_num();
@@ -422,6 +416,13 @@ LoopEndEmitter::LoopEndEmitter(jit_generator* h, cpu_isa_t isa, const Expression
     evaluate_once = loop_end->get_evaluate_once();
     io_data_size = loop_end->get_element_type_sizes();
     in_out_type_ = emitter_in_out_map::gpr_to_gpr;
+
+    const auto begin_expr = expr->get_input_port_connectors().back()->get_source().get_expr();
+    OPENVINO_ASSERT(ov::is_type<snippets::op::LoopBegin>(begin_expr->get_node()),
+                    "LoopEnd expression must have th last port connector to LoopBegin");
+    const auto& loop_begin_emitter = std::dynamic_pointer_cast<LoopBeginEmitter>(begin_expr->get_emitter());
+    OPENVINO_ASSERT(loop_begin_emitter, "Invalid emitter detected for LoopBegin operation");
+    loop_begin_label = loop_begin_emitter->get_begin_label();
 }
 
 void LoopEndEmitter::emit_code(const std::vector<size_t> &in,
@@ -460,7 +461,7 @@ void LoopEndEmitter::emit_impl(const std::vector<size_t>& in,
         }
         h->sub(reg_work_amount, wa_increment);
         h->cmp(reg_work_amount, wa_increment);
-        h->jge(loop_begin->begin_address);
+        h->jge(*loop_begin_label);
     }
 
     for (size_t idx = 0; idx < data_ptr_regs.size(); idx++) {
