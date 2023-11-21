@@ -53,12 +53,12 @@ std::shared_ptr<op::LoopEnd> InsertTailLoop::create_tail_loop(LinearIR& linear_i
             const auto inner_loop_begin_it = linear_ir.find(tail_begin, it, linear_ir.get_expr_by_node(inner_loop_end->get_loop_begin()));
             const auto inner_loop_end_it = std::next(tail_end);
             OPENVINO_ASSERT(inner_loop_begin_it != it, "LoopBegin has not been found!");
-            tail_transformations(linear_ir, inner_loop_begin_it, inner_loop_end_it, tail_loop_desc.work_amount);
+            tail_transformations(linear_ir, inner_loop_begin_it, inner_loop_end_it, tail_loop_desc.increment);
             inner_loop_end->set_id(updated_loop_id);
         }
     }
 
-    tail_transformations(linear_ir, tail_begin, tail_end, tail_loop_desc.work_amount);
+    tail_transformations(linear_ir, tail_begin, tail_end, tail_loop_desc.increment);
     const auto tail_loop_end = ov::as_type_ptr<op::LoopBegin>((*tail_begin)->get_node())->get_loop_end();
     tail_loop_end->update(tail_loop_desc);
     return tail_loop_end;

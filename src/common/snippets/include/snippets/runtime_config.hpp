@@ -138,7 +138,7 @@ private:
      * @return True if needed otherwise returns False
      */
     inline static bool is_tail_loop_needed(const LinearIR::LoopManager::LoopInfoPtr& loop_info) {
-        return loop_info->work_amount % loop_info->increment != 0 || loop_info->is_dynamic;
+        return (loop_info->work_amount % loop_info->increment != 0) || (loop_info->is_dynamic && loop_info->increment > 1);
     }
 
     // [loop_id -> loop descriptors]

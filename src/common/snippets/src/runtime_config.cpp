@@ -101,11 +101,19 @@ bool RuntimeConfig::get_vector_loop_descriptor(const LinearIR::LoopManager::Loop
         return false;
 
     const auto loop_ports = loop_info->get_all_ports();
-    vector_loop_desc.work_amount = loop_info->work_amount;
+    const auto skip_evaluation = !utils::is_dynamic_vdim(loop_info->work_amount) && loop_info->work_amount < loop_info->increment;
+    vector_loop_desc.work_amount = skip_evaluation ? 0 : loop_info->work_amount;
     vector_loop_desc.increment = loop_info->increment;
     vector_loop_desc.ptr_increments.resize(loop_ports.size());
     vector_loop_desc.finalization_offsets.resize(loop_ports.size());
     vector_loop_desc.type = LoopDescriptor::Type::Vector;
+
+    if (skip_evaluation) {
+        std::for_each(vector_loop_desc.ptr_increments.begin(), vector_loop_desc.ptr_increments.end(), [](int64_t& value) { value = 0; });
+        std::for_each(vector_loop_desc.finalization_offsets.begin(), vector_loop_desc.finalization_offsets.end(), [](int64_t& value) { value = 0; });
+        return true;
+    }
+
     const auto& increment = vector_loop_desc.increment;
     for (size_t i = 0; i < loop_ports.size(); ++i) {
         const auto& loop_port = loop_ports[i];
@@ -125,14 +133,21 @@ bool RuntimeConfig::get_tail_loop_descriptor(const LinearIR::LoopManager::LoopIn
         return false;
 
     const auto loop_ports = loop_info->get_all_ports();
-    const auto vector_needed = is_vector_loop_needed(loop_info);
-
+    const auto vector_needed = is_vector_loop_needed(loop_info) && vector_loop_desc.work_amount > 0;
     tail_loop_desc.work_amount = utils::is_dynamic_vdim(loop_info->work_amount) ? loop_info->work_amount
                                                                                 : loop_info->work_amount % loop_info->increment;
+    const auto skip_evaluation = tail_loop_desc.work_amount == 0;
     tail_loop_desc.increment = loop_info->is_dynamic ? 1 : tail_loop_desc.work_amount;
     tail_loop_desc.ptr_increments.resize(loop_ports.size());
     tail_loop_desc.finalization_offsets.resize(loop_ports.size());
     tail_loop_desc.type = LoopDescriptor::Type::Tile;
+
+    if (skip_evaluation) {
+        std::for_each(tail_loop_desc.ptr_increments.begin(), tail_loop_desc.ptr_increments.end(), [](int64_t& value) { value = 0; });
+        std::for_each(tail_loop_desc.finalization_offsets.begin(), tail_loop_desc.finalization_offsets.end(), [](int64_t& value) { value = 0; });
+        return true;
+    }
+
     const auto& increment = tail_loop_desc.increment;
     for (size_t i = 0; i < loop_ports.size(); ++i) {
         const auto& loop_port = loop_ports[i];
@@ -158,7 +173,7 @@ void RuntimeConfig::init_inner_splited_tail_loop_descriptors(const LinearIR::Loo
     if (!outer_splited_loop_info->outer_splited_loop)
         return;
 
-    const auto tail_size = outer_splited_tail_loop_desc.work_amount;
+    const auto tail_size = outer_splited_tail_loop_desc.increment;
     const auto outer_dim_idx = outer_splited_loop_info->dim_idx;
     const auto& loop_map = loop_manager->get_map();
     // go through all loops in loop manager to find inner loops by port loop IDs
