@@ -80,7 +80,7 @@ void KernelDynamicEmitter::emit_impl(const std::vector<size_t>& in,
 }
 
 LoopBeginDynamicEmitter::LoopBeginDynamicEmitter(jit_generator* h, cpu_isa_t isa, const ExpressionPtr& expr)
-    : jit_emitter(h, isa), loop_begin_label{new Xbyak::Label()} {
+    : jit_emitter(h, isa), loop_begin_label{new Xbyak::Label()}, loop_end_label{nullptr} {
     const auto& loop_begin = ov::as_type_ptr<snippets::op::LoopBegin>(expr->get_node());
     // todo: disabled for debug purposes. re-enable before merge
     // OPENVINO_ASSERT(loop_begin && loop_begin->is_dynamic(), "LoopBeginDynamicEmitter invoked with invalid op argument");
@@ -90,6 +90,7 @@ LoopBeginDynamicEmitter::LoopBeginDynamicEmitter(jit_generator* h, cpu_isa_t isa
     OPENVINO_ASSERT(out_connectors.size() == 1 && consumers.size() == 1 && loop_end,
                     "LoopBeginDynamicEmitter invoked with invalid configuration");
     loop_id = loop_end->get_id();
+    wa_increment = loop_end->get_increment();
     in_out_type_ = emitter_in_out_map::gpr_to_gpr;
 }
 
@@ -107,17 +108,23 @@ void LoopBeginDynamicEmitter::validate_arguments(const std::vector<size_t> &in, 
 }
 
 void LoopBeginDynamicEmitter::emit_impl(const std::vector<size_t>& in, const std::vector<size_t>& out) const {
+    OPENVINO_ASSERT(loop_end_label != nullptr && loop_begin_label != nullptr, "LoopBegin emitter has not inited labels!");
     Reg64 reg_work_amount = Reg64(static_cast<int>(out.back()));
     Reg64 reg_runtime_params = Reg64(static_cast<int>(in.back()));
     Reg64 reg_loop_args_ptr = Reg64(static_cast<int>(aux_gpr_idxs[0]));
     const auto id_offset = loop_id * sizeof(jit_snippets_dynamic_call_args::loop_args_t);
     h->mov(reg_loop_args_ptr, h->ptr[reg_runtime_params + GET_OFF_DYN(loop_args)]);
     h->mov(reg_work_amount, h->ptr[reg_loop_args_ptr + id_offset + GET_OFF_LOOP_ARGS(m_work_amount)]);
+
+    // if wa < increment, skip the loop
+    h->cmp(reg_work_amount, wa_increment);
+    h->jl(*loop_end_label, CodeGenerator::T_NEAR);
+
     h->L(*loop_begin_label);
-//    loop_begin->begin_address = h->getCurr();
 }
 
-LoopEndDynamicEmitter::LoopEndDynamicEmitter(jit_generator* h, cpu_isa_t isa, const ExpressionPtr& expr) : jit_emitter(h, isa) {
+LoopEndDynamicEmitter::LoopEndDynamicEmitter(jit_generator* h, cpu_isa_t isa, const ExpressionPtr& expr)
+    : jit_emitter(h, isa), loop_end_label{new Xbyak::Label()} {
     const auto& loop_end = ov::as_type_ptr<snippets::op::LoopEnd>(expr->get_node());
     OPENVINO_ASSERT(loop_end, "LoopEndDynamicEmitter invoked with invalid op argument");
     // todo: can we rely on the fact that LoopBegin connected to the last port / uses the last connector?
@@ -127,6 +134,7 @@ LoopEndDynamicEmitter::LoopEndDynamicEmitter(jit_generator* h, cpu_isa_t isa, co
             const auto& loop_begin_emitter = std::dynamic_pointer_cast<LoopBeginDynamicEmitter>(begin_expr->get_emitter());
             OPENVINO_ASSERT(loop_begin_emitter, "Invalid emitter detected for LoopBegin operation");
             loop_begin_label = loop_begin_emitter->get_begin_label();
+            loop_begin_emitter->set_end_label(loop_end_label);
             break;
         }
     }
@@ -158,6 +166,7 @@ void LoopEndDynamicEmitter::validate_arguments(const std::vector<size_t> &in,
 
 void LoopEndDynamicEmitter::emit_impl(const std::vector<size_t>& in,
                                const std::vector<size_t>& out) const {
+    OPENVINO_ASSERT(loop_end_label != nullptr && loop_begin_label != nullptr, "LoopEnd emitter has not inited labels!");
     Reg64 reg_runtime_params = Reg64(static_cast<int>(in[in.size() - 1]));
     Reg64 reg_work_amount = Reg64(static_cast<int>(in[in.size() - 2]));
     Reg64 reg_increments = Reg64(static_cast<int>(aux_gpr_idxs[0]));
@@ -175,13 +184,15 @@ void LoopEndDynamicEmitter::emit_impl(const std::vector<size_t>& in,
     }
     h->sub(reg_work_amount, wa_increment);
     h->cmp(reg_work_amount, wa_increment);
-    h->jge(*loop_begin_label);
+    h->jge(*loop_begin_label, CodeGenerator::T_NEAR);
 
     h->mov(reg_increments, h->ptr[reg_runtime_params + GET_OFF_DYN(loop_args)]);
     h->mov(reg_increments, h->ptr[reg_increments + id_offset + GET_OFF_LOOP_ARGS(m_finalization_offsets)]);
     for (size_t idx = 0; idx < data_ptr_regs.size(); idx++) {
             h->add(data_ptr_regs[idx], h->ptr[reg_increments + idx * sizeof(int64_t)]);
     }
+
+    h->L(*loop_end_label);
 }
 
 

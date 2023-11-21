@@ -113,6 +113,7 @@ public:
     size_t get_inputs_num() const override {return 1;}
     size_t aux_gprs_count() const override {return 1;}
     std::shared_ptr<const Xbyak::Label> get_begin_label() {return loop_begin_label;}
+    void set_end_label(const std::shared_ptr<const Xbyak::Label>& label) { loop_end_label = label; }
 
 private:
     using jit_emitter::emit_code;
@@ -122,7 +123,9 @@ private:
                    const std::vector<size_t>& out) const override;
 
     std::shared_ptr<Xbyak::Label> loop_begin_label;
+    std::shared_ptr<const Xbyak::Label> loop_end_label;
     size_t loop_id;
+    int64_t wa_increment = 0;
 };
 
 class LoopEndDynamicEmitter : public jit_emitter, public SnippetsDynamicEmitter {
@@ -134,6 +137,7 @@ public:
                    const std::vector<size_t> &pool_vec_idxs, const std::vector<size_t> &pool_gpr_idxs) const override;
     size_t get_inputs_num() const override {return 0;}
     size_t aux_gprs_count() const override {return 1;}
+    std::shared_ptr<const Xbyak::Label> get_end_label() {return loop_end_label;}
 
 private:
     using jit_emitter::emit_code;
@@ -144,6 +148,7 @@ private:
                    const std::vector<size_t>& out) const override;
 
     std::shared_ptr<const Xbyak::Label> loop_begin_label;
+    std::shared_ptr<Xbyak::Label> loop_end_label;
 
     size_t num_inputs = 0;
     size_t num_outputs = 0;
