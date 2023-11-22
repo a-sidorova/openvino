@@ -8,8 +8,7 @@
 
 #include <onednn/dnnl.h>
 #include <cpu/x64/jit_generator.hpp>
-#include "emitters/x64/jit_snippets_emitters.hpp"
-#include "emitters/x64/jit_snippets_emitters_dynamic.hpp"
+#include "emitters/x64/snippets/jit_snippets_call_args.hpp"
 
 #include <node.h>
 #include "snippets/op/subgraph.hpp"
@@ -109,7 +108,7 @@ private:
 
             void generate(const jit_snippets_compile_args*);
             inline void update_ptrs(jit_snippets_call_args&, const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs);
-            inline void update_ptrs(jit_snippets_dynamic_call_args&, const int64_t indexes[5],
+            inline void update_ptrs(jit_snippets_call_args&, const int64_t indexes[5],
                                     const std::vector<MemoryPtr>& inMemPtrs,
                                     const std::vector<MemoryPtr>& outMemPtrs,
                                     const std::vector<std::vector<int64_t>>& data_offsets);

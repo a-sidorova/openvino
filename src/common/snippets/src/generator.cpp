@@ -39,7 +39,7 @@ void Generator::generate(lowered::LinearIR& linear_ir, LoweringResult& result, c
     if (linear_ir.is_dynamic())
         kernel_op = std::make_shared<op::KernelDynamic>(linear_ir);
     else
-        kernel_op = std::make_shared<op::KernelStatic>(linear_ir);
+        kernel_op = std::make_shared<op::KernelStatic>(linear_ir, runtime_config.get_data_offsets());
     kernel_op->compile_params = compile_params;
     const auto kernel_expr = linear_ir.create_expression(kernel_op, std::vector<lowered::PortConnectorPtr>{});
     const auto kernel = target->get(kernel_expr->get_node()->get_type_info())(kernel_expr);

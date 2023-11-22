@@ -48,6 +48,7 @@
 #include "utils/node_dumper.h"
 #include "utils/verbose.h"
 #include "memory_desc/cpu_memory_desc_utils.h"
+#include "ie_ngraph_utils.hpp"
 
 #if (OV_THREAD == OV_THREAD_TBB || OV_THREAD == OV_THREAD_TBB_AUTO)
 #    include <tbb/task.h>

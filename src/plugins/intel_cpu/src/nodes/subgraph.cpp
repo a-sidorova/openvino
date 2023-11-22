@@ -21,7 +21,8 @@
 #include <snippets/lowered/pass/optimize_domain.hpp>
 #include "snippets/pass/matmul_to_brgemm.hpp"
 #include "utils/cpu_utils.hpp"
-#include "emitters/x64/cpu_generator.hpp"
+#include "emitters/x64/snippets/cpu_generator.hpp"
+#include "emitters/x64/snippets/jit_snippets_call_args.hpp"
 #include "transformations/snippets/x64/pass/lowered/set_brgemm_copy_b_buffers_shape.hpp"
 #include "transformations/snippets/x64/pass/lowered/fuse_load_store_and_convert.hpp"
 #include "transformations/snippets/x64/pass/lowered/brgemm_blocking.hpp"
@@ -37,7 +38,6 @@
 #include <common/primitive_hashing_utils.hpp>
 #include "snippets/pass/hash.hpp"
 
-using namespace InferenceEngine;
 using namespace dnnl::impl::utils;
 using namespace dnnl::impl::cpu;
 using namespace dnnl::impl::cpu::x64;
@@ -492,7 +492,7 @@ void Snippet::SnippetJitExecutor::update_ptrs(jit_snippets_call_args& call_args,
     }
 }
 
-void Snippet::SnippetJitExecutor::update_ptrs(jit_snippets_dynamic_call_args& call_args,
+void Snippet::SnippetJitExecutor::update_ptrs(jit_snippets_call_args& call_args,
                                               const int64_t indexes[5],
                                               const std::vector<MemoryPtr>& inMemPtrs,
                                               const std::vector<MemoryPtr>& outMemPtrs,
@@ -519,7 +519,7 @@ void Snippet::SnippetJitExecutor::update_ptrs(jit_snippets_dynamic_call_args& ca
                 reinterpret_cast<uint8_t*>(buffer_scratchpad.data()) + parallel_get_thread_num() * buffer_scratchpad_size;
     }
     // todo: remove this assert when jit_snippets_dynamic_call_args are in the final state
-    OPENVINO_ASSERT(std::is_standard_layout<jit_snippets_dynamic_call_args>::value, "JIT dynamic call args are not standard-layout class");
+    OPENVINO_ASSERT(std::is_standard_layout<jit_snippets_call_args>::value, "JIT dynamic call args are not standard-layout class");
 }
 
 
@@ -528,7 +528,7 @@ void Snippet::SnippetJitExecutor::schedule_6d(const std::vector<MemoryPtr>& inMe
     // < N, C, H, W > < 1, 1, N, C*H*W>
     const auto& callable = schedule.get_callable<dynamic_kernel>();
     const auto runtime_config = snippetAttrs.snippet->configure();
-    std::vector<jit_snippets_dynamic_call_args::loop_args_t> loop_args;
+    std::vector<jit_snippets_call_args::loop_args_t> loop_args;
     for (const auto& loops : runtime_config.get_loops()) {
         for (const auto& loop : loops.second) {
             loop_args.emplace_back(loop.work_amount, loop.ptr_increments, loop.finalization_offsets);
@@ -539,13 +539,13 @@ void Snippet::SnippetJitExecutor::schedule_6d(const std::vector<MemoryPtr>& inMe
     parallel_for5d(dom[0], dom[1], dom[2], dom[3], dom[4],
         [&](int64_t d0, int64_t d1, int64_t d2, int64_t d3, int64_t d4) {
             int64_t indexes[] = {d0, d1, d2, d3, d4};
-            // todo: jit_snippets_dynamic_call_args are destructed at the end of this lambda.
+            // todo: jit_snippets_call_args are destructed at the end of this lambda.
             //  It means that rather expensive memory allocation-deallocation is performed inside this loop.
-            //  A possible solution is to create thread-local jit_snippets_dynamic_call_args that would be reused here.
-            jit_snippets_dynamic_call_args dynamic_call_args;
-            dynamic_call_args.register_loops(loop_args);
-            update_ptrs(dynamic_call_args, indexes, inMemPtrs, outMemPtrs, data_offsets);
-            callable(&dynamic_call_args);
+            //  A possible solution is to create thread-local jit_snippets_call_args that would be reused here.
+            jit_snippets_call_args call_args;
+            call_args.register_loops(loop_args);
+            update_ptrs(call_args, indexes, inMemPtrs, outMemPtrs, data_offsets);
+            callable(&call_args);
         });
 }
 

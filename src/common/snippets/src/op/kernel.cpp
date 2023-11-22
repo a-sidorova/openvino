@@ -10,12 +10,12 @@ namespace op {
 
 Kernel::Kernel(lowered::LinearIR nested) : Op(), region(std::move(nested)) {}
 
-KernelStatic::KernelStatic(lowered::LinearIR nested) : Kernel(std::move(nested)) {}
+KernelStatic::KernelStatic(lowered::LinearIR nested, const std::vector<std::vector<int64_t>>& offsets) : Kernel(std::move(nested)), data_offsets(offsets) {}
 
 KernelDynamic::KernelDynamic(lowered::LinearIR nested) : Kernel(std::move(nested)) {}
 
 std::shared_ptr<Node> KernelStatic::clone_with_new_inputs(const OutputVector& inputs) const {
-    return std::make_shared<KernelStatic>(region);
+    return std::make_shared<KernelStatic>(region, data_offsets);
 }
 
 std::shared_ptr<Node> KernelDynamic::clone_with_new_inputs(const OutputVector& inputs) const {
