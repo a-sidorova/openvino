@@ -346,6 +346,16 @@ VectorDims LinearIR::get_master_shape() const {
     return master_shape;
 }
 
+bool LinearIR::is_dynamic() const {
+    for (const auto& ioe : m_io_expressions) {
+        if (ioe->get_type() == IOExpression::io_type::INPUT && utils::is_dynamic_vdims(ioe->get_output_port_descriptor(0)->get_shape()))
+            return true;
+        if (ioe->get_type() == IOExpression::io_type::OUTPUT && utils::is_dynamic_vdims(ioe->get_input_port_descriptor(0)->get_shape()))
+            return true;
+    }
+    return false;
+}
+
 LinearIR::LIRShapeInfer::LIRShapeInfer(container& body_exprs, io_container& io_exprs)
                                        : ShapeInferSnippetsNode(),
                                          m_exprs{std::make_shared<container>(body_exprs)} {

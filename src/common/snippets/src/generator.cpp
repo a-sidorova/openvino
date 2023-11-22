@@ -35,11 +35,14 @@ void Generator::generate(lowered::LinearIR& linear_ir, LoweringResult& result, c
     linear_ir.init_emitters(target);
 
     OV_ITT_TASK_NEXT(GENERATE, "::EmitCode")
-    auto loops2DKernel = std::make_shared<op::Kernel>(linear_ir);
-    loops2DKernel->compile_params = compile_params;
-    auto loops2DKernelExpr = linear_ir.create_expression(loops2DKernel, std::vector<lowered::PortConnectorPtr>{});
-    std::shared_ptr<Emitter> kernel = target->get(op::Kernel::get_type_info_static())(loops2DKernelExpr);
-
+    std::shared_ptr<op::Kernel> kernel_op = nullptr;
+    if (linear_ir.is_dynamic())
+        kernel_op = std::make_shared<op::KernelDynamic>(linear_ir);
+    else
+        kernel_op = std::make_shared<op::KernelStatic>(linear_ir);
+    kernel_op->compile_params = compile_params;
+    const auto kernel_expr = linear_ir.create_expression(kernel_op, std::vector<lowered::PortConnectorPtr>{});
+    const auto kernel = target->get(kernel_expr->get_node()->get_type_info())(kernel_expr);
     kernel->emit_code({}, {});
 
     OV_ITT_TASK_NEXT(GENERATE, "::EmitData")

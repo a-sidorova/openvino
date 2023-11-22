@@ -43,8 +43,7 @@ void KernelDynamicEmitter::init_data_pointers(const Xbyak::Reg64& reg_runtime_pa
             h->mov(data_ptr_regs[i], h->ptr[reg_runtime_params + GET_OFF_DYN(dst_ptrs) + (i - num_inputs) * sizeof(void*)]);
     }
 }
-void KernelDynamicEmitter::emit_impl(const std::vector<size_t>& in,
-                              const std::vector<size_t>& out) const {
+void KernelDynamicEmitter::emit_impl(const std::vector<size_t>& in, const std::vector<size_t>& out) const {
     h->preamble();
 
     Reg64 reg_runtime_params = Reg64(static_cast<int>(reg_runtime_params_idx));
