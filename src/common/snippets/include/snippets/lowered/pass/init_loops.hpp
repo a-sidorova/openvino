@@ -21,20 +21,16 @@ namespace pass {
 class InitLoops : public Pass {
 public:
     OPENVINO_RTTI("InitLoops", "Pass")
-    InitLoops(bool only_runtime_params = false) : m_only_runtime_params(only_runtime_params) {}
+    InitLoops() = default;
     bool run(LinearIR& linear_ir) override;
 
-private:
-    static void init_ptr_increments(std::vector<LinearIR::LoopManager::LoopPort>& loop_inputs,
-                                    std::vector<LinearIR::LoopManager::LoopPort>& loop_outputs,
-                                    size_t work_amount, size_t dim_idx);
-    static void init_finalization_offsets(std::vector<LinearIR::LoopManager::LoopPort>& loop_inputs,
-                                          std::vector<LinearIR::LoopManager::LoopPort>& loop_outputs,
-                                          size_t work_amount);
-    static void init_element_type_sizes(std::vector<LinearIR::LoopManager::LoopPort>& loop_inputs,
-                                        std::vector<LinearIR::LoopManager::LoopPort>& loop_outputs);
+    static void init_loop_info(const LinearIR::LoopManager::LoopInfoPtr& loop_info, bool only_runtime_args = false);
 
-    bool m_only_runtime_params = false;
+private:
+    static void init_work_amount(const LinearIR::LoopManager::LoopInfoPtr& loop_info);
+    static void init_ptr_increment(LinearIR::LoopManager::LoopPort& loop_port, size_t work_amount, size_t dim_idx);
+    static void init_finalization_offset(LinearIR::LoopManager::LoopPort& loop_port, size_t work_amount);
+    static void init_data_size(LinearIR::LoopManager::LoopPort& loop_port);
 };
 
 } // namespace pass

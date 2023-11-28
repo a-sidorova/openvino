@@ -4,6 +4,7 @@
 
 #include "snippets/runtime_config.hpp"
 
+#include "snippets/lowered/pass/init_loops.hpp"
 #include "snippets/op/memory_access.hpp"
 #include "snippets/op/rank_normalization.hpp"
 #include "snippets/utils.hpp"
@@ -49,7 +50,6 @@ bool RuntimeConfig::get_loop_desc(size_t loop_id, LoopDescriptor::Type type, Loo
 void RuntimeConfig::update(const lowered::LinearIR& linear_ir) {
     const auto& loop_manager = linear_ir.get_loop_manager();
     init_loop_descriptors(loop_manager);
-    optimize_single_evaluation();
     init_data_offsets(linear_ir);
 }
 
@@ -59,7 +59,10 @@ void RuntimeConfig::init_loop_descriptors(const lowered::LinearIR::LoopManagerPt
     const auto& loop_map = loop_manager->get_map();
     for (const auto& loop_pair : loop_map) {
         const auto loop_id = loop_pair.first;
-        const auto loop_info = loop_pair.second;
+        // make a copy to avoid original loop info corruption
+        const auto loop_info = std::make_shared<LinearIR::LoopManager::LoopInfo>(*loop_pair.second);
+
+        lowered::pass::InitLoops::init_loop_info(loop_info, true);
 
         OPENVINO_ASSERT(!utils::is_dynamic_vdim(loop_info->increment), "Increment must be static value!");
         OPENVINO_ASSERT(loops.count(loop_id) == 0, "Loop is already in RuntimeConfig");
@@ -77,6 +80,8 @@ void RuntimeConfig::init_loop_descriptors(const lowered::LinearIR::LoopManagerPt
             init_inner_splited_tail_loop_descriptors(loop_manager, loop_info, tail_loop_desc, loop_id, vector_status);
         }
     }
+
+    optimize_single_evaluation();
 }
 
 void RuntimeConfig::optimize_single_evaluation() {
