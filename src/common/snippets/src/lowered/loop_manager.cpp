@@ -53,6 +53,7 @@ std::shared_ptr<LoopInfo> LoopInfo::clone_with_new_expr(const ExressionMap& expr
 
     auto new_loop_info = std::make_shared<LoopInfo>(work_amount, increment, dim_idx, new_entry_points, new_exit_points);
     new_loop_info->outer_splited_loop = outer_splited_loop;
+    new_loop_info->is_dynamic = is_dynamic;
 
     return new_loop_info;
 }

@@ -110,7 +110,7 @@ public:
 
     snippets::Schedule generate_from_linear_ir(const lowered::pass::PassPipeline& backend_passes_pre_common = {},
                                                const lowered::pass::PassPipeline& backend_passes_post_common = {},
-                                               const void* compile_params = nullptr) const;
+                                               const void* compile_params = nullptr);
     IShapeInferSnippets::Result shape_infer(const std::vector<VectorDimsRef>& input_shapes);
 
     // plugin sets generator for a snippet to some specific generator.
@@ -126,6 +126,7 @@ public:
 
     void serialize() const;
     VectorDims infer_master_shape();
+    VectorDims get_parallel_exec_domain() const;
 
     static auto wrap_node_as_subgraph(const std::shared_ptr<ov::Node>& node) -> std::shared_ptr<Subgraph>;
     static void fill_empty_output_names(const Output<Node>& target_output_node, const Output<Node>& replacement_output_node);

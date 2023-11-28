@@ -464,8 +464,6 @@ void Subgraph::control_flow_transformations(lowered::LinearIR& linear_ir,
     common_pipeline.register_pass<lowered::pass::InsertBroadcastMove>();
     common_pipeline.register_pass<lowered::pass::LoadMoveBroadcastToBroadcastLoad>();
 
-    common_pipeline.register_pass<lowered::pass::ValidateShapes>();
-
     common_pipeline.register_pass<lowered::pass::ValidateLoops>();
     common_pipeline.register_pass<lowered::pass::InitLoops>();
     common_pipeline.register_pass<lowered::pass::InsertLoops>();
@@ -503,7 +501,7 @@ snippets::Schedule Subgraph::generate(const BlockedShapeVector& blocked_input_sh
 
 snippets::Schedule Subgraph::generate_from_linear_ir(const lowered::pass::PassPipeline& backend_passes_pre_common,
                                                      const lowered::pass::PassPipeline& backend_passes_post_common,
-                                                     const void* compile_params) const {
+                                                     const void* compile_params) {
     INTERNAL_OP_SCOPE(Subgraph);
     OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "Snippets::op::generate")
     OPENVINO_ASSERT(m_generator != nullptr, "generate is called while generator is not set");
@@ -516,15 +514,23 @@ snippets::Schedule Subgraph::generate_from_linear_ir(const lowered::pass::PassPi
     LoweringResult lowering_result;
     control_flow_transformations(*m_linear_ir, lowering_result, backend_passes_pre_common, backend_passes_post_common);
 
-    VectorDims parallel_exec_domain = m_linear_ir->get_master_shape();
-    const size_t loop_depth = m_linear_ir->get_config().m_loop_depth;
-    for (size_t i = 0; i < loop_depth; i++)
-        parallel_exec_domain[parallel_exec_domain.size() - 1 - i] = 1;
+    m_linear_ir->update_shape_infer();
+    m_shape_infer = m_linear_ir->get_shape_infer_instance();
+
+    const auto parallel_exec_domain = get_parallel_exec_domain();
 
     auto generation_linear_ir = m_linear_ir->clone();
     m_generator->generate(*generation_linear_ir, lowering_result, compile_params);
 
     return {parallel_exec_domain, std::move(lowering_result)};
+}
+
+VectorDims Subgraph::get_parallel_exec_domain() const {
+    VectorDims parallel_exec_domain = m_linear_ir->get_master_shape();
+    const size_t loop_depth = m_linear_ir->get_config().m_loop_depth;
+    for (size_t i = 0; i < loop_depth; i++)
+        parallel_exec_domain[parallel_exec_domain.size() - 1 - i] = 1;
+    return parallel_exec_domain;
 }
 
 RuntimeConfig Subgraph::configure() {

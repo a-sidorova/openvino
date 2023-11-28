@@ -356,6 +356,10 @@ bool LinearIR::is_dynamic() const {
     return false;
 }
 
+void LinearIR::update_shape_infer() {
+    m_shape_infer = std::make_shared<LIRShapeInfer>(m_expressions, m_io_expressions);
+}
+
 LinearIR::LIRShapeInfer::LIRShapeInfer(container& body_exprs, io_container& io_exprs)
                                        : ShapeInferSnippetsNode(),
                                          m_exprs{std::make_shared<container>(body_exprs)} {

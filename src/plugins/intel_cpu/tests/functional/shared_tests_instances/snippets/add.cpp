@@ -34,27 +34,27 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_Eltwise, Add,
                          Add::getTestCaseName);
 
 // DS
-//std::vector<InputShape> inShapesDynamic1{
-//        {
-//        {{ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()},
-//        {{1, 3, 1, 10}, {1, 3, 10, 10}, {1, 3, 1, 10}}},
-//        }
-//};
-//std::vector<InputShape> inShapesDynamic2{
-//        {
-//        {{ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()},
-//        {{1, 3, 10, 1}, {1, 3, 1, 1}, {1, 3, 10, 1}}},
-//        }
-//};
-//INSTANTIATE_TEST_SUITE_P(smoke_Snippets_Eltwise_Add, Add,
-//                         ::testing::Combine(
-//                                 ::testing::ValuesIn(inShapesDynamic1),
-//                                 ::testing::ValuesIn(inShapesDynamic2),
-//                                 ::testing::Values(ov::element::f32),
-//                                 ::testing::Values(1),
-//                                 ::testing::Values(1), // Subgraph is created, since the inputs are followed by converts
-//                                 ::testing::Values(ov::test::utils::DEVICE_CPU)),
-//                         Add::getTestCaseName);
+std::vector<InputShape> inShapesDynamic1{
+        {
+        {{ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()},
+        {{1, 3, 1, 10}, {1, 3, 10, 32}, {1, 3, 10, 35}}},
+        }
+};
+std::vector<InputShape> inShapesDynamic2{
+        {
+        {{ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()},
+        {{1, 3, 10, 10}, {1, 3, 1, 32}, {1, 3, 1, 35}}},
+        }
+};
+INSTANTIATE_TEST_SUITE_P(smoke_Snippets_Eltwise_Add, Add,
+                         ::testing::Combine(
+                                 ::testing::ValuesIn(inShapesDynamic1),
+                                 ::testing::ValuesIn(inShapesDynamic2),
+                                 ::testing::Values(ov::element::f32),
+                                 ::testing::Values(1),
+                                 ::testing::Values(1), // Subgraph is created, since the inputs are followed by converts
+                                 ::testing::Values(ov::test::utils::DEVICE_CPU)),
+                         Add::getTestCaseName);
 
 // ===================================AddPair=========================================================//
 // test cross-tile (vector vs scalar) optimizations in the absence of vector tile

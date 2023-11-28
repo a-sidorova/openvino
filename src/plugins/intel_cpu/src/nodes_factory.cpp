@@ -85,7 +85,7 @@
 #include "nodes/ctc_greedy_decoder.h"
 #include "nodes/non_zero.h"
 #include "nodes/color_convert.h"
-#include "nodes/subgraph.h"
+#include "nodes/subgraph_new.h"
 #include "nodes/priorbox.h"
 #include "nodes/priorbox_clustered.h"
 #include "nodes/eye.h"
@@ -200,7 +200,7 @@ Node::NodesFactory::NodesFactory()
     INTEL_CPU_NODE(Interaction, Type::Interaction);
     INTEL_CPU_NODE(MHA, Type::MHA);
     INTEL_CPU_NODE(ScaledDotProductAttention, Type::ScaledDotProductAttention);
-    INTEL_CPU_NODE(Snippet, Type::Subgraph);
+    INTEL_CPU_NODE(Subgraph, Type::Subgraph);
 #endif
 }
 
