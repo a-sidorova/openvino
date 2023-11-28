@@ -395,9 +395,17 @@ void LinearIR::LoopManager::fuse_loop_ports(std::vector<LinearIR::LoopManager::L
     exit_points = new_exit_points;
 }
 
+inline bool is_port_type_correct(const ExpressionPort& port, bool is_entry) {
+    return (is_entry && port.get_type() == ExpressionPort::Input) || (!is_entry && port.get_type() == ExpressionPort::Output);
+}
+
 template<>
 void LinearIR::LoopManager::update_loop_port(size_t loop_id, const ExpressionPort& actual_port, const std::vector<ExpressionPort>& target_ports,
                                              bool is_entry) {
+    OPENVINO_ASSERT(is_port_type_correct(actual_port, is_entry) &&
+                    std::all_of(target_ports.cbegin(), target_ports.cend(),
+                               [is_entry](const ExpressionPort& port) { return is_port_type_correct(port, is_entry); }),
+                    "Incorrect expression port type in update_loop_port!");
     const auto& loop_info = get_loop_info(loop_id);
     auto& ports = is_entry ? loop_info->entry_points : loop_info->exit_points;
     auto port_it = std::find_if(ports.begin(), ports.end(),
@@ -422,6 +430,11 @@ void LinearIR::LoopManager::update_loop_port(size_t loop_id, const ExpressionPor
 template<>
 void LinearIR::LoopManager::update_loop_port(size_t loop_id, const LoopPort& actual_port, const std::vector<LoopPort>& target_ports,
                                              bool is_entry) {
+    OPENVINO_ASSERT(is_port_type_correct(*actual_port.expr_port, is_entry) &&
+                    std::all_of(target_ports.cbegin(), target_ports.cend(),
+                           [is_entry](const LoopPort& port) { return is_port_type_correct(*port.expr_port, is_entry); }),
+                    "Incorrect expression port type in update_loop_port!");
+
     const auto& loop_info = get_loop_info(loop_id);
     auto& ports = is_entry ? loop_info->entry_points : loop_info->exit_points;
     auto port_it = std::find_if(ports.begin(), ports.end(),

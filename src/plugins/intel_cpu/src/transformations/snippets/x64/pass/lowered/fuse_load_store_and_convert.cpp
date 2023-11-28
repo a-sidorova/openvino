@@ -111,7 +111,7 @@ bool ov::intel_cpu::pass::FuseLoadStoreConvert::fuse_store_convert(snippets::low
     convert_it = linear_ir.insert(insertion_pos, store_convert_expr);
      // Copy Loop identifies
     store_convert_expr->set_loop_ids(store_expr->get_loop_ids());
-    loop_manager->update_loops_port(store_expr->get_loop_ids(), store_expr->get_output_port(0), {store_convert_expr->get_input_port(0)}, false);
+    loop_manager->update_loops_port(store_expr->get_loop_ids(), store_expr->get_output_port(0), {store_convert_expr->get_output_port(0)}, false);
     linear_ir.erase(std::find(convert_expr_it, linear_ir.cend(), store_expr));
     linear_ir.erase(convert_expr_it);
     linear_ir.replace_input(store_consumers, store_convert_expr->get_output_port_connector(0));
