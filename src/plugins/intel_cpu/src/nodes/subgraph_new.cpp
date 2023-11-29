@@ -263,8 +263,8 @@ void Subgraph::selectOptimalPrimitiveDescriptor() {
 
 void Subgraph::createPrimitive() {
     const auto config = getSelectedPrimitiveDescriptor()->getConfig();
-    inputNum = config.inConfs.size();
-    outputNum = config.outConfs.size();
+    input_num = config.inConfs.size();
+    output_num = config.outConfs.size();
 
     init_memory_ptrs();
     init_attrs();
@@ -275,32 +275,32 @@ void Subgraph::createPrimitive() {
 }
 
 void Subgraph::init_memory_ptrs() {
-    srcMemPtrs.resize(inputNum);
-    dstMemPtrs.resize(outputNum);
-    for (size_t i = 0; i < inputNum; i++)
+    srcMemPtrs.resize(input_num);
+    dstMemPtrs.resize(output_num);
+    for (size_t i = 0; i < input_num; i++)
         srcMemPtrs[i] = getParentEdgeAt(i)->getMemoryPtr();
-    for (size_t i = 0; i < outputNum; i++)
+    for (size_t i = 0; i < output_num; i++)
         dstMemPtrs[i] = getChildEdgeAt(i)->getMemoryPtr();
 }
 
 void Subgraph::init_attrs() {
     const auto config = getSelectedPrimitiveDescriptor()->getConfig();
 
-    snippetAttrs.inMemPrecs.resize(inputNum);
-    snippetAttrs.outMemPrecs.resize(outputNum);
+    snippetAttrs.inMemPrecs.resize(input_num);
+    snippetAttrs.outMemPrecs.resize(output_num);
 
-    snippetAttrs.inMemOrders.resize(inputNum);
-    snippetAttrs.outMemOrders.resize(outputNum);
+    snippetAttrs.inMemOrders.resize(input_num);
+    snippetAttrs.outMemOrders.resize(output_num);
 
     snippetAttrs.has_non_planar_inputs = false;
 
-    for (size_t i = 0; i < inputNum; i++) {
+    for (size_t i = 0; i < input_num; i++) {
         const auto& memDesc = config.inConfs[i].getMemDesc();
         snippetAttrs.inMemPrecs[i] = memDesc->getPrecision();
         snippetAttrs.inMemOrders[i] = memDesc->as<BlockedMemoryDesc>()->getOrder();
         snippetAttrs.has_non_planar_inputs |= !memDesc->hasLayoutType(LayoutType::ncsp);
     }
-    for (size_t i = 0; i < outputNum; i++) {
+    for (size_t i = 0; i < output_num; i++) {
         const auto& memDesc = config.outConfs[i].getMemDesc();
         snippetAttrs.outMemPrecs[i] = memDesc->getPrecision();
         snippetAttrs.outMemOrders[i] = memDesc->as<BlockedMemoryDesc>()->getOrder();
@@ -311,19 +311,19 @@ void Subgraph::init_start_offsets() {
     auto get_offset = [](const BlockedMemoryDescPtr& desc) {
         return static_cast<ptrdiff_t>(desc->getOffsetPadding() * desc->getPrecision().size());
     };
-    start_offset_in.resize(inputNum);
-    start_offset_out.resize(outputNum);
-    for (size_t i = 0; i < inputNum; i++)
+    start_offset_in.resize(input_num);
+    start_offset_out.resize(output_num);
+    for (size_t i = 0; i < input_num; i++)
         start_offset_in[i] = get_offset(srcMemPtrs[i]->getDescWithType<BlockedMemoryDesc>());
-    for (size_t i = 0; i < outputNum; i++)
+    for (size_t i = 0; i < output_num; i++)
         start_offset_out[i] = get_offset(dstMemPtrs[i]->getDescWithType<BlockedMemoryDesc>());
 }
 
 void Subgraph::init_snippets_blocked_shapes(snippets::op::Subgraph::BlockedShapeVector& in_blocked_shapes) {
     const auto config = getSelectedPrimitiveDescriptor()->getConfig();
 
-    in_blocked_shapes.reserve(inputNum);
-    for (size_t i = 0; i < inputNum; i++) {
+    in_blocked_shapes.reserve(input_num);
+    for (size_t i = 0; i < input_num; i++) {
         const auto& memDesc = config.inConfs[i].getMemDesc();
         const auto& blockedDesc = memDesc->as<BlockedMemoryDesc>();
         const auto& order = blockedDesc->getOrder();
@@ -333,8 +333,8 @@ void Subgraph::init_snippets_blocked_shapes(snippets::op::Subgraph::BlockedShape
 }
 
 void Subgraph::init_precisions(std::vector<ov::element::Type>& input_types, std::vector<ov::element::Type>& output_types) {
-    input_types.reserve(inputNum);
-    output_types.reserve(outputNum);
+    input_types.reserve(input_num);
+    output_types.reserve(output_num);
     for (const auto& p : snippetAttrs.inMemPrecs)
         input_types.push_back(p);
     for (const auto& p : snippetAttrs.outMemPrecs)
@@ -400,19 +400,6 @@ void Subgraph::generate() {
     // Note: minimal JIT work amount is a predefined value that describes the number of kernel iterations (work amount)
     // needed to cover kernel call overhead. It is used for balancing between parallel and JIT work amounts in domain optimization.
     snippetAttrs.snippet->set_min_jit_work_amount(256);
-
-    jit_snippets_compile_args jcp;
-    jcp.parallel_executor_ndims = tensor_rank;
-
-    ov::snippets::lowered::pass::PassPipeline control_flow_markup_pipeline;
-    CPU_REGISTER_PASS_X64(control_flow_markup_pipeline, ov::intel_cpu::pass::BrgemmBlocking)
-
-    ov::snippets::lowered::pass::PassPipeline control_flow_pipeline;
-    CPU_REGISTER_PASS_X64(control_flow_pipeline, ov::intel_cpu::pass::FuseLoadStoreConvert)
-    CPU_REGISTER_PASS_X64(control_flow_pipeline, ov::intel_cpu::pass::SetBrgemmCopyBBuffersShape);
-    schedule = snippetAttrs.snippet->generate_from_linear_ir(control_flow_markup_pipeline,
-                                                             control_flow_pipeline,
-                                                             reinterpret_cast<const void*>(&jcp));
 }
 
 bool Subgraph::needPrepareParams() const {
@@ -420,63 +407,24 @@ bool Subgraph::needPrepareParams() const {
 }
 
 void Subgraph::prepareParams() {
-    const auto runtime_config = snippetAttrs.snippet->configure();
-    loop_args.clear();
-    for (const auto& loops : runtime_config.get_loops()) {
-        for (const auto& loop : loops.second) {
-            loop_args.emplace_back(loop.work_amount, loop.ptr_increments, loop.finalization_offsets);
-        }
-    }
-    data_offsets = runtime_config.get_data_offsets();
-    parallel_exec_domain = getNormalizedDimsBySize(snippetAttrs.snippet->get_parallel_exec_domain(), tensor_rank);
-}
+    SnippetKey key = {snippetAttrs};
 
-void Subgraph::update_ptrs(jit_snippets_call_args& call_args,
-                           const int64_t indexes[5],
-                           const std::vector<MemoryPtr>& inMemPtrs,
-                           const std::vector<MemoryPtr>& outMemPtrs,
-                           const std::vector<std::vector<int64_t>>& data_offsets) {
-    OPENVINO_ASSERT(data_offsets.front().size() == tensor_rank, "Data offsets with invalid ranks detected");
-    OPENVINO_ASSERT(data_offsets.size() == inMemPtrs.size() + outMemPtrs.size(), "Incorrect data offset count!");
+    auto builder = [this](const SnippetKey& key) -> std::shared_ptr<SnippetExecutor> {
+        std::shared_ptr<SnippetExecutor> executor =
+                std::make_shared<SnippetJitExecutor>(key.attrs, is_dynamic, tensor_rank, start_offset_in, start_offset_out);
+        return executor;
+    };
 
-    for (size_t i = 0; i < inMemPtrs.size(); i++) {
-        auto i_ptr = reinterpret_cast<uint8_t*>(inMemPtrs[i]->getData()) + start_offset_in[i];
-        for (size_t j = 0; j < tensor_rank - 1; j++) {
-            i_ptr += (data_offsets[i][j] * indexes[j]);
-        }
-        call_args.src_ptrs[i] = i_ptr;
-    }
-    for (size_t i = 0; i < outMemPtrs.size(); i++) {
-        auto i_ptr = reinterpret_cast<uint8_t*>(outMemPtrs[i]->getData()) + start_offset_out[i];
-        for (size_t j = 0; j < tensor_rank - 1; j++) {
-            i_ptr += (data_offsets[i + inMemPtrs.size()][j] * indexes[j]);
-        }
-        call_args.dst_ptrs[i] = i_ptr;
-    }
-    //if (buffer_scratchpad_size > 0) {
-    //    call_args.buffer_scratchpad_ptr =
-    //            reinterpret_cast<uint8_t*>(buffer_scratchpad.data()) + parallel_get_thread_num() * buffer_scratchpad_size;
-    //}
-    // todo: remove this assert when jit_snippets_dynamic_call_args are in the final state
-    OPENVINO_ASSERT(std::is_standard_layout<jit_snippets_call_args>::value, "JIT dynamic call args are not standard-layout class");
+    auto cache = context->getParamsCache();
+    auto result = cache->getOrCreate(key, builder);
+    execPtr = result.first;
+    OPENVINO_ASSERT(execPtr != nullptr, "Executor is not created for node ", getName(), ".");
+    execPtr->prepare();
 }
 
 void Subgraph::execute(dnnl::stream strm) {
-    const auto& dom = parallel_exec_domain;
-    // < N, C, H, W > < 1, 1, N, C*H*W>
-    const auto& callable = schedule.get_callable<dynamic_kernel>();
-
-    parallel_for5d(dom[0], dom[1], dom[2], dom[3], dom[4],
-        [&](int64_t d0, int64_t d1, int64_t d2, int64_t d3, int64_t d4) {
-            int64_t indexes[] = {d0, d1, d2, d3, d4};
-            // todo: jit_snippets_call_args are destructed at the end of this lambda.
-            //  It means that rather expensive memory allocation-deallocation is performed inside this loop.
-            //  A possible solution is to create thread-local jit_snippets_call_args that would be reused here.
-            jit_snippets_call_args call_args;
-            call_args.register_loops(loop_args);
-            update_ptrs(call_args, indexes, srcMemPtrs, dstMemPtrs, data_offsets);
-            callable(&call_args);
-        });
+    OPENVINO_ASSERT(execPtr != nullptr, "Executor is not ready for node ", getName(), " for inference.");
+    execPtr->exec(srcMemPtrs, dstMemPtrs);
 }
 
 void Subgraph::executeDynamicImpl(dnnl::stream strm) {
@@ -525,6 +473,169 @@ bool Subgraph::created() const {
     return getType() == Type::Subgraph;
 }
 
+Subgraph::SnippetExecutor::SnippetExecutor(SnippetAttrs attrs, bool is_dynamic, size_t tensor_rank,
+                                           const std::vector<ptrdiff_t>& start_offset_in, const std::vector<ptrdiff_t>& start_offset_out)
+    : snippet_attrs(std::move(attrs)), is_dynamic(is_dynamic), tensor_rank(tensor_rank), start_offset_in(start_offset_in), start_offset_out(start_offset_out) {}
+
+Subgraph::SnippetJitExecutor::SnippetJitExecutor(SnippetAttrs attrs, bool is_dynamic, size_t tensor_rank,
+                                                 const std::vector<ptrdiff_t>& start_offset_in, const std::vector<ptrdiff_t>& start_offset_out)
+    : SnippetExecutor(attrs, is_dynamic, tensor_rank, start_offset_in, start_offset_out) {
+    jit_snippets_compile_args jcp;
+    jcp.parallel_executor_ndims = tensor_rank;
+
+    ov::snippets::lowered::pass::PassPipeline control_flow_markup_pipeline;
+    CPU_REGISTER_PASS_X64(control_flow_markup_pipeline, ov::intel_cpu::pass::BrgemmBlocking)
+
+    ov::snippets::lowered::pass::PassPipeline control_flow_pipeline;
+    CPU_REGISTER_PASS_X64(control_flow_pipeline, ov::intel_cpu::pass::FuseLoadStoreConvert)
+    CPU_REGISTER_PASS_X64(control_flow_pipeline, ov::intel_cpu::pass::SetBrgemmCopyBBuffersShape);
+    schedule = snippet_attrs.snippet->generate_from_linear_ir(control_flow_markup_pipeline,
+                                                              control_flow_pipeline,
+                                                              reinterpret_cast<const void*>(&jcp));
+}
+
+void Subgraph::SnippetJitExecutor::prepare() {
+    if (is_dynamic) {
+        const auto runtime_config = snippet_attrs.snippet->configure();
+        loop_args.clear();
+        for (const auto& loops : runtime_config.get_loops()) {
+            for (const auto& loop : loops.second) {
+                loop_args.emplace_back(loop.work_amount, loop.ptr_increments, loop.finalization_offsets);
+            }
+        }
+        data_offsets = runtime_config.get_data_offsets();
+    }
+    buffer_scratchpad_size = schedule.lowering_result.buffer_scratchpad_size;
+    buffer_scratchpad.resize(buffer_scratchpad_size * parallel_get_max_threads(), 0);
+    parallel_exec_domain = getNormalizedDimsBySize(snippet_attrs.snippet->get_parallel_exec_domain(), tensor_rank);
+    harness_work_amount = std::accumulate(parallel_exec_domain.begin(), parallel_exec_domain.end(), 1, std::multiplies<size_t>());
+}
+
+void Subgraph::SnippetJitExecutor::exec(const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs) {
+    if (tensor_rank == rank6D) {
+        schedule_6d(inMemPtrs, outMemPtrs);
+    } else {
+        schedule_nt(inMemPtrs, outMemPtrs);
+    }
+}
+
+inline void Subgraph::SnippetJitExecutor::update_ptrs(jit_snippets_call_args& call_args,
+                                                      const std::vector<MemoryPtr>& srcMemPtrs,
+                                                      const std::vector<MemoryPtr>& dstMemPtrs) {
+    for (size_t i = 0; i < srcMemPtrs.size(); i++)
+        call_args.src_ptrs[i] = reinterpret_cast<const uint8_t*>(srcMemPtrs[i]->getData()) + start_offset_in[i];
+
+    for (size_t i = 0; i < dstMemPtrs.size(); i++)
+        call_args.dst_ptrs[i] = reinterpret_cast<uint8_t*>(dstMemPtrs[i]->getData()) + start_offset_out[i];
+
+    if (buffer_scratchpad_size > 0) {
+        call_args.buffer_scratchpad_ptr =
+                reinterpret_cast<uint8_t*>(buffer_scratchpad.data()) + parallel_get_thread_num() * buffer_scratchpad_size;
+    }
+}
+
+inline void Subgraph::SnippetJitExecutor::update_ptrs(jit_snippets_call_args& call_args,
+                                                      const std::vector<MemoryPtr>& srcMemPtrs,
+                                                      const std::vector<MemoryPtr>& dstMemPtrs,
+                                                      const int64_t* indexes,
+                                                      const std::vector<std::vector<int64_t>>& data_offsets) {
+    OPENVINO_ASSERT(data_offsets.size() == srcMemPtrs.size() + dstMemPtrs.size(), "Incorrect data offset count!");
+    OPENVINO_ASSERT(data_offsets.front().size() == tensor_rank, "Data offsets with invalid ranks detected");
+
+    for (size_t i = 0; i < srcMemPtrs.size(); i++) {
+        auto i_ptr = reinterpret_cast<uint8_t*>(srcMemPtrs[i]->getData()) + start_offset_in[i];
+        for (size_t j = 0; j < tensor_rank - 1; j++) {
+            i_ptr += (data_offsets[i][j] * indexes[j]);
+        }
+        call_args.src_ptrs[i] = i_ptr;
+    }
+    for (size_t i = 0; i < dstMemPtrs.size(); i++) {
+        auto i_ptr = reinterpret_cast<uint8_t*>(dstMemPtrs[i]->getData()) + start_offset_out[i];
+        for (size_t j = 0; j < tensor_rank - 1; j++) {
+            i_ptr += (data_offsets[i + srcMemPtrs.size()][j] * indexes[j]);
+        }
+        call_args.dst_ptrs[i] = i_ptr;
+    }
+    if (buffer_scratchpad_size > 0) {
+        call_args.buffer_scratchpad_ptr =
+                reinterpret_cast<uint8_t*>(buffer_scratchpad.data()) + parallel_get_thread_num() * buffer_scratchpad_size;
+    }
+}
+
+void Subgraph::SnippetJitExecutor::schedule_6d(const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs) {
+    const auto& dom = parallel_exec_domain;
+    OPENVINO_ASSERT(dom.size() == tensor_rank, "Incorrect parallel execution domain rank!");
+
+    if (is_dynamic) {
+        const auto& callable = schedule.get_callable<dynamic_kernel>();
+        parallel_for5d(dom[0], dom[1], dom[2], dom[3], dom[4],
+            [&](int64_t d0, int64_t d1, int64_t d2, int64_t d3, int64_t d4) {
+                int64_t indexes[] = {d0, d1, d2, d3, d4};
+                // todo: jit_snippets_call_args are destructed at the end of this lambda.
+                //  It means that rather expensive memory allocation-deallocation is performed inside this loop.
+                //  A possible solution is to create thread-local jit_snippets_call_args that would be reused here.
+                jit_snippets_call_args call_args;
+                call_args.register_loops(loop_args);
+                update_ptrs(call_args, inMemPtrs, outMemPtrs, indexes, data_offsets);
+                callable(&call_args);
+        });
+    } else {
+        const auto& callable = schedule.get_callable<kernel>();
+        parallel_for5d(dom[0], dom[1], dom[2], dom[3], dom[4],
+            [&](int64_t d0, int64_t d1, int64_t d2, int64_t d3, int64_t d4) {
+                int64_t indexes[] = {d0, d1, d2, d3, d4};
+                jit_snippets_call_args call_args;
+                update_ptrs(call_args, inMemPtrs, outMemPtrs);
+                callable(indexes, &call_args);
+        });
+    }
+}
+
+void Subgraph::SnippetJitExecutor::schedule_nt(const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs) {
+    const auto& work_size = parallel_exec_domain;
+    OPENVINO_ASSERT(work_size.size() == tensor_rank, "Incorrect parallel execution domain rank!");
+
+    if (is_dynamic) {
+        parallel_nt(0, [&](const int ithr, const int nthr) {
+            jit_snippets_call_args call_args;
+
+            size_t start = 0, end = 0;
+            splitter(harness_work_amount, nthr, ithr, start, end);
+
+            std::vector<int64_t> indexes(work_size.size() - 1, 0);
+            for (size_t iwork = start; iwork < end; ++iwork) {
+                size_t tmp = iwork;
+                for (ptrdiff_t j = static_cast<ptrdiff_t>(work_size.size()) - 2; j >= 0; j--) {
+                    indexes[j] = static_cast<int64_t>(tmp % work_size[j]);
+                    tmp /= work_size[j];
+                }
+
+                update_ptrs(call_args, inMemPtrs, outMemPtrs, indexes.data(), data_offsets);
+                schedule.get_callable<kernel>()(indexes.data(), &call_args);
+            }
+        });
+
+    } else {
+        parallel_nt(0, [&](const int ithr, const int nthr) {
+            jit_snippets_call_args call_args;
+            update_ptrs(call_args, inMemPtrs, outMemPtrs);
+
+            size_t start = 0, end = 0;
+            splitter(harness_work_amount, nthr, ithr, start, end);
+
+            std::vector<int64_t> indexes(work_size.size() - 1, 0);
+            for (size_t iwork = start; iwork < end; ++iwork) {
+                size_t tmp = iwork;
+                for (ptrdiff_t j = static_cast<ptrdiff_t>(work_size.size()) - 2; j >= 0; j--) {
+                    indexes[j] = static_cast<int64_t>(tmp % work_size[j]);
+                    tmp /= work_size[j];
+                }
+
+                schedule.get_callable<kernel>()(indexes.data(), &call_args);
+            }
+        });
+    }
+}
 
 }   // namespace node
 }   // namespace intel_cpu

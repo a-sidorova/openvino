@@ -65,31 +65,18 @@ private:
     void init_snippets_blocked_shapes(snippets::op::Subgraph::BlockedShapeVector& in_blocked_shapes);
     void init_precisions(std::vector<ov::element::Type>& input_types, std::vector<ov::element::Type>& output_types);
     void generate();
-    inline void update_ptrs(jit_snippets_call_args&, const int64_t indexes[5],
-                            const std::vector<MemoryPtr>& inMemPtrs,
-                            const std::vector<MemoryPtr>& outMemPtrs,
-                            const std::vector<std::vector<int64_t>>& data_offsets);
-
-    typedef void (*dynamic_kernel)(const void *);
 
     SnippetAttrs snippetAttrs;
     dnnl::impl::cpu::x64::cpu_isa_t host_isa;
-    snippets::Schedule schedule;
 
-    size_t inputNum = 0;
-    size_t outputNum = 0;
+    size_t input_num = 0;
+    size_t output_num = 0;
 
     std::vector<MemoryPtr> srcMemPtrs = {};
     std::vector<MemoryPtr> dstMemPtrs = {};
 
     std::vector<ptrdiff_t> start_offset_in = {};
     std::vector<ptrdiff_t> start_offset_out = {};
-
-    std::vector<std::vector<int64_t>> data_offsets;
-    std::vector<jit_snippets_call_args::loop_args_t> loop_args;
-    // Holds index of output used as in execution domain
-    // it should be compatible with a schedule's work size
-    std::vector<size_t> parallel_exec_domain = {};
 
     size_t tensor_rank = 0;
     bool is_dynamic = false;
@@ -101,18 +88,52 @@ private:
 
 class Subgraph::SnippetExecutor {
 public:
-    SnippetExecutor(SnippetAttrs attrs, bool is_dynamic) : snippet_attrs(std::move(attrs)), is_dynamic(is_dynamic) {}
-    virtual void exec(const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs) = 0;
+    SnippetExecutor(SnippetAttrs attrs, bool is_dynamic, size_t tensor_rank,
+                    const std::vector<ptrdiff_t>& start_offset_in, const std::vector<ptrdiff_t>& start_offset_out);
     virtual ~SnippetExecutor() = default;
+
+    virtual void exec(const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs) = 0;
+    virtual void prepare() = 0;
 
 protected:
     SnippetAttrs snippet_attrs;
     bool is_dynamic = false;
+    size_t tensor_rank = 0;
+
+    std::vector<ptrdiff_t> start_offset_in = {};
+    std::vector<ptrdiff_t> start_offset_out = {};
 };
 
 class Subgraph::SnippetJitExecutor : public Subgraph::SnippetExecutor {
 public:
-    SnippetJitExecutor(SnippetAttrs attrs, bool is_dynamic) : SnippetExecutor(attrs, is_dynamic) {}
+    SnippetJitExecutor(SnippetAttrs attrs, bool is_dynamic, size_t tensor_rank,
+                       const std::vector<ptrdiff_t>& start_offset_in, const std::vector<ptrdiff_t>& start_offset_out);
+
+    void exec(const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs) override;
+    void prepare() override;
+
+protected:
+    typedef void (*kernel)(const void *, const void *);
+    typedef void (*dynamic_kernel)(const void *);
+
+    inline void update_ptrs(jit_snippets_call_args& call_args, const std::vector<MemoryPtr>& srcMemPtrs, const std::vector<MemoryPtr>& dstMemPtrs);
+    inline void update_ptrs(jit_snippets_call_args& call_args, const std::vector<MemoryPtr>& srcMemPtrs, const std::vector<MemoryPtr>& dstMemPtrs,
+                            const int64_t* indexes, const std::vector<std::vector<int64_t>>& data_offsets);
+    // Evaluates generated snippet using parallel backend
+    void schedule_6d(const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs);
+    void schedule_nt(const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs);
+
+    snippets::Schedule schedule;
+    std::vector<std::vector<int64_t>> data_offsets = {};
+    std::vector<jit_snippets_call_args::loop_args_t> loop_args = {};
+    // Holds index of output used as in execution domain
+    // it should be compatible with a schedule's work size
+    std::vector<size_t> parallel_exec_domain = {};
+    size_t harness_work_amount = 0;
+
+    // Buffer scratchpad
+    std::vector<uint8_t> buffer_scratchpad = {};
+    size_t buffer_scratchpad_size = 0;
 };
 
 }   // namespace node
