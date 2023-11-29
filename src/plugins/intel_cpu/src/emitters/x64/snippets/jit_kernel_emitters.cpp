@@ -4,7 +4,6 @@
 
 #include "jit_kernel_emitters.hpp"
 
-#include "jit_snippets_call_args.hpp"
 #include "jit_snippets_dynamic_emitter.hpp"
 
 #include <cpu/x64/jit_generator.hpp>
@@ -32,6 +31,7 @@ jit_kernel_emitter::jit_kernel_emitter(dnnl::impl::cpu::x64::jit_generator* h, d
     OPENVINO_ASSERT(kernel, "jit_kernel_emitter invoked with invalid op argument");
     OPENVINO_ASSERT(!kernel->region.empty(), "jit_kernel_emitter invoked with empty body");
     body = kernel->region;
+    jcp = *reinterpret_cast<const jit_snippets_compile_args*>(kernel->compile_params);
     num_inputs = 0;
     num_outputs = 0;
     const auto& io_exprs = body.get_IO_ops();
@@ -102,6 +102,9 @@ jit_kernel_static_emitter::jit_kernel_static_emitter(dnnl::impl::cpu::x64::jit_g
     OPENVINO_ASSERT(kernel, "jit_kernel_static_emitter expectes KernelStatic expression");
     data_offsets = kernel->get_data_offsets();
     master_shape = body.get_master_shape();
+    // Note: plugin can prepend master shape with 1 to facilitate parallel execution (usually up to 6D tensor)
+    //       so we have to reproduce this behavior here
+    master_shape.insert(master_shape.begin(), jcp.parallel_executor_ndims - master_shape.size(), 1);
 
     // Initialize pools of gp and vec registers
     // Reserve abi_param1 and abi_param2, since they'll be used to pass runtime call args to kernel

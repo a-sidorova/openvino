@@ -7,6 +7,7 @@
 #include "jit_container_emitter.hpp"
 
 #include "jit_snippets_dynamic_emitter.hpp"
+#include "jit_snippets_call_args.hpp"
 #include "snippets/op/loop.hpp"
 
 namespace ov {
@@ -48,6 +49,7 @@ protected:
     */
     void init_reg_pools(const std::set<size_t>& gpr_blacklist, const std::set<size_t>& vec_blacklist);
 
+    jit_snippets_compile_args jcp;
     // gpr's used to store data pointers, track them to apply offsets in Kernel
     std::vector<size_t> data_ptr_regs_idx;
     std::vector<size_t> vec_regs_pool;
