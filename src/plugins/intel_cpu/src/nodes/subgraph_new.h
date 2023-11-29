@@ -87,6 +87,9 @@ private:
 
     std::vector<std::vector<int64_t>> data_offsets;
     std::vector<jit_snippets_call_args::loop_args_t> loop_args;
+    // Holds index of output used as in execution domain
+    // it should be compatible with a schedule's work size
+    std::vector<size_t> parallel_exec_domain = {};
 
     size_t tensor_rank = 0;
     bool is_dynamic = false;

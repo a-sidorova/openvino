@@ -428,6 +428,7 @@ void Subgraph::prepareParams() {
         }
     }
     data_offsets = runtime_config.get_data_offsets();
+    parallel_exec_domain = getNormalizedDimsBySize(snippetAttrs.snippet->get_parallel_exec_domain(), tensor_rank);
 }
 
 void Subgraph::update_ptrs(jit_snippets_call_args& call_args,
@@ -461,7 +462,7 @@ void Subgraph::update_ptrs(jit_snippets_call_args& call_args,
 }
 
 void Subgraph::execute(dnnl::stream strm) {
-     const auto& dom = snippetAttrs.snippet->get_parallel_exec_domain();
+    const auto& dom = parallel_exec_domain;
     // < N, C, H, W > < 1, 1, N, C*H*W>
     const auto& callable = schedule.get_callable<dynamic_kernel>();
 
