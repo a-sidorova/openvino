@@ -491,7 +491,8 @@ Subgraph::SnippetJitExecutor::SnippetJitExecutor(SnippetAttrs attrs, bool is_dyn
     CPU_REGISTER_PASS_X64(control_flow_pipeline, ov::intel_cpu::pass::SetBrgemmCopyBBuffersShape);
     schedule = snippet_attrs.snippet->generate_from_linear_ir(control_flow_markup_pipeline,
                                                               control_flow_pipeline,
-                                                              reinterpret_cast<const void*>(&jcp));
+                                                              reinterpret_cast<const void*>(&jcp),
+                                                              is_dynamic);
 }
 
 void Subgraph::SnippetJitExecutor::prepare() {

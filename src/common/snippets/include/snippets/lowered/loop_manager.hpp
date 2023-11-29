@@ -84,6 +84,8 @@ public:
     size_t get_loop_count() const { return m_map.size(); }
     const std::map<size_t, LoopInfoPtr>& get_map() const;
 
+    void set_force_dynamism(bool force_dynamic) { m_force_dynamic = force_dynamic; }
+
     // Return outer Loop IDs
     static std::vector<size_t> get_outer_expr_loops(const ExpressionPtr& expr, size_t loop_id);
 
@@ -98,7 +100,8 @@ public:
                     const std::vector<T>& entries,
                     const std::vector<T>& exits,
                     bool is_dynamic) {
-        const auto loop_info = std::make_shared<LoopManager::LoopInfo>(work_amount, work_amount_increment, dim_idx, entries, exits, is_dynamic);
+        const auto loop_info = std::make_shared<LoopManager::LoopInfo>(work_amount, work_amount_increment, dim_idx,
+                                                                       entries, exits, m_force_dynamic || is_dynamic);
         const auto loop_id = this->add_loop_info(loop_info);
         for (auto expr_it = loop_begin_pos; expr_it != loop_end_pos; ++expr_it) {
             insert_loop_id(*expr_it, loop_id);
@@ -177,6 +180,8 @@ private:
 
     std::map<size_t, LoopInfoPtr> m_map = {};
     size_t next_id = 0;
+    // If True, control-flow operations are forced as dynamic
+    bool m_force_dynamic = false;
 };
 
 } // namespace lowered

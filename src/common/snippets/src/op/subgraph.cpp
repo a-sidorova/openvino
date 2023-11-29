@@ -493,15 +493,15 @@ snippets::Schedule Subgraph::generate(const BlockedShapeVector& blocked_input_sh
                                       const lowered::pass::PassPipeline& backend_passes_pre_common,
                                       const lowered::pass::PassPipeline& backend_passes_post_common,
                                       const std::shared_ptr<IShapeInferSnippetsFactory>& factory,
-                                      const void* compile_params) {
+                                      const void* compile_params, bool force_dynamic) {
     data_flow_transformations(blocked_input_shapes, input_precisions, output_precisions, data_flow_backend_passes);
     convert_body_to_linear_ir(factory);
-    return generate_from_linear_ir(backend_passes_pre_common, backend_passes_post_common, compile_params);
+    return generate_from_linear_ir(backend_passes_pre_common, backend_passes_post_common, compile_params, force_dynamic);
 }
 
 snippets::Schedule Subgraph::generate_from_linear_ir(const lowered::pass::PassPipeline& backend_passes_pre_common,
                                                      const lowered::pass::PassPipeline& backend_passes_post_common,
-                                                     const void* compile_params) {
+                                                     const void* compile_params, bool force_dynamic) {
     INTERNAL_OP_SCOPE(Subgraph);
     OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "Snippets::op::generate")
     OPENVINO_ASSERT(m_generator != nullptr, "generate is called while generator is not set");
@@ -510,6 +510,7 @@ snippets::Schedule Subgraph::generate_from_linear_ir(const lowered::pass::PassPi
     // Note: some transformations performed in the generator, e.g. tail insertion, can break shape propagation
     //  until we fix this behavior, we have to make a copy of LIR before giving it to the generator.
     OPENVINO_ASSERT(m_linear_ir, "Attempt to call generate, when linear IR was not initialized");
+    m_linear_ir->set_force_dynamism(force_dynamic);
 
     LoweringResult lowering_result;
     control_flow_transformations(*m_linear_ir, lowering_result, backend_passes_pre_common, backend_passes_post_common);

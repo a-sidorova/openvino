@@ -109,8 +109,8 @@ void InitLoops::init_data_size(LinearIR::LoopManager::LoopPort& loop_port) {
 }
 
 void InitLoops::init_work_amount(const LinearIR::LoopManager::LoopInfoPtr& loop_info) {
-    if (!utils::is_dynamic_vdim(loop_info->work_amount))
-        return;
+    //if (!utils::is_dynamic_vdim(loop_info->work_amount))
+    //    return;
 
     auto broadcast = [](size_t& lhs_value, const size_t& rhs_value) -> void {
         if (lhs_value == rhs_value || lhs_value == 1 || utils::is_dynamic_vdim(lhs_value)) {

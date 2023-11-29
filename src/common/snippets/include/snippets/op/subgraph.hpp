@@ -106,11 +106,11 @@ public:
                                 const lowered::pass::PassPipeline& control_flow_passes_pre_common = {},
                                 const lowered::pass::PassPipeline& control_flow_passes_post_common = {},
                                 const std::shared_ptr<IShapeInferSnippetsFactory>& factory = nullptr,
-                                const void* compile_params = nullptr);
+                                const void* compile_params = nullptr, bool force_dynamic = false);
 
     snippets::Schedule generate_from_linear_ir(const lowered::pass::PassPipeline& backend_passes_pre_common = {},
                                                const lowered::pass::PassPipeline& backend_passes_post_common = {},
-                                               const void* compile_params = nullptr);
+                                               const void* compile_params = nullptr, bool force_dynamic = false);
     IShapeInferSnippets::Result shape_infer(const std::vector<VectorDimsRef>& input_shapes);
 
     // plugin sets generator for a snippet to some specific generator.

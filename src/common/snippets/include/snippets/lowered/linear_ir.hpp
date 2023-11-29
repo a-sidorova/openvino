@@ -30,6 +30,8 @@ public:
     // Minimal advised work amount that should be processed during one call of the executable produced by Subgraph::generate
     // Set by a backend, should be large enough to compensate for the kernel call overheads
     size_t m_min_kernel_work_amount = 256;
+    // If True, control-flow operations are forced as dynamic
+    bool m_force_dynamic = false;
 };
 
 /* The control flow of Snippets is built on Linear Intermediate Representation (Linear IR).
@@ -63,6 +65,7 @@ public:
     void set_tensor_rank(size_t tensor_rank) { m_config.m_tensor_rank = tensor_rank; }
     void set_min_parallel_work_amount(size_t min_parallel_work_amount) { m_config.m_min_parallel_work_amount = min_parallel_work_amount; }
     void set_min_kernel_work_amount(size_t min_kernel_work_amount) { m_config.m_min_kernel_work_amount = min_kernel_work_amount; }
+    void set_force_dynamism(bool force_dynamic);
 
     const ExpressionPtr& get_expr_by_node(const std::shared_ptr<Node>& n) const;
 
