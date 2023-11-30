@@ -74,8 +74,8 @@ bool OptimizeDomain::run(snippets::lowered::LinearIR& linear_ir) {
     if (linear_ir.empty())
         return false;
     m_tile_rank = 1;
-    // todo: temporaly disable domain optimization, since this transformation is irrelevant for dynamic code path
-    if (true || !config.m_enable_domain_optimization) {
+
+    if (linear_ir.is_dynamic() || !config.m_enable_domain_optimization) {
         // Note: this is a special case: if optimization is not allowed, always assume 2D tile
         m_tile_rank = 2;
         return false;

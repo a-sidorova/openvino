@@ -85,7 +85,7 @@
 #include "nodes/ctc_greedy_decoder.h"
 #include "nodes/non_zero.h"
 #include "nodes/color_convert.h"
-#include "nodes/subgraph_new.h"
+#include "nodes/subgraph.h"
 #include "nodes/priorbox.h"
 #include "nodes/priorbox_clustered.h"
 #include "nodes/eye.h"

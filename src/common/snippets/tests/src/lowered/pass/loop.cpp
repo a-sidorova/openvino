@@ -14,6 +14,7 @@
 #include "snippets/lowered/pass/insert_loops.hpp"
 #include "snippets/lowered/pass/insert_tail_loop.hpp"
 #include "snippets/shape_inference/shape_inference.hpp"
+#include "snippets/runtime_config.hpp"
 
 #include "snippets/op/loop.hpp"
 
@@ -48,6 +49,7 @@ static void init_linear_ir(const std::vector<ov::PartialShape>& in_shapes, Linea
     loop_manager->mark_loop(expr_it, std::next(expr_it), blocked_wa, blocked_inc, 1, loop_entry_points, loop_exit_points);
     const auto loop_id = loop_manager->mark_loop(expr_it, std::next(expr_it), outer_wa, outer_inc, 1, loop_entry_points, loop_exit_points);
     loop_manager->get_loop_info(loop_id)->outer_splited_loop = true;
+    linear_ir.set_tensor_rank(in_shapes.front().size());
 }
 
 static void init_pipeline(pass::PassPipeline& pass_pipeline) {
@@ -118,8 +120,11 @@ TEST(Snippets_TailProcessingTransformation, BlockedTail_OriginalPtrShifts) {
 
     pass::PassPipeline pass_pipeline;
     init_pipeline(pass_pipeline);
-    pass_pipeline.register_pass<pass::InsertTailLoop>();
     pass_pipeline.run(linear_ir);
+
+    ov::snippets::RuntimeConfig runtime_config;
+    runtime_config.update(linear_ir);
+    pass::InsertTailLoop(runtime_config).run(linear_ir);
 
     // [Inserted Loop number, [ptr_increments, final_offsets]
     std::map<size_t, std::pair<std::vector<int64_t>, std::vector<int64_t>>> reference;
@@ -145,8 +150,11 @@ TEST(Snippets_TailProcessingTransformation, BlockedTail_CleanUpPtrShifts) {
     pass::PassPipeline pass_pipeline;
     init_pipeline(pass_pipeline);
     pass_pipeline.register_pass<pass::CleanupLoopOffsets>();
-    pass_pipeline.register_pass<pass::InsertTailLoop>();
     pass_pipeline.run(linear_ir);
+
+    ov::snippets::RuntimeConfig runtime_config;
+    runtime_config.update(linear_ir);
+    pass::InsertTailLoop(runtime_config).run(linear_ir);
 
     // [Inserted Loop number, [ptr_increments, final_offsets]
     std::map<size_t, std::pair<std::vector<int64_t>, std::vector<int64_t>>> reference;

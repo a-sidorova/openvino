@@ -106,11 +106,9 @@ public:
                                 const lowered::pass::PassPipeline& control_flow_passes_pre_common = {},
                                 const lowered::pass::PassPipeline& control_flow_passes_post_common = {},
                                 const std::shared_ptr<IShapeInferSnippetsFactory>& factory = nullptr,
-                                const void* compile_params = nullptr, bool force_dynamic = false);
+                                const void* compile_params = nullptr);
 
-    snippets::Schedule generate_from_linear_ir(const lowered::pass::PassPipeline& backend_passes_pre_common = {},
-                                               const lowered::pass::PassPipeline& backend_passes_post_common = {},
-                                               const void* compile_params = nullptr, bool force_dynamic = false);
+    snippets::Schedule generate_from_linear_ir(const void* compile_params = nullptr);
     IShapeInferSnippets::Result shape_infer(const std::vector<VectorDimsRef>& input_shapes);
 
     // plugin sets generator for a snippet to some specific generator.
@@ -146,15 +144,15 @@ public:
                                    const std::vector<snippets::pass::Manager::PositionedPass>& = {});
     std::shared_ptr<lowered::LinearIR>
     convert_body_to_linear_ir(const std::shared_ptr<IShapeInferSnippetsFactory>& shape_infer_factory = std::make_shared<IShapeInferSnippetsFactory>());
+
+    void control_flow_transformations(const lowered::pass::PassPipeline& backend_passes_pre_common,
+                                      const lowered::pass::PassPipeline& backend_passes_post_common);
+
     std::shared_ptr<Subgraph> clone() const;
 
     RuntimeConfig configure();
 
 private:
-    void control_flow_transformations(lowered::LinearIR& linear_ir,
-                                      LoweringResult& lowering_result,
-                                      const lowered::pass::PassPipeline& backend_passes_pre_common,
-                                      const lowered::pass::PassPipeline& backend_passes_post_common) const;
     void init_config();
     // Count of Subgraph virtual ports:
     //  - Potential non-scalar Constants that will be created after some transformations (At the moment it's relevant only for FakeQuantize decomposition)
@@ -191,6 +189,7 @@ private:
 
     std::shared_ptr<ShapeInferSnippetsNode> m_shape_infer = nullptr;
     RuntimeConfig m_runtime_config;
+    size_t m_buffer_scratchpad_size;
 
     class OVShapeInfer : public ShapeInferSnippetsNode {
         std::shared_ptr<ov::Model> m_ov_body;

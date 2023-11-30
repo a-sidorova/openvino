@@ -86,11 +86,6 @@ ov::NodeVector LinearIR::get_ordered_ops(const std::shared_ptr<ov::Model>& m) {
     return ov::topological_sort(nodes);
 }
 
-void LinearIR::set_force_dynamism(bool force_dynamic) {
-    m_config.m_force_dynamic = force_dynamic;
-    m_loop_manager->set_force_dynamism(force_dynamic);
-}
-
 void LinearIR::serialize(const std::string& xml, const std::string& bin) const {
     auto first_node = std::make_shared<ov::op::v0::Parameter>(element::f32, Shape{});
     first_node->set_friendly_name("Start");
@@ -352,16 +347,17 @@ VectorDims LinearIR::get_master_shape() const {
 }
 
 bool LinearIR::is_dynamic() const {
-    if (m_config.m_force_dynamic)
-        return true;
-
     for (const auto& ioe : m_io_expressions) {
         if (ioe->get_type() == IOExpression::io_type::INPUT && utils::is_dynamic_vdims(ioe->get_output_port_descriptor(0)->get_shape()))
             return true;
         if (ioe->get_type() == IOExpression::io_type::OUTPUT && utils::is_dynamic_vdims(ioe->get_input_port_descriptor(0)->get_shape()))
             return true;
     }
-    return false;
+    return std::any_of(m_expressions.cbegin(), m_expressions.cend(),
+                       [](const ExpressionPtr& expr) {
+                            return ov::is_type<op::LoopBeginDynamic>(expr->get_node()) ||
+                                   ov::is_type<op::LoopEndDynamic>(expr->get_node());
+                       });
 }
 
 void LinearIR::update_shape_infer() {

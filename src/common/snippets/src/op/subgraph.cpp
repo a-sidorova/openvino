@@ -433,24 +433,24 @@ void Subgraph::data_flow_transformations(const BlockedShapeVector& blocked_input
     manager.run_passes(body_ptr());
 }
 
-void Subgraph::control_flow_transformations(lowered::LinearIR& linear_ir,
-                                            LoweringResult& lowering_result,
-                                            const lowered::pass::PassPipeline& backend_passes_pre_common,
-                                            const lowered::pass::PassPipeline& backend_passes_post_common) const {
+void Subgraph::control_flow_transformations(const lowered::pass::PassPipeline& backend_passes_pre_common,
+                                            const lowered::pass::PassPipeline& backend_passes_post_common) {
     INTERNAL_OP_SCOPE(Subgraph);
     OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "Snippets::op::control_flow_transformations")
 
+    OPENVINO_ASSERT(m_linear_ir, "Attempt to call control_flow_transformations, when linear IR was not initialized");
+
     // Domain optimization must be the first pass, because all other transformations may depend on PortDescriptor shapes
     size_t loop_depth = 1;
-    lowered::pass::OptimizeDomain(loop_depth).run(linear_ir);
-    linear_ir.set_loop_depth(loop_depth);
+    lowered::pass::OptimizeDomain(loop_depth).run(*m_linear_ir);
+    m_linear_ir->set_loop_depth(loop_depth);
 
     const size_t vector_size = get_generator()->get_target_machine()->get_lanes();
-    const int32_t buffer_allocation_rank = static_cast<int32_t>(linear_ir.get_config().m_loop_depth);
+    const int32_t buffer_allocation_rank = static_cast<int32_t>(m_linear_ir->get_config().m_loop_depth);
 
     // Ticket: 113666
     // TODO: Make pass pipeline with backend passes more flexible
-    backend_passes_pre_common.run(linear_ir);
+    backend_passes_pre_common.run(*m_linear_ir);
 
     lowered::pass::PassPipeline common_pipeline;
     common_pipeline.register_pass<lowered::pass::MarkLoops>(vector_size);
@@ -467,23 +467,27 @@ void Subgraph::control_flow_transformations(lowered::LinearIR& linear_ir,
     common_pipeline.register_pass<lowered::pass::ValidateLoops>();
     common_pipeline.register_pass<lowered::pass::InitLoops>();
     common_pipeline.register_pass<lowered::pass::InsertLoops>();
-    common_pipeline.run(linear_ir);
+    common_pipeline.run(*m_linear_ir);
 
-    backend_passes_post_common.run(linear_ir);
+    backend_passes_post_common.run(*m_linear_ir);
 
     const auto buffer_allocation_pass = std::make_shared<lowered::pass::AllocateBuffers>();
     lowered::pass::PassPipeline buffer_pipeline;
     buffer_pipeline.register_pass<lowered::pass::IdentifyBuffers>();
     buffer_pipeline.register_pass<lowered::pass::CleanRepeatedDataPointerShifts>();
     buffer_pipeline.register_pass(buffer_allocation_pass);
-    buffer_pipeline.run(linear_ir);
+    buffer_pipeline.run(*m_linear_ir);
 
     lowered::pass::PassPipeline final_pipeline;
     final_pipeline.register_pass<lowered::pass::CleanupLoopOffsets>();
     final_pipeline.register_pass<lowered::pass::NormalizeLoopIDs>();
-    final_pipeline.run(linear_ir);
+    final_pipeline.run(*m_linear_ir);
 
-    lowering_result.buffer_scratchpad_size = buffer_allocation_pass->get_scratchpad_size();
+    m_buffer_scratchpad_size = buffer_allocation_pass->get_scratchpad_size();
+
+    // After transformations need to update shape infer
+    m_linear_ir->update_shape_infer();
+    m_shape_infer = m_linear_ir->get_shape_infer_instance();
 }
 
 snippets::Schedule Subgraph::generate(const BlockedShapeVector& blocked_input_shapes,
@@ -493,15 +497,14 @@ snippets::Schedule Subgraph::generate(const BlockedShapeVector& blocked_input_sh
                                       const lowered::pass::PassPipeline& backend_passes_pre_common,
                                       const lowered::pass::PassPipeline& backend_passes_post_common,
                                       const std::shared_ptr<IShapeInferSnippetsFactory>& factory,
-                                      const void* compile_params, bool force_dynamic) {
+                                      const void* compile_params) {
     data_flow_transformations(blocked_input_shapes, input_precisions, output_precisions, data_flow_backend_passes);
     convert_body_to_linear_ir(factory);
-    return generate_from_linear_ir(backend_passes_pre_common, backend_passes_post_common, compile_params, force_dynamic);
+    control_flow_transformations(backend_passes_pre_common, backend_passes_post_common);
+    return generate_from_linear_ir(compile_params);
 }
 
-snippets::Schedule Subgraph::generate_from_linear_ir(const lowered::pass::PassPipeline& backend_passes_pre_common,
-                                                     const lowered::pass::PassPipeline& backend_passes_post_common,
-                                                     const void* compile_params, bool force_dynamic) {
+snippets::Schedule Subgraph::generate_from_linear_ir(const void* compile_params) {
     INTERNAL_OP_SCOPE(Subgraph);
     OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "Snippets::op::generate")
     OPENVINO_ASSERT(m_generator != nullptr, "generate is called while generator is not set");
@@ -510,13 +513,9 @@ snippets::Schedule Subgraph::generate_from_linear_ir(const lowered::pass::PassPi
     // Note: some transformations performed in the generator, e.g. tail insertion, can break shape propagation
     //  until we fix this behavior, we have to make a copy of LIR before giving it to the generator.
     OPENVINO_ASSERT(m_linear_ir, "Attempt to call generate, when linear IR was not initialized");
-    m_linear_ir->set_force_dynamism(force_dynamic);
 
     LoweringResult lowering_result;
-    control_flow_transformations(*m_linear_ir, lowering_result, backend_passes_pre_common, backend_passes_post_common);
-
-    m_linear_ir->update_shape_infer();
-    m_shape_infer = m_linear_ir->get_shape_infer_instance();
+    lowering_result.buffer_scratchpad_size = m_buffer_scratchpad_size;
 
     const auto parallel_exec_domain = get_parallel_exec_domain();
 
