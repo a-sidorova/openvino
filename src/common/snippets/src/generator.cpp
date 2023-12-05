@@ -22,6 +22,19 @@ void Generator::generate(lowered::LinearIR& linear_ir, LoweringResult& result, c
     if (!target->is_supported())
         OPENVINO_THROW("unsupported architecture for code generation");
 
+    // TODO: SCALAR LOAD STORE
+    for (const auto& expr : linear_ir) {
+        if (const auto load = ov::as_type_ptr<op::Load>(expr->get_node())) {
+            if (expr->get_input_port_descriptor(0)->get_shape().back() == 1) {
+                load->set_count(1);
+            }
+        } else if (const auto store = ov::as_type_ptr<op::Store>(expr->get_node())) {
+            if (expr->get_output_port_descriptor(0)->get_shape().back() == 1) {
+                store->set_count(1);
+            }
+        }
+    }
+
     RuntimeConfig runtime_config;
     runtime_config.update(linear_ir);
 

@@ -33,7 +33,7 @@ int64_t get_input_stride(size_t dim, const std::vector<size_t>& layout, const Ve
 int64_t get_output_stride(size_t dim, const VectorDims& shape) {
     int64_t stride = 1;
     for (size_t i = dim + 1; i < shape.size(); ++i) {
-        if (utils::is_dynamic_vdim(shape[shape[i]])) {
+        if (utils::is_dynamic_vdim(shape[i])) {
             return LoopPort::DYNAMIC_VALUE;
         }
         stride *= static_cast<int64_t>(shape[i]);
@@ -113,10 +113,10 @@ void InitLoops::init_work_amount(const LinearIR::LoopManager::LoopInfoPtr& loop_
         return;
 
     auto broadcast = [](size_t& lhs_value, const size_t& rhs_value) -> void {
-        if (lhs_value == rhs_value || lhs_value == 1 || utils::is_dynamic_vdim(lhs_value)) {
+        if (lhs_value == rhs_value || lhs_value == 1 || utils::is_dynamic_vdim(rhs_value)) {
             lhs_value = rhs_value;
             return;
-        } else if (rhs_value == 1 || utils::is_dynamic_vdim(rhs_value)) {
+        } else if (rhs_value == 1 || utils::is_dynamic_vdim(lhs_value)) {
             return;
         }
         OPENVINO_THROW("Dimensions of shapes aren't broadcastable for work amount initialization!");

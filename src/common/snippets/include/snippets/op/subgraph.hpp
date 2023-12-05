@@ -105,10 +105,12 @@ public:
                                 const std::vector<pass::Manager::PositionedPass>& data_flow_passes = {},
                                 const lowered::pass::PassPipeline& control_flow_passes_pre_common = {},
                                 const lowered::pass::PassPipeline& control_flow_passes_post_common = {},
+                                const lowered::pass::PassPipeline& control_flow_passes_pre_generate = {},
                                 const std::shared_ptr<IShapeInferSnippetsFactory>& factory = nullptr,
                                 const void* compile_params = nullptr);
 
-    snippets::Schedule generate_from_linear_ir(const void* compile_params = nullptr);
+    snippets::Schedule generate_from_linear_ir(const lowered::pass::PassPipeline& control_flow_passes_pre_generate = {},
+                                               const void* compile_params = nullptr);
     IShapeInferSnippets::Result shape_infer(const std::vector<VectorDimsRef>& input_shapes);
 
     // plugin sets generator for a snippet to some specific generator.

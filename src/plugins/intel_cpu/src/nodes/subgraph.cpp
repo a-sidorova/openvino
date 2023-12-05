@@ -9,6 +9,8 @@
 #include "snippets/pass/hash.hpp"
 #include "snippets/pass/matmul_to_brgemm.hpp"
 #include "snippets/lowered/pass/pass.hpp"
+#include "snippets/lowered/pass/insert_broadcastmove.hpp"
+#include "snippets/lowered/pass/load_movebroadcast_to_broadcastload.hpp"
 
 #include "emitters/x64/snippets/cpu_generator.hpp"
 
@@ -416,6 +418,7 @@ bool Subgraph::needPrepareParams() const {
 
 void Subgraph::prepareParams() {
     SnippetKey key = {snippetAttrs};
+    key.attrs.broadcasting_mask = get_blocked_broadcasting_mask();
 
     auto builder = [this](const SnippetKey& key) -> std::shared_ptr<SnippetExecutor> {
         std::shared_ptr<SnippetExecutor> executor =
@@ -428,6 +431,17 @@ void Subgraph::prepareParams() {
     execPtr = result.first;
     OPENVINO_ASSERT(execPtr != nullptr, "Executor is not created for node ", getName(), ".");
     execPtr->prepare();
+}
+
+size_t Subgraph::get_blocked_broadcasting_mask() {
+    size_t mask = 0;
+    // TODO: add check for non-eltwise inputs
+    for (const auto& memptr : srcMemPtrs) {
+        mask = mask << 1;
+        if (memptr->getDescWithType<BlockedMemoryDesc>()->getBlockDims().back() == 1)
+            mask = mask | 1;
+    }
+    return mask;
 }
 
 void Subgraph::execute(dnnl::stream strm) {
@@ -488,9 +502,13 @@ Subgraph::SnippetExecutor::SnippetExecutor(SnippetAttrs attrs, bool is_dynamic, 
 Subgraph::SnippetJitExecutor::SnippetJitExecutor(SnippetAttrs attrs, bool is_dynamic, size_t tensor_rank,
                                                  const std::vector<ptrdiff_t>& start_offset_in, const std::vector<ptrdiff_t>& start_offset_out)
     : SnippetExecutor(attrs, is_dynamic, tensor_rank, start_offset_in, start_offset_out) {
+    ov::snippets::lowered::pass::PassPipeline custom_control_flow_pipeline;
+    custom_control_flow_pipeline.register_pass<ov::snippets::lowered::pass::InsertBroadcastMove>();
+    custom_control_flow_pipeline.register_pass<ov::snippets::lowered::pass::LoadMoveBroadcastToBroadcastLoad>();
+
     jit_snippets_compile_args jcp;
     jcp.parallel_executor_ndims = tensor_rank;
-    schedule = snippet_attrs.snippet->generate_from_linear_ir(reinterpret_cast<const void*>(&jcp));
+    schedule = snippet_attrs.snippet->generate_from_linear_ir(custom_control_flow_pipeline, reinterpret_cast<const void*>(&jcp));
 }
 
 void Subgraph::SnippetJitExecutor::prepare() {

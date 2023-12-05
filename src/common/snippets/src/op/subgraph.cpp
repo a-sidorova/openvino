@@ -496,15 +496,17 @@ snippets::Schedule Subgraph::generate(const BlockedShapeVector& blocked_input_sh
                                       const std::vector<snippets::pass::Manager::PositionedPass>& data_flow_backend_passes,
                                       const lowered::pass::PassPipeline& backend_passes_pre_common,
                                       const lowered::pass::PassPipeline& backend_passes_post_common,
+                                      const lowered::pass::PassPipeline& control_flow_passes_pre_generate,
                                       const std::shared_ptr<IShapeInferSnippetsFactory>& factory,
                                       const void* compile_params) {
     data_flow_transformations(blocked_input_shapes, input_precisions, output_precisions, data_flow_backend_passes);
     convert_body_to_linear_ir(factory);
     control_flow_transformations(backend_passes_pre_common, backend_passes_post_common);
-    return generate_from_linear_ir(compile_params);
+    return generate_from_linear_ir(control_flow_passes_pre_generate, compile_params);
 }
 
-snippets::Schedule Subgraph::generate_from_linear_ir(const void* compile_params) {
+snippets::Schedule Subgraph::generate_from_linear_ir(const lowered::pass::PassPipeline& control_flow_passes_pre_generate,
+                                                     const void* compile_params) {
     INTERNAL_OP_SCOPE(Subgraph);
     OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "Snippets::op::generate")
     OPENVINO_ASSERT(m_generator != nullptr, "generate is called while generator is not set");
@@ -519,8 +521,12 @@ snippets::Schedule Subgraph::generate_from_linear_ir(const void* compile_params)
 
     const auto parallel_exec_domain = get_parallel_exec_domain();
 
-    auto generation_linear_ir = m_linear_ir->clone();
-    m_generator->generate(*generation_linear_ir, lowering_result, compile_params);
+    auto generation_linear_ir = *(m_linear_ir->clone());
+    control_flow_passes_pre_generate.run(generation_linear_ir);
+    generation_linear_ir.serialize("/home/a-sidorova/projects/dynamism/openvino/lin.xml",
+                                   "/home/a-sidorova/projects/dynamism/openvino/lin.bin");
+
+    m_generator->generate(generation_linear_ir, lowering_result, compile_params);
 
     return {parallel_exec_domain, std::move(lowering_result)};
 }
