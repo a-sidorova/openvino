@@ -441,6 +441,10 @@ size_t Subgraph::get_blocked_broadcasting_mask() {
         if (memptr->getDescWithType<BlockedMemoryDesc>()->getBlockDims().back() == 1)
             mask = mask | 1;
     }
+    // If all input shapes have last dim `1` - there no broadcasting
+    const size_t full_mask = (1 << srcMemPtrs.size()) - 1;
+    if (mask == full_mask)
+        mask = 0;
     return mask;
 }
 
