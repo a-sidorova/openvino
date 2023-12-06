@@ -37,13 +37,13 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_Eltwise, Add,
 std::vector<InputShape> inShapesDynamic1{
         {
         {{ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()},
-        {{1, 3, 1, 10}, {1, 3, 10, 1}, {1, 3, 10, 35}, {1, 3, 10, 35}, {2, 2, 35, 1}}},
+        {{1, 16, 128, 256}, {1, 16, 256, 128}, {1, 16, 128, 256}, {1, 16, 128, 512}, {1, 16, 256, 128}, {1, 16, 128, 256}, {1, 16, 128, 256}, {1, 12, 128, 1}}},
         }
 };
 std::vector<InputShape> inShapesDynamic2{
         {
         {{ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()},
-        {{1, 3, 10, 10}, {1, 3, 1, 32}, {1, 3, 1, 35}, {1, 3, 10, 1}, {2, 1, 35, 35}}},
+        {{1, 16, 128, 256}, {1, 16, 256, 128}, {1, 16, 128, 1}, {1, 16, 128, 512}, {1, 16, 256, 128}, {1, 16, 128, 256}, {1, 16, 128, 1}, {1, 12, 128, 1}}},
         }
 };
 INSTANTIATE_TEST_SUITE_P(smoke_Snippets_Eltwise_Add, Add,
