@@ -523,8 +523,6 @@ snippets::Schedule Subgraph::generate_from_linear_ir(const lowered::pass::PassPi
 
     auto generation_linear_ir = *(m_linear_ir->clone());
     control_flow_passes_pre_generate.run(generation_linear_ir);
-    generation_linear_ir.serialize("/home/a-sidorova/projects/dynamism/openvino/lin.xml",
-                                   "/home/a-sidorova/projects/dynamism/openvino/lin.bin");
 
     m_generator->generate(generation_linear_ir, lowering_result, compile_params);
 

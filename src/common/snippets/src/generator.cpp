@@ -47,9 +47,6 @@ void Generator::generate(lowered::LinearIR& linear_ir, LoweringResult& result, c
     lowered_pipeline.run(linear_ir);
     linear_ir.init_emitters(target);
 
-    linear_ir.serialize("/home/a-sidorova/projects/dynamism/openvino/lin.xml",
-                        "/home/a-sidorova/projects/dynamism/openvino/lin.bin");
-
     OV_ITT_TASK_NEXT(GENERATE, "::EmitCode")
     std::shared_ptr<op::Kernel> kernel_op = nullptr;
     if (linear_ir.is_dynamic())
