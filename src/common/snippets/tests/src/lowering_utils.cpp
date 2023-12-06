@@ -116,7 +116,7 @@ std::shared_ptr<ov::snippets::op::Subgraph>
     subgraph->set_tile_rank(2);
     subgraph->set_tensor_rank(6); //TODO
     // Note: lowered_pipeline would have no effect on subgraph body, since it's applied on linear IR
-    subgraph->generate({}, {}, {}, backend_passes, lowered_pre_common, lowered_post_common, factory);
+    subgraph->generate({}, {}, {}, backend_passes, lowered_pre_common, lowered_post_common, ov::snippets::lowered::pass::PassPipeline(), factory);
     return subgraph;
 }
 
