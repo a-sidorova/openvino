@@ -53,7 +53,7 @@ public:
         // todo: used flag if we need extra shape infer, can be removed after [121670]
         bool has_non_planar_inputs;
         // broadcasting mask
-        size_t broadcasting_mask = SIZE_MAX;
+        uint8_t broadcasting_mask = UINT8_MAX;
     };
 
 private:
@@ -65,7 +65,7 @@ private:
     void init_snippets_blocked_shapes(snippets::op::Subgraph::BlockedShapeVector& in_blocked_shapes);
     void init_precisions(std::vector<ov::element::Type>& input_types, std::vector<ov::element::Type>& output_types);
     void generate();
-    size_t get_blocked_broadcasting_mask();
+    uint8_t get_blocked_broadcasting_mask();
 
     SnippetAttrs snippetAttrs;
     dnnl::impl::cpu::x64::cpu_isa_t host_isa;

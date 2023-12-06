@@ -433,8 +433,8 @@ void Subgraph::prepareParams() {
     execPtr->prepare();
 }
 
-size_t Subgraph::get_blocked_broadcasting_mask() {
-    size_t mask = 0;
+uint8_t Subgraph::get_blocked_broadcasting_mask() {
+    uint8_t mask = 0;
     // TODO: add check for non-eltwise inputs
     for (const auto& memptr : srcMemPtrs) {
         mask = mask << 1;
@@ -442,7 +442,7 @@ size_t Subgraph::get_blocked_broadcasting_mask() {
             mask = mask | 1;
     }
     // If all input shapes have last dim `1` - there no broadcasting
-    const size_t full_mask = (1 << srcMemPtrs.size()) - 1;
+    const uint8_t full_mask = (1 << srcMemPtrs.size()) - 1;
     if (mask == full_mask)
         mask = 0;
     return mask;
