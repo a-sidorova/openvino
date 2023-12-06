@@ -296,17 +296,18 @@ void SubgraphBaseTest::configure_model() {
 
 void SubgraphBaseTest::compile_model() {
     if (is_report_stages) {
-        std::cout << "[ PLUGIN      ] `SubgraphBaseTest::compile_model()` is started" << std::endl;
+        //std::cout << "[ PLUGIN      ] `SubgraphBaseTest::compile_model()` is started" << std::endl;
     }
-    auto start_time = std::chrono::system_clock::now();
+    auto start_time = std::chrono::high_resolution_clock::now();
 
     configure_model();
     core_configuration(this);
     compiledModel = core->compile_model(function, targetDevice, configuration);
     if (is_report_stages) {
-        auto end_time = std::chrono::system_clock::now();
+        auto end_time = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> duration = end_time - start_time;
-        std::cout << "[ PLUGIN      ] `SubgraphBaseTest::compile_model()` is finished successfully. Duration is " << duration.count() << "s" << std::endl;
+        //std::cout << "[ PLUGIN      ] `SubgraphBaseTest::compile_model()` is finished successfully. Duration is " << duration.count() << "s" << std::endl;
+        std::cout << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << std::endl;
     }
 }
 
@@ -453,17 +454,16 @@ std::vector<ov::Tensor> SubgraphBaseTest::get_plugin_outputs() {
     if (is_report_stages) {
         std::cout << "[ PLUGIN      ] `SubgraphBaseTest::get_plugin_outputs()` is started"<< std::endl;
     }
-    auto start_time = std::chrono::system_clock::now();
+    auto start_time = std::chrono::high_resolution_clock::now();
 
     infer();
     auto outputs = std::vector<ov::Tensor>{};
     for (const auto& output : function->outputs()) {
         outputs.push_back(inferRequest.get_tensor(output));
     }
-    if (is_report_stages) {
-        auto end_time = std::chrono::system_clock::now();
-        std::chrono::duration<double> duration = end_time - start_time;
-        std::cout << "[ PLUGIN      ] `SubgraphBaseTest::get_plugin_outputs()` is finished successfully. Duration is " << duration.count() << "s" << std::endl;
+    if (true) {
+        auto end_time = std::chrono::high_resolution_clock::now();
+        std::cout << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << std::endl;
     }
     return outputs;
 }

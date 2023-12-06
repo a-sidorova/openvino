@@ -274,12 +274,12 @@ void compare(const ov::Tensor& expected,
             }
         }
     }
-    if (!std::isnan(abs_threshold)) {
-        std::cout << "[ COMPARATION ] rel_threshold: " << rel_threshold << std::endl;
-    }
-    if (!std::isnan(rel_threshold)) {
-        std::cout << "[ COMPARATION ] abs_threshold: " << abs_threshold << std::endl;
-    }
+    //if (!std::isnan(abs_threshold)) {
+    //    std::cout << "[ COMPARATION ] rel_threshold: " << rel_threshold << std::endl;
+    //}
+    //if (!std::isnan(rel_threshold)) {
+    //    std::cout << "[ COMPARATION ] abs_threshold: " << abs_threshold << std::endl;
+    //}
 
     Error abs_error(abs_threshold), rel_error(rel_threshold);
     for (size_t i = 0; i < shape_size_cnt; ++i) {
