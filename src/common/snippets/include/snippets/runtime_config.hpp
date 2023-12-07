@@ -80,6 +80,12 @@ private:
      */
     void init_loop_descriptors(const LinearIR::LoopManagerPtr& loop_manager);
     /**
+     * @brief Update the map of loops descriptors using LoopManager of LinearIR.
+     *        The method `init_loop_descriptors` should be already called that inited desc map.
+     * @param loop_manager LoopManager of needed LinearIR
+     */
+    void update_loop_descriptors(const LinearIR::LoopManagerPtr& loop_manager);
+    /**
      * @brief Optimize loop data shifts if loop evaluate once
      */
     void optimize_single_evaluation();
@@ -100,30 +106,35 @@ private:
     /**
      * @brief Initialize the vector loop descriptor
      * @param loop_info loop information of the corresponding loop
+     * @param loop_id id of the target Loop
      * @param vector_loop_desc ref of the vector loop descriptor which should be inited
-     * @return True if the descriptor has been inited otherwise returns False
      */
-    bool get_vector_loop_descriptor(const LinearIR::LoopManager::LoopInfoPtr& loop_info, LoopDescriptor& vector_loop_desc);
+    void init_vector_loop_descriptor(const LinearIR::LoopManager::LoopInfoPtr& loop_info, size_t loop_id, LoopDescriptor& vector_loop_desc);
     /**
      * @brief Initialize the tail loop descriptor
      * @param loop_info loop information of the corresponding loop
-     * @param vector_loop_desc ref of the vector loop descriptor which may be updated after splitting to vector and tail loops
+     * @param loop_id id of the target Loop
      * @param tail_loop_desc ref of the tail loop descriptor which should be inited
-     * @return True if the descriptor has been inited otherwise returns False
      */
-    bool get_tail_loop_descriptor(const LinearIR::LoopManager::LoopInfoPtr& loop_info, LoopDescriptor& vector_loop_desc, LoopDescriptor& tail_loop_desc);
+    void init_tail_loop_descriptor(const LinearIR::LoopManager::LoopInfoPtr& loop_info, size_t loop_id, LoopDescriptor& tail_loop_desc);
     /**
      * @brief Initialize the inner tail splited loops
      * @param loop_manager LoopManager of needed LinearIR
      * @param outer_splited_loop_info loop information of the outer splited loop
      * @param outer_splited_tail_loop_desc tail descriptor of the outer splited loop
      * @param outer_loop_id ID of the outer splited loop
-     * @param is_outer_vector_loop_needed bool value if outer splited loop has vector loop
      */
     void init_inner_splited_tail_loop_descriptors(const LinearIR::LoopManagerPtr& loop_manager,
                                                   const LinearIR::LoopManager::LoopInfoPtr& outer_splited_loop_info,
                                                   const LoopDescriptor& outer_splited_tail_loop_desc,
-                                                  size_t outer_loop_id, bool is_outer_vector_loop_needed);
+                                                  size_t outer_loop_id);
+    /**
+     * @brief Find the LoopDescriptor iterator by Loop ID and Type of descriptor.
+     * @param loop_id the corresponding loop ID
+     * @param type the type of Loop
+     * @return Iterator of vector with LoopDescriptors
+     */
+    std::vector<LoopDescriptor>::iterator get_loop_desc_it(size_t loop_id, LoopDescriptor::Type type);
     /**
      * @brief Check if vector loop is needed
      * @param loop_info loop information of the corresponding loop
