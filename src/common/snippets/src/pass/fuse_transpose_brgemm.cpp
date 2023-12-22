@@ -62,9 +62,9 @@ FuseTransposeBrgemm::FuseTransposeBrgemm() {
             const auto& const_order = ov::as_type_ptr<ov::op::v0::Constant>(transpose_out.get_node_shared_ptr()->get_input_node_shared_ptr(1));
             const auto& original_port = ov::snippets::lowered::PortDescriptorUtils::get_port_descriptor_ptr(brgemm_out);
             original_port->set_shape(transpose_out.get_shape());
-            original_port->set_layout(const_order->cast_vector<size_t>());
             for (const auto& in : transpose_out.get_target_inputs())
                 in.replace_source_output(brgemm->output(0));
+            brgemm->set_output_order(const_order->cast_vector<size_t>());
         }
 
         for (size_t i = 0; i < brgemm->get_input_size(); i++) {
@@ -76,7 +76,7 @@ FuseTransposeBrgemm::FuseTransposeBrgemm() {
                 brgemm->set_argument(i, transpose->input_value(0));
                 const auto& original_port = ov::snippets::lowered::PortDescriptorUtils::get_port_descriptor_ptr(in);
                 original_port->set_shape(transpose->get_input_shape(0));
-                original_port->set_layout(const_order->cast_vector<size_t>());
+                brgemm->set_input_order(const_order->cast_vector<size_t>(), i);
             }
         }
 

@@ -26,23 +26,24 @@ public:
     /**
     * @interface PortDescriptor
     * @brief This class describes port of MemoryAccess operation
-    * @param m_count - count of elements to load/store
-    * @param m_offset - starting index of elements to load/store
-    * @param m_index - port index
+    * @param count - count of elements to load/store
+    * @param offset - starting index of elements to load/store
+    * @param order - the order of data reading or writing by MemoryAccess ops.
     * @ingroup snippets
     */
     struct PortDescriptor {
-        PortDescriptor(size_t count, size_t offset) : count(count), offset(offset) {}
+        friend class MemoryAccess;
+
         PortDescriptor() = default;
+        PortDescriptor(size_t count, size_t offset, std::vector<size_t> order = {})
+            : count(count), offset(offset), order(std::move(order)) {}
 
         size_t count = 0lu;
         size_t offset = 0lu;
-        size_t index = 0lu;
-
-    private:
-        PortDescriptor(size_t count, size_t offset, size_t index) : count(count), offset(offset), index(index) {}
-
-        friend class MemoryAccess;
+        /// \brief It's the order of data reading or writing by MemoryAccess ops.
+        //         - Input port: `order` shows how the data should be read (by which strides) using shape
+        //         - Output port: `order` shows how the data should be written (by which strides) to get shape.
+        std::vector<size_t> order = {};
     };
     using PortMap = std::map<size_t, PortDescriptor>;
 
@@ -50,11 +51,15 @@ public:
     void set_output_count(size_t count, size_t idx = 0);
     void set_input_offset(size_t offset, size_t idx = 0);
     void set_output_offset(size_t offset, size_t idx = 0);
+    void set_input_order(std::vector<size_t> order, size_t idx = 0);
+    void set_output_order(std::vector<size_t> order, size_t idx = 0);
 
     size_t get_input_count(size_t idx = 0) const;
     size_t get_output_count(size_t idx = 0) const;
     size_t get_input_offset(size_t idx = 0) const;
     size_t get_output_offset(size_t idx = 0) const;
+    const std::vector<size_t>& get_input_order(size_t idx = 0) const;
+    const std::vector<size_t>& get_output_order(size_t idx = 0) const;
 
     PortMap get_memory_access_input_ports() const { return m_input_ports; }
     PortMap get_memory_access_output_ports() const { return m_output_ports; }
@@ -66,6 +71,25 @@ public:
     bool is_full_memory_access_op() const;
 
     bool visit_attributes(AttributeVisitor& visitor) override;
+
+    /**
+     * @brief Returns a dense shape after applying the order.
+     *        It means that the shape dimensions will be reordered in accordance with order indices to produce planar shape
+     * @param idx port index
+     * @return reordered partial shape: `planar_shape[i]` = `shape[order[i]]`
+     *         Example, shape = [16, 2, 32, 64], order = [2, 0, 1, 3]
+     *                  planar_shape = [32, 16, 2, 64]
+     */
+    ov::PartialShape get_input_planar_partial_shape(size_t idx) const;
+    /**
+     * @brief Returns original shape before applying the order.
+     *        It means that the shape dimensions have been already reordered in accordance with order indices to produce planar shape
+     * @param idx port index
+     * @return preordered partial shape: `shape[i]` = `planar_shape[order[i]]` where `shape` is shape before applying the order.
+     *         Example, shape = [16, 2, 32, 64], order = [2, 0, 1, 3]
+     *                  planar_shape = [2, 32, 16, 64]
+     */
+    ov::PartialShape get_output_preordered_partial_shape(size_t idx) const;
 
 protected:
     explicit MemoryAccess(const OutputVector& arguments, size_t input_count = 0, size_t output_count = 0);

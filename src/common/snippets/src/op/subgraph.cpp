@@ -33,7 +33,6 @@
 #include "snippets/lowered/pass/insert_broadcastmove.hpp"
 #include "snippets/lowered/pass/load_movebroadcast_to_broadcastload.hpp"
 #include "snippets/lowered/pass/allocate_buffers.hpp"
-#include "snippets/lowered/pass/propagate_layout.hpp"
 #include "snippets/lowered/pass/softmax_decomposition.hpp"
 #include "snippets/lowered/pass/move_scalar_to_consumer.hpp"
 #include "snippets/lowered/pass/move_result_out_of_loop.hpp"
@@ -325,11 +324,13 @@ VectorDims Subgraph::infer_master_shape() {
         OPENVINO_ASSERT(!output_dims.empty(), "Can't calculate master_shape before the first shape inference");
     } else {
         for (const auto& res : body_ptr()->get_results()) {
-            const auto& res_input = res->input(0);
-            OPENVINO_ASSERT(res_input.get_partial_shape().is_static(), "Result have dynamic shape in static pipeline");
-            // We need to account to the shape's layout stored in Output<Node> rt_info
-            const auto& planar_shape = utils::get_preordered_pshape(res_input.get_source_output());
-            output_dims.emplace_back(planar_shape.get_shape());
+            const auto& source = res->input_value(0);
+            OPENVINO_ASSERT(source.get_partial_shape().is_static(), "Result have dynamic shape in static pipeline");
+            if (const auto ma = ov::as_type_ptr<op::MemoryAccess>(source.get_node_shared_ptr())) {
+                output_dims.emplace_back(ma->get_output_preordered_partial_shape(source.get_index()).get_shape());
+            } else {
+                output_dims.emplace_back(source.get_partial_shape().get_shape());
+            }
         }
     }
 
@@ -465,7 +466,6 @@ void Subgraph::control_flow_transformations(lowered::LinearIR& linear_ir,
     lowered::pass::PassPipeline final_pipeline;
     final_pipeline.register_pass<lowered::pass::AllocateBuffers>(lowering_result.buffer_scratchpad_size, linear_ir.get_config().m_are_buffers_optimized);
     final_pipeline.register_pass<lowered::pass::CleanRepeatedDataPointerShifts>();
-    final_pipeline.register_pass<lowered::pass::PropagateLayout>();
     final_pipeline.run(linear_ir);
 }
 

@@ -163,12 +163,12 @@ Result HorizonOpShapeInfer::infer(const std::vector<VectorDimsRef>& input_shapes
 }
 
 BrgemmShapeInfer::BrgemmShapeInfer(const std::shared_ptr<Node>& n) {
-    for (const auto& in : n->inputs()) {
-        const auto& port = lowered::PortDescriptorUtils::get_port_descriptor_ptr(in);
-        m_io_layouts.push_back(port->get_layout());
+    const auto brgemm = ov::as_type_ptr<op::Brgemm>(n);
+    OPENVINO_ASSERT(brgemm, "BrgemmShapeInfer expects Brgemm node");
+    for (size_t i = 0; i < brgemm->get_input_size(); ++i) {
+        m_io_layouts.push_back(brgemm->get_input_order(i));
     }
-    const auto& port = lowered::PortDescriptorUtils::get_port_descriptor_ptr(n->output(0));
-    m_io_layouts.push_back(port->get_layout());
+    m_io_layouts.push_back(brgemm->get_output_order(0));
 }
 
 Result BrgemmShapeInfer::infer(const std::vector<VectorDimsRef>& input_shapes) {

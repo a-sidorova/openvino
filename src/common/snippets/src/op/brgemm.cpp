@@ -13,53 +13,22 @@ namespace ov {
 namespace snippets {
 namespace op {
 
-namespace {
-std::vector<size_t> get_output_layout(const std::shared_ptr<const ov::Node>& n) {
-    const auto& key = lowered::PortDescriptorVectorAttribute::get_type_info_static();
-    auto& rt_info = n->get_rt_info();
-    const auto& found = rt_info.find(key);
-    if (found != rt_info.end()) {
-        const auto& out_descs = found->second.as<lowered::PortDescriptorVectorAttribute>().outputs;
-        if (out_descs.size() != n->get_output_size())
-            OPENVINO_THROW("Get output port descriptor is failed: incorrect count");
-        const auto& port_desc = out_descs[0];
-        return port_desc->get_layout();
-    }
-    return {};
-}
-
-} // namespace
-
 Brgemm::Brgemm(const Output<Node>& A, const Output<Node>& B,
                const size_t offset_a, const size_t offset_b, const size_t offset_c,
-               std::vector<size_t> layout_a, std::vector<size_t> layout_b, std::vector<size_t> layout_c)
+               std::vector<size_t> order_a, std::vector<size_t> order_b, std::vector<size_t> order_c)
     : MemoryAccess({A, B}, std::set<size_t>{0, 1}, std::set<size_t>{0}) {
     set_output_size(1);
-    set_input_offset(offset_a, 0);
-    set_input_offset(offset_b, 1);
-    set_output_offset(offset_c, 0);
-    custom_constructor_validate_and_infer_types(std::move(layout_a), std::move(layout_b), std::move(layout_c));
+    set_input_port_descriptor(MemoryAccess::PortDescriptor(0, offset_a, std::move(order_a)), 0);
+    set_input_port_descriptor(MemoryAccess::PortDescriptor(0, offset_b, std::move(order_b)), 1);
+    set_output_port_descriptor(MemoryAccess::PortDescriptor(0, offset_c, std::move(order_c)), 0);
+    validate_and_infer_types();
 }
 
 Brgemm::Brgemm(const Output<Node>& A, const Output<Node>& B,
-               const PortDescriptor& desc_a, const PortDescriptor& desc_b, const PortDescriptor& desc_c,
-               std::vector<size_t> layout_a, std::vector<size_t> layout_b, std::vector<size_t> layout_c)
+               const PortDescriptor& desc_a, const PortDescriptor& desc_b, const PortDescriptor& desc_c)
     : MemoryAccess({A, B}, PortMap{{0, desc_a}, {1, desc_b}}, PortMap{{0, desc_c}}) {
     set_output_size(1);
-    custom_constructor_validate_and_infer_types(std::move(layout_a), std::move(layout_b), std::move(layout_c));
-}
-
-void Brgemm::custom_constructor_validate_and_infer_types(std::vector<size_t> layout_a, std::vector<size_t> layout_b, std::vector<size_t> layout_c) {
-    INTERNAL_OP_SCOPE(BrgemmCPU_constructor_validate_and_infer_types);
-    validate_inputs();
-
-    // During ctor call, Brgemm doesn't know his port descriptors.
-    // So we use explicit layouts from parameters
-    const auto planar_input_shapes =
-            std::vector<ov::PartialShape>{ ov::snippets::utils::get_planar_pshape(get_input_partial_shape(0), layout_a),
-                                           ov::snippets::utils::get_planar_pshape(get_input_partial_shape(1), layout_b) };
-    auto output_shape = get_output_partial_shape(planar_input_shapes);
-    set_output_type(0, get_output_type(), ov::snippets::utils::get_planar_pshape(output_shape, layout_c));
+    validate_and_infer_types();
 }
 
 void Brgemm::validate_inputs() const {
@@ -72,19 +41,17 @@ void Brgemm::validate_and_infer_types() {
     INTERNAL_OP_SCOPE(Brgemm_validate_and_infer_types);
     validate_inputs();
 
-    const auto planar_input_shapes = get_planar_input_shapes(inputs());
-    auto output_shape = get_output_partial_shape(planar_input_shapes);
-    set_output_type(0, get_output_type(), get_planar_output_shape(output_shape));
+    auto output_shape = get_output_partial_shape({ get_input_planar_partial_shape(0), get_input_planar_partial_shape(1) });
+    auto reordered_out_shape = output_shape;
+    utils::ordered_vector(output_shape, get_output_order(0), true, reordered_out_shape);
+    set_output_type(0, get_output_type(), reordered_out_shape);
 }
 
 std::shared_ptr<Node> Brgemm::clone_with_new_inputs(const OutputVector& new_args) const {
     INTERNAL_OP_SCOPE(Brgemm_clone_with_new_inputs);
     check_new_args_count(this, new_args);
     return std::make_shared<Brgemm>(new_args.at(0), new_args.at(1),
-                                    get_input_port_descriptor(0), get_input_port_descriptor(1), get_output_port_descriptor(0),
-                                    lowered::PortDescriptorUtils::get_port_descriptor_ptr(input(0))->get_layout(),
-                                    lowered::PortDescriptorUtils::get_port_descriptor_ptr(input(1))->get_layout(),
-                                    lowered::PortDescriptorUtils::get_port_descriptor_ptr(output(0))->get_layout());
+                                    get_input_port_descriptor(0), get_input_port_descriptor(1), get_output_port_descriptor(0));
 }
 
 ov::element::Type Brgemm::get_output_type(const ov::element::Type& in_type0, const ov::element::Type& in_type1) {
@@ -110,20 +77,6 @@ ov::element::Type Brgemm::get_output_type() const {
     }
 
     return output_type;
-}
-
-std::vector<ov::PartialShape> Brgemm::get_planar_input_shapes(const std::vector<ov::Input<ov::Node>>& inputs) const {
-    OPENVINO_ASSERT(inputs.size() == 2, "Brgemm::get_planar_input_shapes() expects 2 inputs");
-    return { utils::get_planar_pshape(inputs[0]), utils::get_planar_pshape(inputs[1]) };
-}
-
-ov::PartialShape Brgemm::get_planar_output_shape(const ov::PartialShape& output_shape) const {
-    // This method can be safely called from validate_and_infer_types() before output creation
-    const auto& out_layout  = get_output_layout(shared_from_this());
-    if (!out_layout.empty())
-        return utils::get_planar_pshape(output_shape, out_layout);
-
-    return output_shape;
 }
 
 ov::PartialShape Brgemm::get_output_partial_shape(const std::vector<ov::PartialShape>& input_shapes) const {

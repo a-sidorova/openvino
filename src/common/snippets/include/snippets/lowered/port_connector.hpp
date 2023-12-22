@@ -31,9 +31,15 @@ public:
     std::set<ExpressionPort>::const_iterator find_consumer(const ExpressionPort& consumer) const;
     std::set<ExpressionPort>::iterator find_consumer(const ExpressionPort& consumer);
 
+    const VectorDims& get_shape() const { return m_shape; }
+    void set_shape(const VectorDims& shape) { m_shape = shape; }
+
 private:
     ExpressionPort m_source_port;
     std::set<ExpressionPort> m_consumer_ports;
+
+    /// \brief Original tensor shape
+    VectorDims m_shape{};
 };
 using PortConnectorPtr = std::shared_ptr<PortConnector>;
 

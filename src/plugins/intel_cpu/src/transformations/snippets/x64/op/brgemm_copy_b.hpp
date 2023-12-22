@@ -29,10 +29,10 @@ public:
 
     BrgemmCopyB(const Output<Node>& x, const element::Type src_type, const Type type = Type::OnlyRepacking,
                 const size_t offset_in = 0lu, const size_t offset_out0 = 0lu, const size_t offset_out1 = 0lu,
-                std::vector<size_t> layout_input = {}, const size_t blk_size_k = 0, const size_t blk_size_n = 0);
+                std::vector<size_t> order_input = {}, const size_t blk_size_k = 0, const size_t blk_size_n = 0);
     BrgemmCopyB(const Output<Node>& x, const element::Type src_type, const Type type = Type::OnlyRepacking,
                 const PortDescriptor& desc_in0 = {}, const PortDescriptor& desc_out0 = {}, const PortDescriptor& desc_out1 = {},
-                std::vector<size_t> layout_input = {}, const size_t blk_size_k = 0, const size_t blk_size_n = 0);
+                const size_t blk_size_k = 0, const size_t blk_size_n = 0);
     BrgemmCopyB() = default;
 
     size_t get_offset_in() const { return get_input_offset(0); }
@@ -58,7 +58,7 @@ public:
     std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& new_args) const override;
 
     class ShapeInfer : public snippets::IShapeInferSnippets {
-        std::vector<size_t> m_layout{};
+        std::vector<size_t> m_order{};
         size_t m_num_outs = 1;
     public:
         explicit ShapeInfer(const std::shared_ptr<ov::Node>& n);
@@ -66,7 +66,6 @@ public:
     };
 
 private:
-    void custom_constructor_validate_and_infer_types(std::vector<size_t> layout_input = {});
     void validate_element_type(const ov::element::Type& element_type);
     void compute_block_size_values(const size_t blk_size_k, const size_t blk_size_n);
 

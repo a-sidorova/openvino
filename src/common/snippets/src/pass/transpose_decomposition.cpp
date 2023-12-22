@@ -64,7 +64,7 @@ TransposeDecomposition::TransposeDecomposition() {
         auto load = std::make_shared<snippets::op::LoadReshape>(data_input, subtensor[0], 0, layout);
         auto store = std::make_shared<snippets::op::Store>(load, subtensor[0]);
 
-        PortDescriptorUtils::set_port_descriptor_ptr(load->input(0), std::make_shared<PortDescriptor>(load->get_input_shape(0), subtensor, layout));
+        PortDescriptorUtils::set_port_descriptor_ptr(load->input(0), std::make_shared<PortDescriptor>(load->get_input_shape(0), subtensor));
         PortDescriptorUtils::set_port_descriptor_ptr(load->output(0), std::make_shared<PortDescriptor>(load->get_output_shape(0), subtensor));
         PortDescriptorUtils::set_port_descriptor_ptr(store->input(0), std::make_shared<PortDescriptor>(store->get_input_shape(0), subtensor));
         PortDescriptorUtils::set_port_descriptor_ptr(store->output(0), std::make_shared<PortDescriptor>(store->get_output_shape(0), subtensor));

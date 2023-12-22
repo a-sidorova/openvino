@@ -49,10 +49,10 @@ pass::SetBrgemmCPUBlockingParams::SetBrgemmCPUBlockingParams() {
             return input_1_precision != ov::element::f32 ? N : 64;
         };
 
-        const auto brgemm_in0_dims = snippets::utils::get_planar_pshape(brgemm->input(0)).get_shape();
+        const auto brgemm_in0_dims = brgemm->get_input_planar_partial_shape(0).get_shape();
+        const auto brgemm_in1_dims = brgemm->get_input_planar_partial_shape(1).get_shape();
         const auto M = *(brgemm_in0_dims.rbegin() + 1);
         const auto K = *brgemm_in0_dims.rbegin();
-        const auto brgemm_in1_dims = snippets::utils::get_planar_pshape(brgemm->input(1)).get_shape();
         const auto N = *brgemm_in1_dims.rbegin();
         if (brgemm->is_with_data_repacking()) {
             const auto brgemm_copy_b = brgemm->get_brgemm_copy();

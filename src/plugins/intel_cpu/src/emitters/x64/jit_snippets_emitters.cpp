@@ -115,36 +115,54 @@ KernelEmitter::KernelEmitter(jit_generator* h, cpu_isa_t isa, const ExpressionPt
     num_inputs = 0;
     num_outputs = 0;
     for (const auto& expr : io_exprs) {
-        snippets::lowered::PortDescriptorPtr desc = nullptr;
+        VectorDims shape, order;
         element::Type etype;
         switch (expr->get_type()) {
             case snippets::lowered::IOExpression::io_type::INPUT: {
-                const auto first_consumer = expr->get_output_port_connector(0)->get_consumers().begin()->get_expr();
+                auto consumers = expr->get_output_port_connector(0)->get_consumers();
+                const auto first_consumer = consumers.begin()->get_expr();
                 if (ov::is_type<snippets::op::RankNormalization>(first_consumer->get_node())) {
-                    desc = first_consumer->get_output_port_descriptor(0);
-                } else {
-                    desc = expr->get_output_port_descriptor(0);
+                    consumers = first_consumer->get_output_port_connector(0)->get_consumers();
                 }
+                std::set<VectorDims> orders;
+                for (const auto& consumer : consumers) {
+                    const auto& expr = consumer.get_expr();
+                    if (ov::is_type<ov::snippets::op::LoopEnd>(expr->get_node()))
+                        continue;
+                    const auto ma = ov::as_type_ptr<ov::snippets::op::MemoryAccess>(expr->get_node());
+                    OPENVINO_ASSERT(ma, "Parameter must have MemoryAccess consumers");
+                    shape = consumer.get_descriptor_ptr()->get_shape();
+                    orders.insert(ma->get_input_order(consumer.get_index()));
+                }
+                OPENVINO_ASSERT(orders.size() == 1, "MemoryAccess ops that are connected to the same data, must have the same order of data reading");
+                order = *orders.cbegin();
                 etype = expr->get_node()->get_output_element_type(0);
                 num_inputs++;
                 break;
             }
             case snippets::lowered::IOExpression::io_type::OUTPUT: {
                 num_outputs++;
-                desc = expr->get_input_port_descriptor(0);
-                etype = expr->get_node()->get_input_element_type(0);
+                const auto& source = expr->get_input_port_connector(0)->get_source();
+                const auto& source_expr = source.get_expr();
+                const auto ma = ov::as_type_ptr<ov::snippets::op::MemoryAccess>(source_expr->get_node());
+                OPENVINO_ASSERT(ma, "Result must have MemoryAccess consumers");
+                shape = source.get_descriptor_ptr()->get_shape();
+                order = ma->get_output_order(source.get_index());
+                etype = source_expr->get_node()->get_input_element_type(0);
                 break;
             } default : {
                 OPENVINO_THROW("Kernel detected unsupported io_type");
             }
         }
-        const auto& shape = desc->get_shape();
-        const auto& layout = desc->get_layout();
-        OPENVINO_ASSERT(shape.size() == layout.size(), "Shape and layout must have the same length");
-        const auto max_dim = *std::max_element(layout.begin(), layout.end());
+        if (order.empty()) {
+            order.resize(shape.size());
+            std::iota(order.begin(), order.end(), 0);
+        }
+        OPENVINO_ASSERT(shape.size() == order.size(), "Shape and layout must have the same length");
+        const auto max_dim = *std::max_element(order.begin(), order.end());
         OPENVINO_ASSERT(max_dim < shape.size(), "Max layout index can't be larger than the shape size");
         io_shapes.push_back(shape);
-        io_data_layouts.push_back(layout);
+        io_data_layouts.push_back(order);
         io_data_sizes.push_back(etype.size());
     }
 
