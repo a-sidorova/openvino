@@ -20,6 +20,9 @@ public:
     LoopManager() = default;
 
     struct LoopPort {
+        // It's needed as separate value because data ptr shift params have int64_t type while shape dimensions - size_t
+        static constexpr int64_t DYNAMIC_VALUE = std::numeric_limits<int64_t>::max();
+
         LoopPort() = default;
         LoopPort(const ExpressionPort& port, bool is_incremented = true, size_t dim_idx = 0);
         std::shared_ptr<LoopPort> clone_with_new_expr(const ExpressionPtr& new_expr) const;
@@ -27,6 +30,10 @@ public:
         friend bool operator==(const LoopPort& lhs, const LoopPort& rhs);
         friend bool operator!=(const LoopPort& lhs, const LoopPort& rhs);
         friend bool operator<(const LoopPort& lhs, const LoopPort& rhs);
+
+        bool is_dynamic() const;
+
+        static inline bool is_dynamic_value(int64_t value) { return value == DYNAMIC_VALUE; }
 
         std::shared_ptr<ExpressionPort> expr_port = {};
         // True if after each Loop iteration the corresponding data pointer should be incremented.
@@ -220,6 +227,7 @@ private:
     //                                         for `before` the new Loop is the most outer Loop
     void insert_loop_id(const ExpressionPtr& expr, size_t new_id, bool before = true, size_t target_id = SIZE_MAX);
     void insert_loop_ids(const ExpressionPtr& expr, const std::vector<size_t>& new_ids, bool before = true, size_t target_id = SIZE_MAX);
+    static bool is_loop_id_found(const ExpressionPtr& expr, size_t id);
 
     std::map<size_t, LoopInfoPtr> m_map = {};
     size_t next_id = 0;

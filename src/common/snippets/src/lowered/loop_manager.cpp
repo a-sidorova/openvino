@@ -156,6 +156,10 @@ bool operator<(const LinearIR::LoopManager::LoopPort& lhs, const LinearIR::LoopM
              (lhs.is_incremented == rhs.is_incremented && lhs.dim_idx < rhs.dim_idx)));
 }
 
+bool LinearIR::LoopManager::LoopPort::is_dynamic() const {
+    return is_dynamic_value(ptr_increment) || is_dynamic_value(finalization_offset);
+}
+
 std::shared_ptr<LoopManager> LoopManager::clone_with_new_expr(const ExressionMap& expr_map) const {
     auto new_loop_manager = std::make_shared<LoopManager>();
     for (const auto& id_info : m_map)
@@ -281,6 +285,7 @@ void LinearIR::LoopManager::get_io_loop_ports(LinearIR::constExprIt loop_begin_p
 void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
                                       LinearIR::constExprIt loop_end_pos,
                                       size_t loop_depth, size_t vector_size) {
+    const auto FULL_DIM = PortDescriptor::ServiceDimensions::FULL_DIM;
     std::vector<ExpressionPort> loop_entry_points, loop_exit_points;
     LoopManager::get_io_loop_ports(loop_begin_pos, loop_end_pos, loop_entry_points, loop_exit_points);
 
@@ -297,10 +302,17 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
         OPENVINO_ASSERT(lhs_value == rhs_value || lhs_value == 1 || rhs_value == 1,
                         "Output shapes of Loop must be broadcastable!");
         *(lhs.rbegin() + index) = std::max(lhs_value, rhs_value);
+        if (lhs_value == rhs_value || lhs_value == 1 || utils::is_dynamic_vdim(rhs_value)) {
+            *(lhs.rbegin() + index) = rhs_value;
+        } else if (rhs_value == 1 || utils::is_dynamic_vdim(lhs_value)) {
+            *(lhs.rbegin() + index) = lhs_value;
+        } else {
+            OPENVINO_THROW("Dimensions of shapes aren't broadcastable for work amount initialization!");
+        }
     };
 
-    auto is_outside_loop = [](const std::vector<size_t>& subtensor) {
-        return std::all_of(subtensor.begin(), subtensor.end(), [](size_t lhs) { return lhs == PortDescriptor::ServiceDimensions::FULL_DIM; });
+    auto is_outside_loop = [&FULL_DIM](const std::vector<size_t>& subtensor) {
+        return std::all_of(subtensor.begin(), subtensor.end(), [&FULL_DIM](size_t lhs) { return lhs == FULL_DIM; });
     };
 
     std::vector<size_t> loop_subtensor;
@@ -313,7 +325,7 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
             subtensor[subtensor.size() - 1] = vector_size;
         }
 
-        const size_t resizing_value = is_outside_loop(subtensor) ? PortDescriptor::ServiceDimensions::FULL_DIM : 1;
+        const size_t resizing_value = is_outside_loop(subtensor) ? FULL_DIM : 1;
         while (subtensor.size() < loop_depth)
             subtensor.insert(subtensor.begin(), resizing_value);
         if (loop_subtensor.empty())
@@ -323,14 +335,14 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
                         "Incorrect scheduling parameters for loop");
 
         for (size_t dim_idx = 0; dim_idx < loop_depth; ++dim_idx) {
-            if (*(subtensor.rbegin() + dim_idx) != PortDescriptor::ServiceDimensions::FULL_DIM) {
+            if (*(subtensor.rbegin() + dim_idx) != FULL_DIM) {
                 broadcast(loop_tensor, shape, dim_idx);
             }
         }
     }
 
     for (size_t dim_idx = 0; dim_idx < loop_depth; ++dim_idx) {
-        if (*(loop_subtensor.rbegin() + dim_idx) == PortDescriptor::ServiceDimensions::FULL_DIM) {
+        if (*(loop_subtensor.rbegin() + dim_idx) == FULL_DIM) {
             continue;
         }
 
@@ -541,9 +553,8 @@ void LinearIR::LoopManager::sort_loop_ports(LinearIR::constExprIt& loop_begin_po
 
 void LinearIR::LoopManager::insert_loop_id(const ExpressionPtr& expr, size_t new_id, bool before, size_t target_id) {
     OPENVINO_ASSERT(m_map.count(new_id) == 1, "Failed marking expression by Loop ID: the Loop with this ID hasn't registered");
+    OPENVINO_ASSERT(!is_loop_id_found(expr, new_id), "Expression cannot have several the same Loop IDs");
     auto& loop_ids = expr->m_loop_ids;
-    OPENVINO_ASSERT(std::find(loop_ids.cbegin(), loop_ids.cend(), new_id) == loop_ids.cend(),
-                    "Expression cannot have several the same Loop IDs");
     auto insert_it = before ? loop_ids.cbegin() : loop_ids.cend();
     if (target_id != SIZE_MAX) {
         insert_it = std::find(loop_ids.cbegin(), loop_ids.cend(), target_id);
@@ -568,9 +579,8 @@ void LinearIR::LoopManager::insert_loop_ids(const ExpressionPtr& expr, const std
 
 void LinearIR::LoopManager::replace_loop_id(const ExpressionPtr& expr, size_t prev_id, size_t new_id) {
     OPENVINO_ASSERT(m_map.count(new_id), "Failed marking expression by Loop ID: the Loop with this ID hasn't registered");
+    OPENVINO_ASSERT(!is_loop_id_found(expr, new_id), "Expression cannot have several the same Loop IDs");
     auto& loop_ids = expr->m_loop_ids;
-    OPENVINO_ASSERT(std::find(loop_ids.cbegin(), loop_ids.cend(), new_id) == loop_ids.cend(),
-                    "Expression already has the Loop with ID " + std::to_string(new_id));
     auto it = std::find(loop_ids.begin(), loop_ids.end(), prev_id);
     OPENVINO_ASSERT(it != loop_ids.end(),
                     "Expression doesn't have the Loop with ID " + std::to_string(prev_id));
@@ -582,6 +592,11 @@ void LinearIR::LoopManager::remove_loop_id(const ExpressionPtr& expr, size_t id)
     const auto it = std::find(loop_ids.cbegin(), loop_ids.cend(), id);
     OPENVINO_ASSERT(it != loop_ids.cend(), "Expression doesn't have the Loop with ID " + std::to_string(id));
     loop_ids.erase(it);
+}
+
+bool LinearIR::LoopManager::is_loop_id_found(const ExpressionPtr& expr, size_t id) {
+    const auto loop_ids = expr->get_loop_ids();
+    return std::find(loop_ids.cbegin(), loop_ids.cend(), id) != loop_ids.cend();
 }
 
 }// namespace lowered

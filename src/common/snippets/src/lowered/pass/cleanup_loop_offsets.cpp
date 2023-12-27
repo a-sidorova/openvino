@@ -22,7 +22,7 @@ bool CleanupLoopOffsets::run(LinearIR& linear_ir) {
     const auto before_last = std::prev(linear_ir.end());
     for (auto expr_it = linear_ir.begin(); expr_it != before_last; expr_it++) {
         const auto& node = expr_it->get()->get_node();
-        if (auto loop_end = as_type_ptr<op::LoopEnd>(node)) {
+        if (auto loop_end = as_type_ptr<op::LoopEndStatic>(node)) {
                 auto next_expr_it = std::next(expr_it);
                 const auto& next_node = next_expr_it->get()->get_node();
                 // Note: Finalization offsets before the Result can be safely disregarded
@@ -33,7 +33,7 @@ bool CleanupLoopOffsets::run(LinearIR& linear_ir) {
                     loop_end->set_finalization_offsets(std::vector<int64_t>(fin_offsets.size(), 0));
                     is_modified = true;
                 }
-                if (auto outer_loop_end = as_type_ptr<op::LoopEnd>(next_node)) {
+                if (auto outer_loop_end = as_type_ptr<op::LoopEndStatic>(next_node)) {
                     const auto& is_incremented = loop_end->get_is_incremented();
                     auto fin_offsets = loop_end->get_finalization_offsets();
                     std::unordered_map<PortConnectorPtr, size_t> per_port_connector_offset;
