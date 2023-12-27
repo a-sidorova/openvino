@@ -139,6 +139,8 @@ public:
     const std::shared_ptr<ShapeInferSnippetsNode>& get_shape_infer_instance() const {return m_shape_infer; }
     VectorDims get_master_shape() const;
 
+    bool is_dynamic() const;
+
 private:
     std::shared_ptr<ShapeInferSnippetsNode> m_shape_infer = nullptr;
 
