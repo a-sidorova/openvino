@@ -73,8 +73,7 @@ void BrgemmCopyB::validate_and_infer_types() {
     const auto& element_type = get_input_element_type(0);
     validate_element_type(element_type);
     const auto port = snippets::lowered::PortDescriptorUtils::get_port_descriptor_ptr(input(0));
-    const auto shape = ov::Shape(port->get_shape());
-    const auto& planar_pshape = snippets::utils::get_planar_pshape(shape, port->get_layout());
+    const auto& planar_pshape = snippets::utils::get_planar_pshape(get_input_partial_shape(0), port->get_layout());
     set_output_type(0, element_type, planar_pshape);
     if (is_with_compensations()) {
         set_output_type(1, ov::element::f32, planar_pshape);

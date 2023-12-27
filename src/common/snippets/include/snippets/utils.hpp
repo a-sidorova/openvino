@@ -125,11 +125,19 @@ VectorDims get_planar_vdims(const snippets::lowered::ExpressionPort& expr_port);
  */
 VectorDims get_preordered_vdims(const snippets::lowered::ExpressionPort& expr_port);
 
+/* --------------------------- */
+
 bool is_dynamic_vdims(const VectorDims& shape);
 
 VectorDims pshape_to_vdims(const PartialShape&);
 ov::PartialShape vdims_to_pshape(const VectorDims&);
-/* --------------------------- */
+
+inline size_t get_input_dim_idx(const std::vector<size_t>& order, size_t dim_idx) {
+    return dim_idx < order.size() ? *(order.rbegin() + dim_idx) : dim_idx;
+}
+inline size_t get_output_dim_idx(const std::vector<size_t>& order, size_t dim_idx) {
+    return dim_idx < order.size() ? std::distance(order.cbegin(), std::find(order.cbegin(), order.cend(), order.size() - 1 - dim_idx)) : dim_idx;
+}
 
 } // namespace utils
 } // namespace snippets

@@ -35,15 +35,18 @@ jit_kernel_emitter::jit_kernel_emitter(jit_generator* h, cpu_isa_t isa, const ov
     num_inputs = 0;
     num_outputs = 0;
     for (const auto& expr : io_exprs) {
-        snippets::lowered::PortDescriptorPtr desc = nullptr;
+        VectorDims shape;
+        std::vector<size_t> layout;
         element::Type etype;
         switch (expr->get_type()) {
             case snippets::lowered::IOExpression::io_type::INPUT: {
                 const auto first_consumer = expr->get_output_port_connector(0)->get_consumers().begin()->get_expr();
                 if (ov::is_type<snippets::op::RankNormalization>(first_consumer->get_node())) {
-                    desc = first_consumer->get_output_port_descriptor(0);
+                    shape = first_consumer->get_output_port_connector(0)->get_shape();
+                    layout = first_consumer->get_output_port_descriptor(0)->get_layout();
                 } else {
-                    desc = expr->get_output_port_descriptor(0);
+                    shape = expr->get_output_port_connector(0)->get_shape();
+                    layout = expr->get_output_port_descriptor(0)->get_layout();
                 }
                 etype = expr->get_node()->get_output_element_type(0);
                 num_inputs++;
@@ -51,15 +54,14 @@ jit_kernel_emitter::jit_kernel_emitter(jit_generator* h, cpu_isa_t isa, const ov
             }
             case snippets::lowered::IOExpression::io_type::OUTPUT: {
                 num_outputs++;
-                desc = expr->get_input_port_descriptor(0);
+                shape = expr->get_input_port_connector(0)->get_shape();
+                layout = expr->get_input_port_descriptor(0)->get_layout();
                 etype = expr->get_node()->get_input_element_type(0);
                 break;
             } default : {
                 OPENVINO_THROW("Kernel detected unsupported io_type");
             }
         }
-        const auto& shape = desc->get_shape();
-        const auto& layout = desc->get_layout();
         OPENVINO_ASSERT(shape.size() == layout.size(), "Shape and layout must have the same length");
         const auto max_dim = *std::max_element(layout.begin(), layout.end());
         OPENVINO_ASSERT(max_dim < shape.size(), "Max layout index can't be larger than the shape size");

@@ -79,7 +79,6 @@ std::shared_ptr<ov::Model> Transpose0213MatMulLoweredFunction::initLowered() con
     if (transpose_position < 2) {
         const auto& anchor = data[transpose_position]->output(0);
         const auto& td = ov::snippets::lowered::PortDescriptorUtils::get_port_descriptor_ptr(anchor);
-        const auto& tensor = td->get_shape();
         const auto& subtensor = td->get_subtensor();
     }
     auto matmul = std::make_shared<ov::snippets::op::Brgemm>(data[0], data[1], 0, 0, 0, transpose_position == 0 ? layout : std::vector<size_t>{},
@@ -89,22 +88,18 @@ std::shared_ptr<ov::Model> Transpose0213MatMulLoweredFunction::initLowered() con
     if (transpose_position == 2) {
         const auto& anchor = matmul->output(0);
         const auto& td = ov::snippets::lowered::PortDescriptorUtils::get_port_descriptor_ptr(anchor);
-        const auto& tensor = td->get_shape();
         const auto& subtensor = td->get_subtensor();
         ov::snippets::lowered::PortDescriptorUtils::set_port_descriptor_ptr(anchor,
-                                                                        std::make_shared<ov::snippets::lowered::PortDescriptor>(tensor,
-                                                                                                                                subtensor,
-                                                                                                                                layout));
+                                                                        std::make_shared<ov::snippets::lowered::PortDescriptor>(layout,
+                                                                                                                                subtensor));
     }
     if (transpose_position < 2) {
         const auto& anchor = data[transpose_position]->output(0);
         const auto& td = ov::snippets::lowered::PortDescriptorUtils::get_port_descriptor_ptr(anchor);
-        const auto& tensor = td->get_shape();
         const auto& subtensor = td->get_subtensor();
         ov::snippets::lowered::PortDescriptorUtils::set_port_descriptor_ptr(matmul->input(transpose_position),
-                                                                        std::make_shared<ov::snippets::lowered::PortDescriptor>(tensor,
-                                                                                                                                subtensor,
-                                                                                                                                layout));
+                                                                        std::make_shared<ov::snippets::lowered::PortDescriptor>(layout,
+                                                                                                                                subtensor));
     }
     matmul->validate_and_infer_types();
     return std::make_shared<ov::Model>(NodeVector{matmul}, data);

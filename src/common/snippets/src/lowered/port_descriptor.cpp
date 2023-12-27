@@ -11,43 +11,34 @@ namespace lowered {
 
 size_t PortDescriptor::ServiceDimensions::FULL_DIM = SIZE_MAX;
 
-PortDescriptor::PortDescriptor(const ov::Input<ov::Node>& in, VectorDims subtensor_shape, std::vector<size_t> layout)
-        : PortDescriptor(ov::Input<const Node>(in.get_node(), in.get_index()), std::move(subtensor_shape), std::move(layout)) {}
+PortDescriptor::PortDescriptor(const ov::Input<ov::Node>& in, VectorDims subtensor_shape)
+        : PortDescriptor(ov::Input<const Node>(in.get_node(), in.get_index()), std::move(subtensor_shape)) {}
 
-PortDescriptor::PortDescriptor(const ov::Input<const ov::Node>& in, std::vector<size_t> subtensor_shape, std::vector<size_t> layout)
-        : PortDescriptor(utils::pshape_to_vdims(in.get_partial_shape()), std::move(subtensor_shape), std::move(layout)) {}
+PortDescriptor::PortDescriptor(const ov::Input<const ov::Node>& in, std::vector<size_t> subtensor_shape)
+        : PortDescriptor(std::move(subtensor_shape), in.get_partial_shape().size())  {}
 
-PortDescriptor::PortDescriptor(const ov::Output<ov::Node>& out, VectorDims subtensor_shape, std::vector<size_t> layout)
-        : PortDescriptor(ov::Output<const Node>(out.get_node(), out.get_index()), std::move(subtensor_shape), std::move(layout)) {}
+PortDescriptor::PortDescriptor(const ov::Output<ov::Node>& out, VectorDims subtensor_shape)
+        : PortDescriptor(ov::Output<const Node>(out.get_node(), out.get_index()), std::move(subtensor_shape)) {}
 
-PortDescriptor::PortDescriptor(const ov::Output<const ov::Node>& out, std::vector<size_t> subtensor_shape, std::vector<size_t> layout)
-        : PortDescriptor(utils::pshape_to_vdims(out.get_partial_shape()), std::move(subtensor_shape), std::move(layout)) {}
+PortDescriptor::PortDescriptor(const ov::Output<const ov::Node>& out, std::vector<size_t> subtensor_shape)
+        : PortDescriptor(std::move(subtensor_shape), out.get_partial_shape().size()) {}
 
-PortDescriptor::PortDescriptor(VectorDims shape, VectorDims subtensor_shape, std::vector<size_t> layout)
-    : m_tensor_shape(std::move(shape)), m_layout(std::move(layout)), m_subtensor_shape(std::move(subtensor_shape)) {
-    validate_arguments();
+PortDescriptor::PortDescriptor(std::vector<size_t> layout, VectorDims subtensor_shape)
+    : m_layout(std::move(layout)), m_subtensor_shape(std::move(subtensor_shape)) {}
+
+PortDescriptor::PortDescriptor(VectorDims subtensor_shape, size_t rank)
+    : m_subtensor_shape(std::move(subtensor_shape)) {
+    m_layout.resize(rank);
+    std::iota(m_layout.begin(), m_layout.end(), 0);
 }
-
-void PortDescriptor::validate_arguments() {
-    if (!m_tensor_shape.empty() && m_layout.empty()) {
-        m_layout.resize(m_tensor_shape.size());
-        // NCHW layout by default
-        std::iota(m_layout.begin(), m_layout.end(), 0);
-    }
-    OPENVINO_ASSERT(m_layout.size() == m_tensor_shape.size(), "Snippets tensor descriptor: Layout size must be equal to the shape size");
-}
-
 PortDescriptorPtr PortDescriptor::clone() const {
-    auto desc = std::make_shared<PortDescriptor>(m_tensor_shape, m_subtensor_shape, m_layout);
+    auto desc = std::make_shared<PortDescriptor>(m_layout, m_subtensor_shape);
     desc->set_reg(m_reg);
     return desc;
 }
 
 std::string  PortDescriptor::serialize() const {
     std::stringstream ss;
-    ss << m_tensor_shape.size() << " ";
-    for (auto val : m_tensor_shape)
-        ss << val << " ";
     ss << m_subtensor_shape.size() << " ";
     for (auto val : m_subtensor_shape)
         ss << val << " ";
@@ -57,8 +48,7 @@ std::string  PortDescriptor::serialize() const {
     return ss.str();
 }
 bool operator==(const PortDescriptor& lhs, const PortDescriptor& rhs) {
-    return lhs.m_tensor_shape == rhs.m_tensor_shape &&
-           lhs.m_layout == rhs.m_layout &&
+    return lhs.m_layout == rhs.m_layout &&
            lhs.m_subtensor_shape == rhs.m_subtensor_shape;
 }
 

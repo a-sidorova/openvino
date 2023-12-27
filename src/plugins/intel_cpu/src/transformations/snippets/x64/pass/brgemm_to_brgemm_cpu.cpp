@@ -30,10 +30,14 @@ namespace {
 std::vector<size_t> make_subtensor(const ov::Shape& tensor) {
     return std::vector<size_t>(std::min(tensor.size(), size_t(2)), PortDescriptor::ServiceDimensions::FULL_DIM);
 }
+std::vector<size_t> make_layout(const ov::Shape& tensor) {
+    std::vector<size_t> layout(tensor.size());
+    std::iota(layout.begin(), layout.end(), 0);
+    return layout;
+}
 template<typename T>
 void set_full_port_desc(const T& port) {
-    const auto& shape = port.get_shape();
-    PortDescriptorUtils::set_port_descriptor_ptr(port, std::make_shared<PortDescriptor>(shape, make_subtensor(shape)));
+    PortDescriptorUtils::set_port_descriptor_ptr(port, std::make_shared<PortDescriptor>(make_layout(port.get_shape()), make_subtensor(port.get_shape())));
 }
 template<typename T, typename... Args>
 void set_port_desc(const T& port, Args... params) {
@@ -88,7 +92,7 @@ pass::BrgemmToBrgemmCPU::BrgemmToBrgemmCPU() {
             const auto copy_b_type = with_comp ? BrgemmCopyB::WithCompensations : BrgemmCopyB::OnlyRepacking;
             brgemm_repacking = std::make_shared<BrgemmCopyB>(brgemm->input_value(1), element_type_a, copy_b_type, offset_b, 0, 0,
                                                              brgemm_in1_desc->get_layout());
-            set_port_desc(brgemm_repacking->input(0), brgemm_in1_desc->get_shape(), brgemm_in1_desc->get_subtensor(), brgemm_in1_desc->get_layout());
+            set_port_desc(brgemm_repacking->input(0), brgemm_in1_desc->get_layout(), brgemm_in1_desc->get_subtensor());
             set_full_port_desc(brgemm_repacking->output(0));
 
             if (with_amx) {
@@ -117,13 +121,13 @@ pass::BrgemmToBrgemmCPU::BrgemmToBrgemmCPU() {
         ov::replace_node(brgemm, brgemm_cpu);
 
         // Transfer ports
-        set_port_desc(brgemm_cpu->input(0), brgemm_in0_desc->get_shape(), brgemm_in0_desc->get_subtensor(), brgemm_in0_desc->get_layout());
+        set_port_desc(brgemm_cpu->input(0), brgemm_in0_desc->get_layout(), brgemm_in0_desc->get_subtensor());
         if (brgemm_repacking) {
             set_full_port_desc(brgemm_cpu->input(1));
         } else {
-            set_port_desc(brgemm_cpu->input(1), brgemm_in1_desc->get_shape(), brgemm_in1_desc->get_subtensor(), brgemm_in1_desc->get_layout());
+            set_port_desc(brgemm_cpu->input(1), brgemm_in1_desc->get_layout(), brgemm_in1_desc->get_subtensor());
         }
-        set_port_desc(brgemm_cpu->output(0), brgemm_out_desc->get_shape(), brgemm_out_desc->get_subtensor(), brgemm_out_desc->get_layout());
+        set_port_desc(brgemm_cpu->output(0), brgemm_out_desc->get_layout(), brgemm_out_desc->get_subtensor());
 
         // need to run validate_and_infer_types manually: either input shapes were updated or
         // output Layout was updated (out shape will be updated in validate_and_infer_types())

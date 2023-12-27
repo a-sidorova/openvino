@@ -69,9 +69,9 @@ bool BrgemmBlocking::run(LinearIR& linear_ir) {
         const auto& in_1_desc = brgemm_expr->get_input_port_descriptor(1);
         const auto& out_desc = brgemm_expr->get_output_port_descriptor(0);
 
-        const auto& in_0_planar_dims = ov::snippets::utils::get_planar_vdims(in_0_desc->get_shape(), in_0_desc->get_layout());
-        const auto& in_1_planar_dims = ov::snippets::utils::get_planar_vdims(in_1_desc->get_shape(), in_1_desc->get_layout());
-        const auto& out_preordered_dims = ov::snippets::utils::get_preordered_vdims(out_desc->get_shape(), out_desc->get_layout());
+        const auto& in_0_planar_dims = ov::snippets::utils::get_planar_vdims(brgemm_expr->get_input_port(0));
+        const auto& in_1_planar_dims = ov::snippets::utils::get_planar_vdims(brgemm_expr->get_input_port(1));
+        const auto& out_preordered_dims = ov::snippets::utils::get_preordered_vdims(brgemm_expr->get_output_port(0));
 
         auto in_0_subtensor = in_0_desc->get_subtensor();
         auto in_1_subtensor = in_1_desc->get_subtensor();
@@ -191,9 +191,9 @@ bool BrgemmBlocking::run(LinearIR& linear_ir) {
         apply_n_blocking();
         apply_m_blocking();
 
-        brgemm_expr->get_input_port_descriptor(0)->set_subtensor(in_0_subtensor);
-        brgemm_expr->get_input_port_descriptor(1)->set_subtensor(in_1_subtensor);
-        brgemm_expr->get_output_port_descriptor(0)->set_subtensor(out_subtensor);
+        in_0_desc->set_subtensor(in_0_subtensor);
+        in_1_desc->set_subtensor(in_1_subtensor);
+        out_desc->set_subtensor(out_subtensor);
         modified = true;
     }
 

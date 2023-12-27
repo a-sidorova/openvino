@@ -5,6 +5,7 @@
 #include "snippets/lowered/expression_factory.hpp"
 
 #include "snippets/snippets_isa.hpp"
+#include "snippets/utils.hpp"
 
 namespace ov {
 namespace snippets {
@@ -33,7 +34,8 @@ void LinearIR::ExpressionFactory::create_expression_outputs(const ExpressionPtr&
     for (const auto& output : node->outputs()) {
         const auto out_index = output.get_index();
         const auto source = expr->get_output_port(out_index);
-        expr->m_output_port_connectors[out_index] = std::make_shared<PortConnector>(source);
+        const auto shape = utils::get_planar_vdims(utils::pshape_to_vdims(output.get_partial_shape()), source.get_descriptor_ptr()->get_layout());
+        expr->m_output_port_connectors[out_index] = std::make_shared<PortConnector>(source, shape);
     }
 }
 

@@ -40,9 +40,8 @@ jit_brgemm_copy_b_emitter::jit_brgemm_copy_b_emitter(jit_generator* h, cpu_isa_t
     if (m_with_comp)
         m_comp_offset = brgemm_repack->get_offset_compensations();
 
-    const auto& in_desc = expr->get_input_port_descriptor(0);
-    const auto& layout = in_desc->get_layout();
-    const auto& original_shape = in_desc->get_shape();
+    const auto& layout = expr->get_input_port_descriptor(0)->get_layout();
+    const auto& original_shape = expr->get_input_port_connector(0)->get_shape();
     auto transposed_shape = original_shape;
     size_t leading_dimension = *(original_shape.rbegin());
     if (!layout.empty()) {

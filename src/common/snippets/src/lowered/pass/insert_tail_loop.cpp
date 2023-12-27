@@ -20,13 +20,46 @@ void InsertTailLoop::propagate_updated_subtensor_through_loop(const LinearIR& li
                                                               LinearIR::container::const_iterator begin,
                                                               LinearIR::container::const_iterator end,
                                                               const size_t new_dim_value) {
-    std::map<lowered::PortDescriptorPtr, snippets::VectorDims> original_shapes;
+    std::map<PortConnectorPtr, snippets::VectorDims> original_shapes;
+
+    auto update_only_dim_idx_with_subtensor_value = [&](const LinearIR::LoopManager::LoopPort& port) {
+        if (port.is_incremented) {
+            const auto& desc = port.expr_port->get_descriptor_ptr();
+            const auto& in_connector = port.expr_port->get_port_connector_ptr();
+
+            const auto& layout = desc->get_layout();
+            const auto& desc_subtensor = desc->get_subtensor();
+            const auto& shape = in_connector->get_shape();
+            if (port.dim_idx < desc_subtensor.size()) {
+                if (original_shapes.find(in_connector) == original_shapes.end()) {
+                    original_shapes[in_connector] = shape;
+                }
+                auto new_shape = shape;
+                new_shape[utils::get_input_dim_idx(layout, port.dim_idx)] = *(desc_subtensor.rbegin() + port.dim_idx);
+                in_connector->set_shape(new_shape);
+            }
+        }
+    };
+
+    auto update_subtensor = [](const PortConnectorPtr& connector, const PortDescriptorPtr& desc, bool is_input) {
+        const auto& subtensor = desc->get_subtensor();
+        if (!subtensor.empty()) {
+            auto planar_dims = is_input ? snippets::utils::get_planar_vdims(connector->get_shape(), desc->get_layout())
+                                        : snippets::utils::get_preordered_vdims(connector->get_shape(), desc->get_layout());
+            const size_t subtensor_start = planar_dims.size() - subtensor.size();
+            VectorDims new_subtensor(planar_dims.begin() + subtensor_start, planar_dims.end());
+            for (size_t i = 0; i < new_subtensor.size(); ++i) {
+                new_subtensor[i] = std::min(new_subtensor[i], subtensor[i]);
+            }
+            desc->set_subtensor(new_subtensor);
+        }
+    };
+
     // First step: set new dim value to the corresponding entry_points' dimensions
     if (new_dim_value != existing_subtensor_value) {
         for (const auto& port : loop_info->get_entry_points()) {
             if (port.is_incremented) {
                 const auto& expr = port.expr_port->get_expr();
-                const auto node = expr->get_node();
                 auto desc = port.expr_port->get_descriptor_ptr();
                 auto subtensor = desc->get_subtensor();
                 if (port.dim_idx < subtensor.size()) {
@@ -34,54 +67,18 @@ void InsertTailLoop::propagate_updated_subtensor_through_loop(const LinearIR& li
                     desc->set_subtensor(subtensor);
                 }
 
-                const auto parent_desc = expr->get_input_port_connector(port.expr_port->get_index())->get_source().get_descriptor_ptr();
-                const auto& layout = parent_desc->get_layout();
-                const auto& shape = parent_desc->get_shape();
-                if (original_shapes.find(parent_desc) == original_shapes.end()) {
-                    original_shapes[parent_desc] = shape;
+                const auto& in_connector = port.expr_port->get_port_connector_ptr();
+                const auto& layout = desc->get_layout();
+                const auto& shape = in_connector->get_shape();
+                if (original_shapes.find(in_connector) == original_shapes.end()) {
+                    original_shapes[in_connector] = shape;
                 }
                 auto new_shape = shape;
-                new_shape[*(layout.rbegin() + port.dim_idx)] = new_dim_value;
-                parent_desc->set_shape(new_shape);
+                new_shape[utils::get_input_dim_idx(layout, port.dim_idx)] = new_dim_value;
+                in_connector->set_shape(new_shape);
             }
         }
     }
-
-    auto update_only_dim_idx_with_subtensor_value = [&](const LinearIR::LoopManager::LoopPort& port) {
-        if (port.is_incremented) {
-            auto desc = port.expr_port->get_descriptor_ptr();
-            const auto expr = port.expr_port->get_expr();
-            const auto parent_desc = expr->get_input_port_connector(port.expr_port->get_index())->get_source().get_descriptor_ptr();
-
-            const auto& layout = parent_desc->get_layout();
-            const auto& shape = parent_desc->get_shape();
-            const auto& desc_subtensor = desc->get_subtensor();
-            if (port.dim_idx < desc_subtensor.size()) {
-                if (original_shapes.find(parent_desc) == original_shapes.end()) {
-                    original_shapes[parent_desc] = shape;
-                }
-                auto new_shape = shape;
-                new_shape[*(layout.rbegin() + port.dim_idx)] = *(desc_subtensor.rbegin() + port.dim_idx);
-                parent_desc->set_shape(new_shape);
-            }
-        }
-    };
-
-    auto update_subtensors = [](const std::vector<PortDescriptorPtr>& descs, bool is_input) {
-        for (const auto& desc : descs) {
-            const auto& subtensor = desc->get_subtensor();
-            if (!subtensor.empty()) {
-                auto planar_dims = is_input ? snippets::utils::get_planar_vdims(desc->get_shape(), desc->get_layout())
-                                            : snippets::utils::get_preordered_vdims(desc->get_shape(), desc->get_layout());
-                const size_t subtensor_start = planar_dims.size() - subtensor.size();
-                VectorDims new_subtensor(planar_dims.begin() + subtensor_start, planar_dims.end());
-                for (size_t i = 0; i < new_subtensor.size(); ++i) {
-                    new_subtensor[i] = std::min(new_subtensor[i], subtensor[i]);
-                }
-                desc->set_subtensor(new_subtensor);
-            }
-        }
-    };
 
     auto shape_inference_end_it = end;
     const bool loop_by_last_dim = loop_info->get_dim_idx() == 0;
@@ -116,8 +113,13 @@ void InsertTailLoop::propagate_updated_subtensor_through_loop(const LinearIR& li
             break;
         }
         expr->updateShapes();
-        update_subtensors(expr->get_input_port_descriptors(), true);
-        update_subtensors(expr->get_output_port_descriptors(), false);
+
+        for (size_t i = 0; i < expr->get_input_count(); ++i) {
+            update_subtensor(expr->get_input_port_connector(i), expr->get_input_port_descriptor(i), true);
+        }
+        for (size_t i = 0; i < expr->get_output_count(); ++i) {
+            update_subtensor(expr->get_output_port_connector(i), expr->get_output_port_descriptor(i), false);
+        }
     }
 
     // After subtensor propagation, the original shapes must be restored

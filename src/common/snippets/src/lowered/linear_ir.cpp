@@ -306,8 +306,8 @@ VectorDims LinearIR::get_master_shape() const {
         master_shape = utils::get_preordered_vdims(source);
     } else {
         for (const auto& oe : out_exprs) {
-            const auto& port_desc = oe->get_input_port_descriptor(0);
-            OPENVINO_ASSERT(ov::snippets::broadcast_merge_into(master_shape, port_desc->get_shape()),
+            const auto& in_connector = oe->get_input_port_connector(0);
+            OPENVINO_ASSERT(ov::snippets::broadcast_merge_into(master_shape, in_connector->get_shape()),
                             "Failed to merge input shapes in infer_master_shape");
         }
     }
@@ -315,8 +315,7 @@ VectorDims LinearIR::get_master_shape() const {
 }
 
 LinearIR::LIRShapeInfer::LIRShapeInfer(container& body_exprs, io_container& io_exprs)
-                                       : ShapeInferSnippetsNode(),
-                                         m_exprs{std::make_shared<container>(body_exprs)} {
+    : ShapeInferSnippetsNode(), m_exprs{std::make_shared<container>(body_exprs)} {
     // Note that here we rely on the assumption that io_expressions can't be changed after the LIR was created
     for (const auto& expr : io_exprs) {
         if (expr->get_type() == IOExpression::io_type::INPUT) {
@@ -332,7 +331,7 @@ LinearIR::LIRShapeInfer::LIRShapeInfer(container& body_exprs, io_container& io_e
     std::vector<VectorDims> outputDims;
     outputDims.reserve(m_output_exprs.size());
     for (const auto& expr : m_output_exprs) {
-        const auto &shape = expr->get_input_port_descriptor(0)->get_shape();
+        const auto &shape = expr->get_input_port_connector(0)->get_shape();
         if (utils::is_dynamic_vdims(shape)) {
             outputDims.clear();
             break;
@@ -345,7 +344,7 @@ LinearIR::LIRShapeInfer::LIRShapeInfer(container& body_exprs, io_container& io_e
 IShapeInferSnippets::Result LinearIR::LIRShapeInfer::infer(const std::vector<VectorDimsRef>& input_shapes) {
     OPENVINO_ASSERT(m_input_exprs.size() == input_shapes.size(), "Got invalid number of input shapes in LIR ShapeInfer");
     for (size_t i = 0; i < m_input_exprs.size(); i++)
-        m_input_exprs[i]->get_output_port_descriptor(0)->set_shape(input_shapes[i]);
+        m_input_exprs[i]->get_output_port_connector(0)->set_shape(input_shapes[i]);
 
     for (const auto& expr : *m_exprs) {
         if (expr->needShapeInfer())
@@ -355,7 +354,7 @@ IShapeInferSnippets::Result LinearIR::LIRShapeInfer::infer(const std::vector<Vec
     std::vector<VectorDims> outputDims;
     outputDims.reserve(m_output_exprs.size());
     for (const auto& expr : m_output_exprs) {
-        outputDims.push_back(expr->get_input_port_descriptor(0)->get_shape());
+        outputDims.push_back(expr->get_input_port_connector(0)->get_shape());
     }
     m_last_result = {outputDims, ShapeInferStatus::success};
     return m_last_result;

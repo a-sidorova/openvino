@@ -38,7 +38,7 @@ bool SoftmaxDecomposition::run(LinearIR& linear_ir) {
             const auto softmax_loop_ids = softmax_expr->get_loop_ids();
             const auto& input_connector = softmax_expr->get_input_port_connector(0);
             const auto& output_connector = softmax_expr->get_output_port_connector(0);
-            const auto tensor_out = softmax_expr->get_output_port_descriptor(0)->get_shape();
+            const auto tensor_out = softmax_expr->get_output_port_connector(0)->get_shape();
             const auto inner_work_amount = *(tensor_out.rbegin());
 
             // Float constant values in byte representation
@@ -52,7 +52,7 @@ bool SoftmaxDecomposition::run(LinearIR& linear_ir) {
                     expr->get()->updateShapes();
                 return std::make_pair(expr, n);
             };
-            const ov::Dimension broadcasted_dim(*(softmax_expr->get_input_port_descriptor(0)->get_shape().rbegin()));
+            const ov::Dimension broadcasted_dim(*(softmax_expr->get_input_port_connector(0)->get_shape().rbegin()));
             // Note: VectorBuffer is a special case, since it should go before the initial Load. So we handle it separately
             const auto& vector_buffer_max = push_node(std::make_shared<op::VectorBuffer>());
             // Init value of vector buffer for ReduceMax is -FLOAT_MIN.

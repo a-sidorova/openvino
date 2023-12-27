@@ -110,11 +110,11 @@ ov::PartialShape get_preordered_pshape(const ov::PartialShape& shape, const std:
 
 ov::PartialShape get_planar_pshape(const Input<Node>& in) {
     const auto& port = snippets::lowered::PortDescriptorUtils::get_port_descriptor_ptr(in);
-    return get_planar_pshape(ov::Shape{port->get_shape()}, port->get_layout());
+    return get_planar_pshape(in.get_partial_shape().get_shape(), port->get_layout());
 }
 ov::PartialShape get_preordered_pshape(const Output<Node>& out) {
     const auto& port = snippets::lowered::PortDescriptorUtils::get_port_descriptor_ptr(out);
-    return get_preordered_pshape(ov::Shape{port->get_shape()}, port->get_layout());
+    return get_preordered_pshape(out.get_partial_shape().get_shape(), port->get_layout());
 }
 
 VectorDims get_planar_vdims(const VectorDims& shape, const std::vector<size_t>& order) {
@@ -130,11 +130,11 @@ VectorDims get_preordered_vdims(const VectorDims& shape, const std::vector<size_
 
 VectorDims get_planar_vdims(const snippets::lowered::ExpressionPort& expr_port) {
     OPENVINO_ASSERT(expr_port.get_type() == snippets::lowered::ExpressionPort::Type::Input, "get_planar_vdims expects Expression Input port");
-    return get_planar_vdims(expr_port.get_descriptor_ptr()->get_shape(), expr_port.get_descriptor_ptr()->get_layout());
+    return get_planar_vdims(expr_port.get_port_connector_ptr()->get_shape(), expr_port.get_descriptor_ptr()->get_layout());
 }
 VectorDims get_preordered_vdims(const snippets::lowered::ExpressionPort& expr_port) {
     OPENVINO_ASSERT(expr_port.get_type() == snippets::lowered::ExpressionPort::Type::Output, "get_preordered_vdims expects Expression Output port");
-    return get_preordered_vdims(expr_port.get_descriptor_ptr()->get_shape(), expr_port.get_descriptor_ptr()->get_layout());
+    return get_preordered_vdims(expr_port.get_port_connector_ptr()->get_shape(), expr_port.get_descriptor_ptr()->get_layout());
 }
 
 bool is_dynamic_vdims(const VectorDims& shape) {

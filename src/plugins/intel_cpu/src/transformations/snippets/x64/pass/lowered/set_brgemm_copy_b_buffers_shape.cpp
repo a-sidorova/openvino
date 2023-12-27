@@ -25,11 +25,11 @@ bool ov::intel_cpu::pass::SetBrgemmCopyBBuffersShape::run(snippets::lowered::Lin
     for (const auto& expr : linear_ir) {
         if (auto copy_b = ov::as_type_ptr<ov::intel_cpu::BrgemmCopyB>(expr->get_node())) {
             const auto buffer = get_buffer_from_output(expr, 0);
-            const auto& out_desc = expr->get_output_port_descriptor(0);
-            buffer->set_allocation_shape(copy_b->get_data_repacking_shape(out_desc->get_shape()));
+            const auto& out_connector = expr->get_output_port_connector(0);
+            buffer->set_allocation_shape(copy_b->get_data_repacking_shape(out_connector->get_shape()));
             if (copy_b->is_with_compensations()) {
                 const auto compensations_buffer = get_buffer_from_output(expr, 1);
-                compensations_buffer->set_allocation_shape(copy_b->get_compensation_shape(out_desc->get_shape()));
+                compensations_buffer->set_allocation_shape(copy_b->get_compensation_shape(out_connector->get_shape()));
             }
             modified = true;
         }

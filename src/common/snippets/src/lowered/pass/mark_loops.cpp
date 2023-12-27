@@ -37,8 +37,7 @@ bool MarkLoops::run(LinearIR& linear_ir) {
         const auto& lhs_desc = lhs.get_descriptor_ptr();
         const auto& rhs_desc = rhs.get_descriptor_ptr();
         return lhs_desc->get_subtensor() != rhs_desc->get_subtensor() ||
-               lhs_desc->get_layout() != rhs_desc->get_layout() ||
-               lhs_desc->get_shape() != rhs_desc->get_shape();
+               lhs_desc->get_layout() != rhs_desc->get_layout();
     };
 
     for (auto expr_it = linear_ir.cbegin(); expr_it != linear_ir.cend(); expr_it++) {

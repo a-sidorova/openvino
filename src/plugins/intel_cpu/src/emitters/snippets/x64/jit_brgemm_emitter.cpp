@@ -62,28 +62,28 @@ jit_brgemm_emitter::jit_brgemm_emitter(jit_generator* h, cpu_isa_t isa, const ov
         return default_layout;
     };
 
-    auto init_in_scheduling_params = [&](const snippets::lowered::PortDescriptorPtr& input) {
-        const auto& layout = get_layout(input->get_layout(), input->get_shape());
-        leading_dimensions.push_back(get_in_leading_dim(input->get_shape(), layout));
+    auto init_in_scheduling_params = [&](const snippets::lowered::PortConnectorPtr& connector, const snippets::lowered::PortDescriptorPtr& desc) {
+        const auto& layout = get_layout(desc->get_layout(), connector->get_shape());
+        leading_dimensions.push_back(get_in_leading_dim(connector->get_shape(), layout));
     };
-    auto init_out_scheduling_params = [&](const snippets::lowered::PortDescriptorPtr& output) {
-        const auto& layout = get_layout(output->get_layout(), output->get_shape());
-        leading_dimensions.push_back(get_out_leading_dim(output->get_shape(), layout));
+    auto init_out_scheduling_params = [&](const snippets::lowered::PortConnectorPtr& connector, const snippets::lowered::PortDescriptorPtr& desc) {
+        const auto& layout = get_layout(desc->get_layout(), connector->get_shape());
+        leading_dimensions.push_back(get_out_leading_dim(connector->get_shape(), layout));
     };
 
     const auto& input_0_desc = expr->get_input_port_descriptor(0);
     const auto& input_1_desc = expr->get_input_port_descriptor(1);
     const auto& output_desc = expr->get_output_port_descriptor(0);
 
-    init_in_scheduling_params(input_0_desc);
+    init_in_scheduling_params(expr->get_input_port_connector(0), input_0_desc);
     if (brgemm_node->is_with_data_repacking()) {
         const auto& brgemm_copy = brgemm_node->get_brgemm_copy();
-        const auto& allocated_shape = brgemm_copy->get_data_repacking_shape(input_1_desc->get_shape());
+        const auto& allocated_shape = brgemm_copy->get_data_repacking_shape(expr->get_input_port_connector(1)->get_shape());
         leading_dimensions.push_back(*allocated_shape.rbegin());
     } else {
-        init_in_scheduling_params(input_1_desc);
+        init_in_scheduling_params(expr->get_input_port_connector(1), input_1_desc);
     }
-    init_out_scheduling_params(output_desc);
+    init_out_scheduling_params(expr->get_output_port_connector(0), output_desc);
 
     const auto& brg0Prc = brgemm_node->get_input_element_type(0);
     const auto& brg1Prc = brgemm_node->get_input_element_type(1);

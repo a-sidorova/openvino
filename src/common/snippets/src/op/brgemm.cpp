@@ -119,7 +119,7 @@ std::vector<ov::PartialShape> Brgemm::get_planar_input_shapes(const std::vector<
 
 ov::PartialShape Brgemm::get_planar_output_shape(const ov::PartialShape& output_shape) const {
     // This method can be safely called from validate_and_infer_types() before output creation
-    const auto& out_layout  = get_output_layout(shared_from_this());
+    const auto& out_layout = get_output_layout(shared_from_this());
     if (!out_layout.empty())
         return utils::get_planar_pshape(output_shape, out_layout);
 

@@ -12,8 +12,8 @@ namespace ov {
 namespace snippets {
 namespace lowered {
 
-PortConnector::PortConnector(ExpressionPort source_descriptor, const std::set<ExpressionPort>& consumer_descriptors)
-    : m_source_port(std::move(source_descriptor)), m_consumer_ports(consumer_descriptors) {}
+PortConnector::PortConnector(ExpressionPort source_descriptor, VectorDims shape, const std::set<ExpressionPort>& consumer_descriptors)
+    : m_source_port(std::move(source_descriptor)), m_consumer_ports(consumer_descriptors), m_shape(std::move(shape)) {}
 
 std::set<ExpressionPort>::const_iterator PortConnector::find_consumer(const ExpressionPort& consumer) const {
     // Note: Find by shared ptr and index port is enough since these parameters must be unique

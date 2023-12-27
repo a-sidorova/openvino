@@ -6,6 +6,7 @@
 
 #include "snippets/lowered/linear_ir.hpp"
 #include "snippets/lowered/loop_manager.hpp"
+#include "snippets/utils.hpp"
 #include "snippets/itt.hpp"
 
 namespace ov {
@@ -47,10 +48,9 @@ void InitLoops::init_ptr_increments(const LinearIR::LoopManager::LoopInfoPtr& lo
         if (loop_entry.is_incremented) {
             const auto& port = loop_entry.expr_port;
             const auto source = *port->get_connected_ports().begin();
-            const auto loop_ids = port->get_expr()->get_loop_ids();
             const auto& layout = port->get_descriptor_ptr()->get_layout();
-            const auto& shape = port->get_descriptor_ptr()->get_shape();
-            const auto& dim = *(layout.rbegin() + loop_entry.dim_idx);
+            const auto& shape = port->get_port_connector_ptr()->get_shape();
+            const auto& dim = utils::get_input_dim_idx(layout, loop_entry.dim_idx);
             // If relevant dim is not broadcasted, then ptr_increment is the dim stride in the new layout
             if (!(shape[dim] == 1 && work_amount != 1)) {
                 // Input layout shows how we should read data by which order and strides
@@ -63,11 +63,9 @@ void InitLoops::init_ptr_increments(const LinearIR::LoopManager::LoopInfoPtr& lo
         loop_exit.ptr_increment = 0;
         if (loop_exit.is_incremented) {
             const auto& port = loop_exit.expr_port;
-            const auto loop_ids = port->get_expr()->get_loop_ids();
             const auto& layout = port->get_descriptor_ptr()->get_layout();
-            const auto& shape = port->get_descriptor_ptr()->get_shape();
-            const auto original_dim = layout.size() - 1 - loop_exit.dim_idx;
-            const auto& dim = std::distance(layout.cbegin(), std::find(layout.cbegin(), layout.cend(), original_dim));
+            const auto& shape = port->get_port_connector_ptr()->get_shape();
+            const auto& dim = utils::get_output_dim_idx(layout, loop_exit.dim_idx);
             // If relevant dim is not broadcasted, then ptr_increment is the dim stride in the new layout
             if (!(shape[dim] == 1 && work_amount != 1)) {
                 // Output layout shows how we already written data by which order and strides

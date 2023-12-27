@@ -43,10 +43,10 @@ bool InsertBroadcastMove::run(LinearIR& linear_ir) {
         OPENVINO_ASSERT(connectors.size() == descriptors.size(),
                         "Invalid expression configuration: connectors and descriptors size mismatch");
 
-        std::vector<size_t> last_dims(descriptors.size());
-        std::transform(descriptors.begin(), descriptors.end(), last_dims.begin(),
-                       [](const std::shared_ptr<PortDescriptor>& d){
-                           return d->get_shape().back();
+        std::vector<size_t> last_dims(connectors.size());
+        std::transform(connectors.begin(), connectors.end(), last_dims.begin(),
+                       [](const PortConnectorPtr& p){
+                           return p->get_shape().back();
                        });
         const auto broadcasted_dim = *std::max_element(last_dims.begin(), last_dims.end());
         for (size_t i = 0; i < last_dims.size(); i++) {
@@ -62,9 +62,6 @@ bool InsertBroadcastMove::run(LinearIR& linear_ir) {
                 const auto broadcast_expr = linear_ir.create_expression(broadcast, {connectors[i]});
                 linear_ir.insert(expr_it, broadcast_expr);
                 linear_ir.replace_input(expr->get_input_port(i), broadcast_expr->get_output_port_connector(0));
-                // Note that BroadcastMove modified the next expr input shape, so we need to set update
-                // expr's input port descriptor to reflect the changes
-                expr->get_input_port_descriptor(i)->set_shape(broadcast_expr->get_output_port_descriptor(0)->get_shape());
 
                 // Copy Loop identifies
                 const auto& loop_ids = expr->get_loop_ids();

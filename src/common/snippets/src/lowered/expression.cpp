@@ -143,6 +143,13 @@ ExpressionPtr Expression::clone_with_new_inputs(const std::vector<PortConnectorP
                                                 const std::shared_ptr<Node>& new_node) const {
     const auto& expr = std::shared_ptr<Expression>(new Expression(*this));
     expr->update_node_and_connectors(new_inputs, new_node);
+    if (expr->needShapeInfer()) {
+        expr->updateShapes();
+    } else if (new_inputs.empty() && expr->get_output_count() != 0) {
+        for (size_t i = 0; i < expr->get_output_count(); ++i) {
+            expr->get_output_port_connector(i)->set_shape(get_output_port_connector(i)->get_shape());
+        }
+    }
     return expr;
 }
 
@@ -178,14 +185,11 @@ void Expression::updateShapes() {
         std::vector<VectorDimsRef> input_shapes;
 
         const auto& in_connectors = get_input_port_connectors();
-        const auto& in_descriptors = get_input_port_descriptors();
 
         input_shapes.reserve(in_connectors.size());
-        for (size_t i = 0; i < in_connectors.size(); i++) {
-            const auto& src_port_desc = in_connectors[i]->get_source().get_descriptor_ptr();
-            in_descriptors[i]->set_shape(src_port_desc->get_shape());
+        for (const auto& in_connector : in_connectors) {
             // Note that input_shape is a reference, so we should always bind it to an object with a longer lifetime
-            input_shapes.emplace_back(in_descriptors[i]->get_shape());
+            input_shapes.emplace_back(in_connector->get_shape());
         }
 
         result = m_shapeInference->infer(input_shapes);
@@ -195,10 +199,10 @@ void Expression::updateShapes() {
     }
     OPENVINO_ASSERT(result.status == ShapeInferStatus::success,
                     "Shape inference of " + (get_node()->get_friendly_name()) + " didn't return success status");
-    const auto& out_descriptors = get_output_port_descriptors();
-    OPENVINO_ASSERT(result.dims.size() == out_descriptors.size(), "shapeInference call returned invalid number of output shapes");
-    for (size_t i = 0; i < out_descriptors.size(); i++)
-        out_descriptors[i]->set_shape(result.dims[i]);
+    const auto& out_connectors = get_output_port_connectors();
+    OPENVINO_ASSERT(result.dims.size() == out_connectors.size(), "shapeInference call returned invalid number of output shapes");
+    for (size_t i = 0; i < out_connectors.size(); i++)
+        out_connectors[i]->set_shape(result.dims[i]);
 }
 
 IOExpression::IOExpression(const std::shared_ptr<ov::opset1::Parameter>& par, int64_t index, const std::shared_ptr<IShapeInferSnippetsFactory>& factory)
@@ -210,6 +214,9 @@ ExpressionPtr IOExpression::clone_with_new_inputs(const std::vector<PortConnecto
                                                   const std::shared_ptr<Node>& new_node) const {
     const auto& expr = std::shared_ptr<IOExpression>(new IOExpression(*this));
     expr->update_node_and_connectors(new_inputs, new_node);
+    if (m_type == io_type::INPUT) {
+        expr->get_output_port_connector(0)->set_shape(get_output_port_connector(0)->get_shape());
+    }
     return expr;
 }
 

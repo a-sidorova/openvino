@@ -7,6 +7,7 @@
 #include "snippets/lowered/linear_ir.hpp"
 #include "snippets/lowered/loop_manager.hpp"
 #include "snippets/snippets_isa.hpp"
+#include "snippets/utils.hpp"
 #include "snippets/itt.hpp"
 
 namespace ov {
@@ -19,13 +20,17 @@ using LoopInfoPtr = LoopManager::LoopInfoPtr;
 
 InsertLoadStore::InsertLoadStore(size_t vector_size) : m_vector_size(vector_size) {}
 
-size_t InsertLoadStore::get_count(const PortDescriptorPtr& port_desc) const {
-    const auto layout = port_desc->get_layout();
-    const auto shape = port_desc->get_shape();
-    // Find last dimension by layout
-    const auto last_dim_idx = std::find(layout.begin(), layout.end(), layout.size() - 1);
-    OPENVINO_ASSERT(last_dim_idx != layout.end() && *last_dim_idx < shape.size(), "Load/Store expression have incorrect layout");
-    const auto dim = shape[*last_dim_idx];
+size_t InsertLoadStore::get_count(const ExpressionPort& port) const {
+    const auto layout = port.get_descriptor_ptr()->get_layout();
+    const auto shape = port.get_port_connector_ptr()->get_shape();
+    size_t last_dim_idx = 0;
+    if (port.get_type() == ExpressionPort::Type::Input)
+        last_dim_idx = utils::get_input_dim_idx(layout, 0);
+    else if (port.get_type() == ExpressionPort::Type::Output)
+        last_dim_idx = utils::get_output_dim_idx(layout, 0);
+    else
+        OPENVINO_THROW("Unsupported type of expression port");
+    const auto dim = shape[last_dim_idx];
     return dim == 1 ? 1 : m_vector_size;
 }
 
@@ -50,7 +55,7 @@ bool InsertLoadStore::insert_load(LinearIR& linear_ir, const LinearIR::constExpr
             return false;
 
         const auto loop_ids = consumer_expr->get_loop_ids();
-        const auto load = std::make_shared<op::Load>(data_ngraph_output, get_count(data_expr->get_output_port_descriptor(0)));
+        const auto load = std::make_shared<op::Load>(data_ngraph_output, get_count(data_expr->get_output_port(0)));
         PortDescriptorUtils::set_port_descriptor_ptr(load->output(0), consumer_input.get_descriptor_ptr()->clone());
         const auto load_expr = linear_ir.create_expression(load, {output_connector});
         linear_ir.insert(linear_ir.find_after(data_expr_it, consumer_expr), load_expr);
@@ -81,7 +86,7 @@ bool InsertLoadStore::insert_store(LinearIR& linear_ir, const LinearIR::constExp
         return false;
 
     const auto loop_ids = parent_expr->get_loop_ids();
-    const auto store = std::make_shared<op::Store>(parent->output(port), get_count(data_expr->get_input_port_descriptor(0)));
+    const auto store = std::make_shared<op::Store>(parent->output(port), get_count(data_expr->get_input_port(0)));
     PortDescriptorUtils::set_port_descriptor_ptr(store->output(0), parent_output.get_descriptor_ptr()->clone());
     const auto store_expr = linear_ir.create_expression(store, {input_connector});
     const auto& insertion_pos = linear_ir.find_after(std::reverse_iterator<LinearIR::constExprIt>(data_expr_it), parent_expr).base();

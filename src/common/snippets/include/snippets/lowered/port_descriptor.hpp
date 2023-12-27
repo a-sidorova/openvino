@@ -23,27 +23,17 @@ public:
         static size_t FULL_DIM;
     };
 
-    explicit PortDescriptor(const ov::Input<ov::Node>& node,
-                            VectorDims subtensor_shape = {},
-                            std::vector<size_t> layout = {});
-    explicit PortDescriptor(const ov::Input<const ov::Node>& node,
-                            VectorDims subtensor_shape = {},
-                            std::vector<size_t> layout = {});
-    explicit PortDescriptor(const ov::Output<ov::Node>& node,
-                            VectorDims subtensor_shape = {},
-                            std::vector<size_t> layout = {});
-    explicit PortDescriptor(const ov::Output<const ov::Node>& node,
-                            VectorDims subtensor_shape = {},
-                            std::vector<size_t> layout = {});
-    PortDescriptor(VectorDims shape, VectorDims subtensor_shape, std::vector<size_t> layout = {});
+    explicit PortDescriptor(const ov::Input<ov::Node>& node, VectorDims subtensor_shape = {});
+    explicit PortDescriptor(const ov::Input<const ov::Node>& node, VectorDims subtensor_shape = {});
+    explicit PortDescriptor(const ov::Output<ov::Node>& node, VectorDims subtensor_shape = {});
+    explicit PortDescriptor(const ov::Output<const ov::Node>& node, VectorDims subtensor_shape = {});
+    PortDescriptor(std::vector<size_t> layout, VectorDims subtensor_shape);
     PortDescriptor() = default;
 
-    const VectorDims& get_shape() const {return m_tensor_shape;}
     const VectorDims& get_subtensor() const {return m_subtensor_shape;}
     const std::vector<size_t>& get_layout() const {return m_layout;}
     size_t get_reg() const { return m_reg; }
 
-    void set_shape(const VectorDims& tensor) { m_tensor_shape = tensor; }
     void set_layout(const std::vector<size_t>& layout) { m_layout = layout; }
     void set_subtensor(const VectorDims& subtensor) { m_subtensor_shape = subtensor; }
     void set_reg(size_t reg) { m_reg = reg; }
@@ -56,9 +46,8 @@ public:
     friend bool operator!=(const PortDescriptor& lhs, const PortDescriptor& rhs) {return !(lhs == rhs);}
 
 private:
-    void validate_arguments();
-    /// \brief Original tensor shape
-    VectorDims m_tensor_shape{};
+    PortDescriptor(VectorDims subtensor_shape, size_t rank);
+
     /// \brief Order of dimensions: NCHW == {0, 1, 2, 3}, NHWC == {0, 2, 3, 1}, NCHW16c == {0, 1, 2, 3, 1}
     std::vector<size_t> m_layout{};
     /// \brief Minimal tensor size that could be processed in one call
@@ -67,7 +56,7 @@ private:
     size_t m_reg = 0;
 
     /// Notes:
-    ///   - `m_tensor_shape` is dense shape which is controlled by expression outputs.
+    ///   - Original shape in PortConnector is dense shape which is controlled by expression outputs.
     ///     It means that the result of data writing of expression outputs should be read using this shape by the next expression inputs.
     ///   - `m_layout` is the order of data reading or writing by MemoryAccess ops. Note that only MemoryAccess ops may have `m_layout`.
     ///     For other expressions this order parameter is simply ignored for now.

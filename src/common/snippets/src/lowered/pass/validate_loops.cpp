@@ -8,6 +8,7 @@
 #include "snippets/lowered/linear_ir.hpp"
 #include "snippets/lowered/loop_manager.hpp"
 #include "snippets/utils.hpp"
+#include "snippets/lowered/pass/serialize_control_flow.hpp"
 
 namespace ov {
 namespace snippets {

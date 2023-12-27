@@ -23,11 +23,11 @@ LoopPort::LoopPort(const ExpressionPort& port, bool is_incremented, size_t dim_i
     : expr_port(std::make_shared<ExpressionPort>(port)),
       is_incremented(is_incremented),
       dim_idx(dim_idx) {
-    OPENVINO_ASSERT(dim_idx < port.get_descriptor_ptr()->get_shape().size(),
+    OPENVINO_ASSERT(dim_idx < port.get_port_connector_ptr()->get_shape().size(),
                     "LoopPort dim_idx (",
                     dim_idx,
                     ") must be less than the corresponding expression port shape rank (",
-                    port.get_descriptor_ptr()->get_shape().size(),
+                    port.get_port_connector_ptr()->get_shape().size(),
                     ")");
 }
 
