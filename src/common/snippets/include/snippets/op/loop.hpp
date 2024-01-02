@@ -5,7 +5,7 @@
 #pragma once
 
 #include "snippets/emitter.hpp"
-
+#include "snippets/lowered/runtime_config.hpp"
 #include "openvino/op/op.hpp"
 
 namespace ov {
@@ -107,6 +107,8 @@ public:
     void set_increment(size_t new_increment);
     void set_evaluate_once(bool once);
     void set_id(size_t id);
+
+    void update(const lowered::RuntimeConfig::LoopDescriptor& descriptor);
 
 protected:
     std::vector<bool> m_is_incremented = {};

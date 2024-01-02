@@ -10,7 +10,6 @@
 #include "snippets/lowered/pass/cleanup_loop_offsets.hpp"
 #include "snippets/lowered/pass/insert_tail_loop.hpp"
 #include "snippets/lowered/pass/optimize_loop_single_evaluation.hpp"
-#include "snippets/lowered/pass/serialize_control_flow.hpp"
 
 #include "snippets/op/kernel.hpp"
 
@@ -28,6 +27,8 @@ void Generator::generate(lowered::LinearIR& linear_ir, LoweringResult& result, c
     std::function<opRegType(const std::shared_ptr<Node>& op)> reg_type_mapper = [&](const std::shared_ptr<Node>& op) -> opRegType {
         return get_op_reg_type(op);
     };
+
+    const auto& runtime_config = linear_ir.get_runtime_config();
     lowered::pass::PassPipeline lowered_pipeline;
     // Note: the order of all passes in this pipeline must not be changed since they have hard dependencies
     //    1. InsertTailLoop must be called after AssignRegisters since tail loop expressions must have the same
@@ -37,7 +38,7 @@ void Generator::generate(lowered::LinearIR& linear_ir, LoweringResult& result, c
     //    3. OptimizeLoopSingleEvaluation must be called after CleanupLoopOffsets
     //       since CleanupLoopOffsets can't handle loops with evaluate_once = true
     lowered_pipeline.register_pass<lowered::pass::AssignRegisters>(reg_type_mapper);
-    lowered_pipeline.register_pass<lowered::pass::InsertTailLoop>();
+    lowered_pipeline.register_pass<lowered::pass::InsertTailLoop>(runtime_config);
     lowered_pipeline.register_pass<lowered::pass::CleanupLoopOffsets>();
     lowered_pipeline.register_pass<lowered::pass::OptimizeLoopSingleEvaluation>();
     lowered_pipeline.run(linear_ir);
@@ -55,7 +56,7 @@ void Generator::generate(lowered::LinearIR& linear_ir, LoweringResult& result, c
     if (linear_ir.is_dynamic() || contains_dynamic_exprs)
         kernel_op = std::make_shared<op::KernelDynamic>(linear_ir);
     else
-        kernel_op = std::make_shared<op::KernelStatic>(linear_ir);
+        kernel_op = std::make_shared<op::KernelStatic>(linear_ir, runtime_config.get_data_offsets());
     kernel_op->compile_params = compile_params;
     const auto kernel_expr = linear_ir.create_expression(kernel_op, std::vector<lowered::PortConnectorPtr>{});
     const auto kernel = target->get(kernel_expr->get_node()->get_type_info())(kernel_expr);

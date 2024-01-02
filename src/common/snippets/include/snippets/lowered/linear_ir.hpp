@@ -7,6 +7,7 @@
 #include <list>
 
 #include "expression.hpp"
+#include "runtime_config.hpp"
 #include "snippets/target_machine.hpp"
 #include "snippets/shape_inference/shape_inference.hpp"
 
@@ -34,7 +35,10 @@ public:
     bool m_save_expressions = false;
     // True if we should check runtime info for nodes to call specific needed transformations
     bool m_need_fill_tail_register = false;
-    size_t m_loop_depth = 1;
+    // Defined by OptimizeDomain optimization. Otherwise can be inited by backend
+    size_t m_loop_depth = 0;
+    // If it's zero (default value), data offsets and master shape won't be appended by ones. Can be inited by backed.
+    size_t m_tensor_rank = 0;
 #ifdef SNIPPETS_DEBUG_CAPS
     PerfCountMode perf_count_mode = PerfCountMode::Disabled;
 #endif
@@ -50,6 +54,8 @@ public:
     // False if all Buffers will have uniqie ID and offsets in the Linear IR
     bool m_are_buffers_optimized = true;
 };
+
+class RuntimeConfigurator;
 
 /* The control flow of Snippets is built on Linear Intermediate Representation (Linear IR).
  * The class diagram is described in the documentation `snippets/docs/snippets_design_guide.md`.
@@ -74,10 +80,11 @@ public:
                                                LinearIR::container::const_iterator end,
                                                ExressionMap& expression_map);
 
-    const container& get_ops() const {return m_expressions; }
-    const io_container& get_IO_ops() const {return m_io_expressions; }
-    Config get_config() {return m_config; }
+    const container& get_ops() const { return m_expressions; }
+    const io_container& get_IO_ops() const { return m_io_expressions; }
+    const Config& get_config() const { return m_config; }
     void set_loop_depth(size_t loop_depth) { m_config.m_loop_depth = loop_depth; }
+    void set_tensor_rank(size_t tensor_rank) { m_config.m_tensor_rank = tensor_rank; }
 
     const ExpressionPtr& get_expr_by_node(const std::shared_ptr<Node>& n) const;
 
@@ -141,6 +148,10 @@ public:
 
     bool is_dynamic() const;
 
+    void init_runtime_configurator();
+    void configure_runtime_args();
+    const RuntimeConfig& get_runtime_config() const;
+
 private:
     std::shared_ptr<ShapeInferSnippetsNode> m_shape_infer = nullptr;
 
@@ -169,6 +180,7 @@ private:
     Config m_config{};
     LoopManagerPtr m_loop_manager = nullptr;
     std::shared_ptr<IShapeInferSnippetsFactory> m_shape_infer_factory;
+    std::shared_ptr<RuntimeConfigurator> m_runtime_configurator;
 };
 
 template<typename iterator>
