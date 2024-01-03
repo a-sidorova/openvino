@@ -74,12 +74,9 @@ bool SplitLoops::run(LinearIR& linear_ir) {
                 loop_to_split->set_work_amount(loop_to_fuse->get_increment());
 
                 LinearIR::constExprIt loop_begin_pos, loop_end_pos;
-                LoopManager::get_loop_bounds(linear_ir,
-                                             loop_to_split->get_entry_points(),
-                                             loop_to_split->get_exit_points(),
-                                             loop_begin_pos,
-                                             loop_end_pos,
-                                             loop_to_split_id);
+                LoopManager::get_loop_bounds(linear_ir, loop_to_split_id,
+                                             loop_to_split->get_entry_points(), loop_to_split->get_exit_points(),
+                                             loop_begin_pos, loop_end_pos);
                 const auto split_loop_id = loop_manager->mark_loop(loop_begin_pos,
                                                                    loop_end_pos,
                                                                    loop_to_fuse->get_work_amount(),
