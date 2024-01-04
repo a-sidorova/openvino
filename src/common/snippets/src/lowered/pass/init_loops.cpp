@@ -61,14 +61,18 @@ void InitLoops::init_ptr_increment(LoopPort& loop_port, size_t work_amount) {
     const auto& shape = expr_port->get_descriptor_ptr()->get_shape();
     if (expr_port->get_type() == ExpressionPort::Input) {
         const auto& dim = utils::get_input_dim_idx(layout, layout.size() - 1 - loop_port.dim_idx);
-        // If relevant dim is not broadcasted, then ptr_increment is the dim stride in the new layout
-        if (!(shape[dim] == 1 && work_amount != 1)) {
+        // When we cannot say about broadcasting by last dim
+        if (dim == shape.size() - 1 && utils::is_dynamic_vdim(shape[dim])) {
+            loop_port.ptr_increment = LoopPort::DYNAMIC_VALUE;
+        } else if (!(shape[dim] == 1 && work_amount != 1)) {
             loop_port.ptr_increment = get_stride(dim, shape);
         }
     } else if (expr_port->get_type() == ExpressionPort::Output) {
         const auto& dim = utils::get_output_dim_idx(layout, layout.size() - 1 - loop_port.dim_idx);
-        // If relevant dim is not broadcasted, then ptr_increment is the dim stride in the new layout
-        if (!(shape[dim] == 1 && work_amount != 1)) {
+        // When we cannot say about broadcasting by last dim
+        if (dim == shape.size() - 1 && utils::is_dynamic_vdim(shape[dim])) {
+            loop_port.ptr_increment = LoopPort::DYNAMIC_VALUE;
+        } else if (!(shape[dim] == 1 && work_amount != 1)) {
             // Output layout shows how we already written data by which order and strides
             loop_port.ptr_increment = get_stride(dim, shape);
         }

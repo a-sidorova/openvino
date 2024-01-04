@@ -100,7 +100,7 @@ std::shared_ptr<ov::Model> EltwiseMaxNumParamsFunction::initOriginal() const {
         mul.push_back(mul_node);
     }
     auto sub = std::make_shared<op::v1::Subtract>(mul[0], mul[1]);
-    auto power = std::make_shared<op::v1::Power>(add.back(), sub);
+    auto power = std::make_shared<op::v1::Power>(input_shapes.size() % 2 == 0 ? add.back() : params.back(), sub);
     auto exit_sinh = std::make_shared<op::v0::Sinh>(power);
     return std::make_shared<ov::Model>(NodeVector{sub, exit_sinh}, params);
 }

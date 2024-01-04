@@ -75,7 +75,7 @@ bool RuntimeConfig::get_loop_desc(size_t loop_id, const LoopDescriptor::Type& ty
 
 RuntimeConfig::LoopDescriptorList::iterator RuntimeConfig::push_new_desc(size_t loop_id, const LoopDescriptor::Type& type) {
     OPENVINO_ASSERT(m_loops.count(loop_id) > 0, "LoopId has not been found!");
-    return m_loops.at(loop_id).insert(m_loops.at(loop_id).cend(), RuntimeConfig::LoopDescriptor(IShapeInferSnippets::DYNAMIC_DIMENSION, 1, {}, {}, type));
+    return m_loops.at(loop_id).insert(m_loops.at(loop_id).cend(), RuntimeConfig::LoopDescriptor(IShapeInferSnippets::DYNAMIC_DIMENSION, 1, {}, {}, {}, type));
 }
 
 size_t RuntimeConfig::get_full_loop_descriptor_count() const {

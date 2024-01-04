@@ -27,7 +27,9 @@ bool LoadMoveBroadcastToBroadcastLoad::run(LinearIR& linear_ir) {
             const auto& interm_connector = expr->get_input_port_connector(0);
             const auto parent_expr = interm_connector->get_source().get_expr();
             const auto load = ov::as_type_ptr<op::Load>(parent_expr->get_node());
-            if (!load)
+            if (!load ||
+                 load->get_input_element_type(0) != load->get_output_element_type(0) ||
+                 parent_expr->get_input_port_descriptor(0)->get_shape() != parent_expr->get_output_port_descriptor(0)->get_shape())
                 continue;
 
             // Cannot rewrite Broadcast + Load if load has more than 1 user

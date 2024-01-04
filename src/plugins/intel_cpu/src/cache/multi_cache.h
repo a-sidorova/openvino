@@ -49,6 +49,19 @@ public:
         return entry->getOrCreate(key, std::move(builder));
     }
 
+    template<typename ValueType, typename KeyType>
+    typename CacheEntry<KeyType, ValueType>::ResultType
+    get(const KeyType& key) {
+        using EntryType = EntryTypeT<KeyType, ValueType>;
+        size_t id = getTypeId<EntryType>();
+        auto itr = _storage.find(id);
+        if (itr == _storage.end()) {
+            return {ValueType(), EntryType::LookUpStatus::Miss};
+        }
+        const auto entry = std::static_pointer_cast<EntryType>(itr->second);
+        return entry->get(key);
+    }
+
 private:
     template<typename T>
     size_t getTypeId();

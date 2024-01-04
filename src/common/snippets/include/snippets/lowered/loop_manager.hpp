@@ -325,6 +325,19 @@ public:
      */
     LoopPort get_loop_port_by_expr_port(const ExpressionPort& expr_port, const size_t loop_id);
 
+    /**
+     * @brief Sort loop IDs in LoopEnd expressions order and make them dense with expression loop IDs updates.
+     *        After optimizations on Loops IDs might be unevenly: some numbers are missed and unsorted.
+     *        For example,
+     *             [Loop -> ID -> new ID]
+     *              Loop0 -> 3 -> 0
+     *              Loop1 -> 0 -> 1
+     *              Loop2 -> 1 -> 2
+     * @param linear_ir linear IR that contains explicit Loop expressions
+     * @return status - True if loop IDs have been updated
+     */
+    bool normalize(const LinearIR& linear_ir);
+
 private:
     /**
      * @brief Add new Loop Info to the map

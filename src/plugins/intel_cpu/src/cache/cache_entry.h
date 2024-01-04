@@ -66,6 +66,12 @@ public:
         return {retVal, retStatus};
     }
 
+    ResultType get(const KeyType& key) {
+        ValType retVal = _impl.get(key);
+        auto retStatus = retVal == ValType() ? LookUpStatus::Miss : LookUpStatus::Hit;
+        return {retVal, retStatus};
+    }
+
 public:
     ImplType _impl;
 };

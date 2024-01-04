@@ -20,7 +20,7 @@ using LoopInfoPtr = LoopManager::LoopInfoPtr;
 
 InsertLoadStore::InsertLoadStore(size_t vector_size) : m_vector_size(vector_size) {}
 
-size_t InsertLoadStore::get_count(const ExpressionPort& port) const {
+size_t InsertLoadStore::get_processing_dim(const ExpressionPort& port) {
     const auto layout = port.get_descriptor_ptr()->get_layout();
     const auto shape = port.get_descriptor_ptr()->get_shape();
     size_t last_dim_idx = 0;
@@ -30,7 +30,11 @@ size_t InsertLoadStore::get_count(const ExpressionPort& port) const {
         last_dim_idx = utils::get_output_dim_idx(layout, layout.size() - 1);
     else
         OPENVINO_THROW("Unsupported type of expression port");
-    const auto dim = shape[last_dim_idx];
+    return shape[last_dim_idx];
+}
+
+size_t InsertLoadStore::get_count(const ExpressionPort& port) const {
+    const auto dim = get_processing_dim(port);
     return !utils::is_dynamic_vdim(dim) && dim == 1 ? 1 : m_vector_size;
 }
 

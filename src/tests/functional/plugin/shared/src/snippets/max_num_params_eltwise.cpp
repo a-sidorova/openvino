@@ -12,9 +12,10 @@ namespace snippets {
 
 std::string MaxNumParamsEltwise::getTestCaseName(testing::TestParamInfo<ov::test::snippets::MaxNumParamsEltwiseParams> obj) {
     ov::test::InputShape inputShapes;
+    size_t in_num;
     std::string targetDevice;
     size_t num_nodes, num_subgraphs;
-    std::tie(inputShapes, num_nodes, num_subgraphs, targetDevice) = obj.param;
+    std::tie(inputShapes, in_num, num_nodes, num_subgraphs, targetDevice) = obj.param;
 
     std::ostringstream result;
     result << "IS[0]=" << ov::test::utils::partialShape2str({inputShapes.first}) << "_";
@@ -23,6 +24,7 @@ std::string MaxNumParamsEltwise::getTestCaseName(testing::TestParamInfo<ov::test
         result << ov::test::utils::vec2str(item) << "_";
     }
 
+    result << "Count=" << in_num << "_";
     result << "#N=" << num_nodes << "_";
     result << "#S=" << num_subgraphs << "_";
     result << "targetDevice=" << targetDevice;
@@ -31,8 +33,9 @@ std::string MaxNumParamsEltwise::getTestCaseName(testing::TestParamInfo<ov::test
 
 void MaxNumParamsEltwise::SetUp() {
     ov::test::InputShape inputShape;
-    std::tie(inputShape, ref_num_nodes, ref_num_subgraphs, targetDevice) = this->GetParam();
-    std::vector<ov::test::InputShape> expandedShapes(10, inputShape);
+    size_t in_num;
+    std::tie(inputShape, in_num, ref_num_nodes, ref_num_subgraphs, targetDevice) = this->GetParam();
+    std::vector<ov::test::InputShape> expandedShapes(in_num, inputShape);
     init_input_shapes(expandedShapes);
 
     auto f = ov::test::snippets::EltwiseMaxNumParamsFunction(inputDynamicShapes);

@@ -27,13 +27,16 @@ public:
     struct LoopDescriptor {
         enum Type { First, Main, Last, SplitedLast };
         LoopDescriptor() = default;
-        LoopDescriptor(size_t wa, size_t inc, std::vector<int64_t> ptr_incs = {}, std::vector<int64_t> final_offs = {}, Type type = Type::Main)
-            : work_amount(wa), increment(inc), ptr_increments(ptr_incs), finalization_offsets(final_offs), type(type) {}
+        LoopDescriptor(size_t wa, size_t inc, std::vector<int64_t> ptr_incs = {}, std::vector<int64_t> final_offs = {}, std::vector<int64_t> ds = {},
+                       Type type = Type::Main)
+            : work_amount(wa), increment(inc), ptr_increments(std::move(ptr_incs)), finalization_offsets(std::move(final_offs)), data_sizes(std::move(ds)),
+              type(type) {}
 
         size_t work_amount = IShapeInferSnippets::DYNAMIC_DIMENSION;
         size_t increment = 1;
-        std::vector<int64_t> ptr_increments = {};  // in bytes
-        std::vector<int64_t> finalization_offsets = {};  // in bytes
+        std::vector<int64_t> ptr_increments = {};
+        std::vector<int64_t> finalization_offsets = {};
+        std::vector<int64_t> data_sizes = {};
         Type type = Type::Main;
     };
     using LoopDescriptorList = std::vector<LoopDescriptor>;

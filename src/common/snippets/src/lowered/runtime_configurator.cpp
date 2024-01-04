@@ -215,8 +215,7 @@ void RuntimeConfigurator::LoopInitializer::init_data_ptr_shifts(const LinearIR::
         for (size_t i = 0; i < loop_ports.size(); ++i) {
             const auto& loop_port = loop_ports[i];
             desc.ptr_increments[start_index + i] = loop_port.ptr_increment;
-            if (!there_is_before_loop)
-                desc.finalization_offsets[start_index + i] = loop_port.finalization_offset;
+            desc.finalization_offsets[start_index + i] = loop_port.finalization_offset;
         }
     };
     init_shifts(in_ports, 0);
@@ -226,6 +225,22 @@ void RuntimeConfigurator::LoopInitializer::init_data_ptr_shifts(const LinearIR::
         desc.finalization_offsets = last_execution_loop_before->finalization_offsets;
         std::fill(last_execution_loop_before->finalization_offsets.begin(), last_execution_loop_before->finalization_offsets.end(), 0);
     }
+}
+
+void RuntimeConfigurator::LoopInitializer::init_data_sizes(const LinearIR::LoopManager::LoopInfoPtr& loop_info, RuntimeConfig::LoopDescriptor& desc) {
+    const auto& in_ports = loop_info->get_entry_points();
+    const auto& out_ports = loop_info->get_exit_points();
+    const auto in_num = in_ports.size();
+    const auto out_num = out_ports.size();
+    desc.data_sizes.resize(in_num + out_num);
+
+    auto init_data_size = [&](const std::vector<LinearIR::LoopManager::LoopPort>& loop_ports, size_t start_index) {
+        for (size_t i = 0; i < loop_ports.size(); ++i) {
+            desc.data_sizes[start_index + i] = loop_ports[i].data_size;
+        }
+    };
+    init_data_size(in_ports, 0);
+    init_data_size(out_ports, in_num);
 }
 
 bool RuntimeConfigurator::FirstLoopInitializer::is_needed(const LinearIR::LoopManager::LoopInfoPtr& loop_info) {
@@ -245,6 +260,7 @@ void RuntimeConfigurator::FirstLoopInitializer::init_descriptor(const LinearIR::
     desc.increment = loop_info->get_increment();
 
     init_data_ptr_shifts(loop_info, loop_id, desc, config);
+    init_data_sizes(loop_info, desc);
 }
 
 void RuntimeConfigurator::FirstLoopInitializer::update_descriptor(const LinearIR::LoopManagerPtr& loop_manager,
@@ -267,6 +283,7 @@ void RuntimeConfigurator::MainLoopInitializer::init_descriptor(const LinearIR::L
     desc.increment = loop_info->get_increment();
 
     init_data_ptr_shifts(loop_info, loop_id, desc, config);
+    init_data_sizes(loop_info, desc);
 }
 
 void RuntimeConfigurator::MainLoopInitializer::update_descriptor(const LinearIR::LoopManagerPtr& loop_manager,
@@ -290,6 +307,7 @@ void RuntimeConfigurator::LastLoopInitializer::init_descriptor(const LinearIR::L
     desc.increment = is_dynamic ? 1 : desc.work_amount;
 
     init_data_ptr_shifts(loop_info, loop_id, desc, config);
+    init_data_sizes(loop_info, desc);
     init_inner_splited_descriptors(loop_manager, loop_info, desc, loop_id, config, false);
 }
 

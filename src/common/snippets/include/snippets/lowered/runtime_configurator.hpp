@@ -144,6 +144,12 @@ protected:
      */
     void init_data_ptr_shifts(const LinearIR::LoopManager::LoopInfoPtr& loop_info, size_t loop_id,
                               RuntimeConfig::LoopDescriptor& desc, RuntimeConfig& config);
+    /**
+     * @brief Initialize data sizes from LoopPorts.
+     * @param loop_info loop information of the corresponding loop
+     * @param desc target Loop Descriptor
+     */
+    void init_data_sizes(const LinearIR::LoopManager::LoopInfoPtr& loop_info, RuntimeConfig::LoopDescriptor& desc);
 
     RuntimeConfig::LoopDescriptor::Type m_type;
 };
