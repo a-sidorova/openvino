@@ -32,7 +32,6 @@
 #include "snippets/lowered/pass/insert_broadcastmove.hpp"
 #include "snippets/lowered/pass/load_movebroadcast_to_broadcastload.hpp"
 #include "snippets/lowered/pass/allocate_buffers.hpp"
-#include "snippets/lowered/pass/propagate_layout.hpp"
 #include "snippets/lowered/pass/softmax_decomposition.hpp"
 #include "snippets/lowered/pass/move_scalar_to_consumer.hpp"
 #include "snippets/lowered/pass/move_result_out_of_loop.hpp"
@@ -42,6 +41,7 @@
 #include "snippets/lowered/pass/optimize_domain.hpp"
 #include "snippets/lowered/pass/insert_perf_count.hpp"
 #include "snippets/lowered/pass/validate_shapes.hpp"
+#include "snippets/lowered/pass/validate.hpp"
 #include "snippets/lowered/pass/pass_config.hpp"
 
 #include "transformations/utils/utils.hpp"
@@ -437,8 +437,8 @@ void Subgraph::control_flow_transformations(lowered::LinearIR& linear_ir,
     pipeline.register_pass<lowered::pass::InsertLoops>();
     pipeline.register_pass<lowered::pass::AllocateBuffers>(lowering_result.buffer_scratchpad_size, linear_ir.get_config().m_are_buffers_optimized);
     pipeline.register_pass<lowered::pass::CleanRepeatedDataPointerShifts>();
-    pipeline.register_pass<lowered::pass::PropagateLayout>();
     pipeline.register_positioned_passes(lowered_backend_passes);
+    pipeline.register_pass<lowered::pass::Validate>(); // must be last
     pipeline.run(linear_ir);
 }
 
