@@ -181,8 +181,7 @@ bool InsertTailLoop::init_main_loop(size_t loop_id, const std::shared_ptr<op::Lo
     size_t updated_loop_id;
     RuntimeConfig::LoopDescriptor loop_desc;
     if (m_runtime_config.get_loop_desc(loop_id, type, loop_desc, updated_loop_id)) {
-        if (const auto& static_loop_end = ov::as_type_ptr<op::LoopEndStatic>(loop_end))
-            static_loop_end->update(loop_desc);
+        loop_end->update(loop_desc);
         update_loop_id_mapping(loop_end, updated_loop_id, loop_end->get_id());
         return true;
     }
@@ -205,8 +204,7 @@ bool InsertTailLoop::create_first_iter_loop(LinearIR& linear_ir, LinearIR::const
             OPENVINO_ASSERT(new_loop_begin, "Cloned Loop does not contain LoopBegin op at the expected place.");
             first_iter_loop_end = new_loop_begin->get_loop_end();
         }
-        if (const auto& static_first_iter_loop_end = ov::as_type_ptr<op::LoopEndStatic>(first_iter_loop_end))
-            static_first_iter_loop_end->update(loop_desc);
+        first_iter_loop_end->update(loop_desc);
 
         const auto& loop_manager = linear_ir.get_loop_manager();
         const auto loop_id = first_iter_loop_end->get_id();
@@ -242,8 +240,7 @@ bool InsertTailLoop::create_tail_loop(LinearIR& linear_ir, LinearIR::constExprIt
             // Since we copy main loop, we have to update loop_end
             loop_end = new_loop_begin->get_loop_end();
         }
-        if (const auto& static_tail_loop_end = ov::as_type_ptr<op::LoopEndStatic>(tail_loop_end))
-            static_tail_loop_end->update(loop_desc);
+        tail_loop_end->update(loop_desc);
 
         const auto& loop_manager = linear_ir.get_loop_manager();
         const auto loop_info = loop_manager->get_loop_info(original_loop_id);
@@ -272,8 +269,7 @@ bool InsertTailLoop::create_tail_loop(LinearIR& linear_ir, LinearIR::constExprIt
                                                                RuntimeConfig::LoopDescriptor::Type::SplitedLast,
                                                                splited_tail_loop_desc, updated_loop_id),
                                 "Splited inner Loop has not been found!");
-                if (const auto& static_inner_loop_end = ov::as_type_ptr<op::LoopEndStatic>(inner_loop_end))
-                    static_inner_loop_end->update(splited_tail_loop_desc);
+                inner_loop_end->update(splited_tail_loop_desc);
                 update_loop_id_mapping(inner_loop_end, updated_loop_id, m_loop_ids_mapping.at(inner_loop_end->get_id()));
 
                 const auto inner_loop_begin_it = std::find(begin, it, linear_ir.get_expr_by_node(inner_loop_end->get_loop_begin()));

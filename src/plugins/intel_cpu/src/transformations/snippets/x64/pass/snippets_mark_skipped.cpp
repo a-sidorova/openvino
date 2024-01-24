@@ -186,10 +186,7 @@ bool isSuitableMatMulParent(const std::shared_ptr<const Node> &node) {
 }
 // From Reduce::canFuse() corner case. CanFuseSimpleOperation is covered by Misc
 inline bool isSuitableReduceParent(const std::shared_ptr<const Node> &node) {
-    bool is_suitable_reduce = ov::is_type<ov::op::util::ArithmeticReductionKeepDims>(node) && isSuitableMiscParent(node);
-    bool is_not_min_max = !ov::is_type<ov::op::v1::ReduceMax>(node) && !ov::is_type<ov::op::v1::ReduceMin>(node);
-    bool out_is_f32 = node->get_output_element_type(0) == ov::element::f32;
-    return is_suitable_reduce && is_not_min_max && out_is_f32;
+    return ov::is_type<ov::op::util::ArithmeticReductionKeepDims>(node) && isSuitableMiscParent(node);
 }
 // Subtract as ZeroPoints for Convolution
 bool isSuitableSubtractAsZeroPointsParent(const std::shared_ptr<const Node> &node) {
@@ -395,7 +392,7 @@ bool isSuitableChildForFusingSumActivation(const std::shared_ptr<const Node> &no
     return SupportsFusingWithConvolution_SumActivation(node);
 }
 bool isSuitableReduceChild(const std::shared_ptr<const Node> &node, const int channelAxis = DEFAULT_AXIS) {
-    return node->get_output_element_type(0) == ov::element::f32 && isSuitableChildForFusingSimple(node, channelAxis);
+    return isSuitableChildForFusingSimple(node, channelAxis);
 }
 bool isSuitableMatMulWithConstantPath(const std::shared_ptr<Node>& node) {
     return ov::is_type<ov::opset1::MatMul>(node) &&

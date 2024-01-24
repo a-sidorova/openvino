@@ -220,6 +220,10 @@ std::shared_ptr<Node> LoopEndDynamic::clone_with_new_inputs(const OutputVector& 
     return std::make_shared<LoopEndDynamic>(inputs.at(0), m_work_amount_increment, m_is_incremented, m_element_type_sizes, m_input_num, m_output_num, m_id);
 }
 
+void LoopEndDynamic::update(const lowered::RuntimeConfig::LoopDescriptor& descriptor) {
+    set_increment(descriptor.increment);
+}
+
 } // namespace op
 } // namespace snippets
 } // namespace ov

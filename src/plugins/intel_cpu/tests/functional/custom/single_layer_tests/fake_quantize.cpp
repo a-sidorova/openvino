@@ -6,6 +6,9 @@
 #include "common_test_utils/node_builders/constant.hpp"
 #include "shared_test_classes/base/ov_subgraph.hpp"
 #include "utils/cpu_test_utils.hpp"
+#include "utils/general_utils.h"
+#include "internal_properties.hpp"
+#include "openvino/runtime/properties.hpp"
 
 using namespace CPUTestUtils;
 namespace ov {
@@ -120,6 +123,11 @@ protected:
 
         if (selectedType.empty()) {
             selectedType = getPrimitiveType() + "_" + inPrec.get_type_name();
+        }
+
+        // Dynamic Snnippets Subgraph supports only planar layouts
+        if (fq->is_dynamic() && inFmts.size() > 0 && !ov::intel_cpu::one_of(inFmts.front(), ncw, nchw, ncdhw)) {
+            configuration.insert(ov::intel_cpu::snippets_mode(ov::intel_cpu::SnippetsMode::DISABLE));
         }
 
         function = makeNgraphFunction(inPrec, params, fq, "FakeQuantizeCPU");

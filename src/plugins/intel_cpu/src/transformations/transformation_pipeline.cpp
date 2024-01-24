@@ -83,6 +83,7 @@
 #include "transformations/opset_conversions/convert_opset2_to_opset1.hpp"
 #include "transformations/opset_conversions/convert_opset3_to_opset2.hpp"
 #include "transformations/smart_reshape/matmul_sr.hpp"
+#include "transformations/symbolic_transformations/symbolic_optimizations.hpp"
 #include "transformations/init_node_info.hpp"
 #include "utils/ngraph_transformation.hpp"
 #include "utils/print_model.hpp"
@@ -117,6 +118,7 @@
 #include "transformations/cpu_opset/common/pass/swap_convert_transpose.hpp"
 #include "transformations/cpu_opset/common/pass/rope_fusion.hpp"
 #include "transformations/cpu_opset/common/pass/stateful_sdpa_fusion.hpp"
+#include "transformations/cpu_opset/common/pass/ngram_fusion.hpp"
 
 // Snippets
 #include "snippets/pass/tokenization.hpp"
@@ -708,6 +710,11 @@ void Transformations::PostLpt() {
     CPU_REGISTER_PASS_X64(postLPTPassManager, RoPEFusion);
 
     CPU_REGISTER_PASS_X64(postLPTPassManager, StatefulSDPAFusion);
+
+    // Should be before Snippets pipeline because Ngram pattern contains eltwise nodes that can be tokenized by Snippets.
+    auto symbolic_pipeline = CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::SymbolicOptimizations, false);
+    symbolic_pipeline->get_manager()->register_pass<NgramFusion>();
+
     postLPTPassManager.run_passes(model);
 }
 
@@ -815,8 +822,6 @@ void Transformations::MainSnippets(void) {
         }, snippets::pass::ExtractReshapesFromMHA);
         CPU_SET_CALLBACK_X64(snippetsManager,
             [](const std::shared_ptr<const ov::Node>& n) -> bool {
-                if (n->is_dynamic())
-                    return true;
                 // CPU Plugin support Swish in Subgraph via conversion to SwichCPU which assumes second input to be constant
                 const bool is_unsupported_swish =
                         ov::is_type<const ov::op::v4::Swish>(n) && n->inputs().size() > 1 &&

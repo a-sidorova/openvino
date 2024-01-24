@@ -138,7 +138,7 @@ auto is_supported_op(const std::shared_ptr<const Node> &n) -> bool {
     };
 
     auto is_supported_softmax = [](const std::shared_ptr<const Node> &n) -> bool {
-        if (n->get_input_size() != 1 || n->get_input_partial_shape(0).rank().is_dynamic())
+        if (n->get_input_size() != 1 || n->is_dynamic())
             return false;
         int64_t axis = -1;
         const auto rank = n->get_input_partial_shape(0).rank();
@@ -153,6 +153,8 @@ auto is_supported_op(const std::shared_ptr<const Node> &n) -> bool {
     };
 
     auto is_supported_broadcast_op = [](const std::shared_ptr<const Node> &n) -> bool {
+        if (!ov::is_type<ov::op::util::BroadcastBase>(n) || n->is_dynamic())
+            return false;
         // Broadcast is supported only for MHA tokenization where there are needed and special checks
         if (auto broadcast_v1 = ov::as_type_ptr<const ov::op::v1::Broadcast>(n)) {
             return broadcast_v1->get_broadcast_spec().m_type == ov::op::AutoBroadcastType::NUMPY;
@@ -587,11 +589,15 @@ TokenizeSnippets::TokenizeSnippets() {
         }
 
         // The each data node (Parameter (and non-Scalar Constants), Result, Buffers with the same ID) requires the own unique GPR.
-        // At the moment, CPU Plugin has limitation for GPR registers: there are only 12 available registers.
+        // At the moment, CPU Plugin has limitation for GPR registers:
+        //     there are only 12 available registers for static shapes and 11 for dynamic shapes.
         // This limitation will be resolved once generator supports gprs spills [75622].
         // TODO [75567]: move this plugin-specific constraint to the plugin callback
         const auto unique_buffer_count = op::Subgraph::get_estimated_buffer_count(ops_for_buffer_count);
-        if (body_parameters.size() + body_results.size() + hidden_data_count + unique_buffer_count > 12) {
+        const auto is_dynamic = node->is_dynamic() || std::any_of(input_subgraphs.cbegin(), input_subgraphs.cend(),
+                                                                  [](const std::shared_ptr<ov::Node>& n) { return n->is_dynamic(); });
+        const size_t available_regs = is_dynamic ? 11 : 12;
+        if (body_parameters.size() + body_results.size() + hidden_data_count + unique_buffer_count > available_regs) {
             const std::string message_reset = "new subgraph is created. Impossible to schedule subgraph with " +
             std::to_string(body_parameters.size()) + " inputs, " + std::to_string(body_results.size()) + " outputs and " +
             std::to_string(hidden_data_count) + " non-scalar constants and " + std::to_string(unique_buffer_count) + "buffers.";

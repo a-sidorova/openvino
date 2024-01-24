@@ -96,7 +96,7 @@ protected:
 };
 /// Eltwise graph with 10 inputs and 2 outputs.
 /// Needed to test for a max number of inputs+outputs allowed.
-// in1   in2   in3 ... in10
+// in1   in2   in3 ... in[9|10]
 // ........................
 //    Subtract    Power
 //          \   Sinh
@@ -105,7 +105,7 @@ class EltwiseMaxNumParamsFunction : public SnippetsFunctionBase {
 public:
     explicit EltwiseMaxNumParamsFunction(const std::vector<PartialShape>& inputShapes) :
             SnippetsFunctionBase(inputShapes) {
-        OPENVINO_ASSERT(input_shapes.size() == 10, "Got invalid number of input shapes");
+        OPENVINO_ASSERT(input_shapes.size() == 9 || input_shapes.size() == 10, "Got invalid number of input shapes");
     }
 protected:
     std::shared_ptr<ov::Model> initOriginal() const override;

@@ -12,6 +12,7 @@ namespace snippets {
 
 typedef std::tuple<
         InputShape,                  // Input Shape All shapes are replicated
+        size_t,                      // Input num
         size_t,                      // Expected num nodes
         size_t,                      // Expected num subgraphs
         std::string                  // Target Device

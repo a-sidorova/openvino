@@ -98,6 +98,8 @@ public:
     void set_evaluate_once(bool once);
     void set_id(size_t id);
 
+    virtual void update(const lowered::RuntimeConfig::LoopDescriptor& descriptor) = 0;
+
 protected:
     std::vector<bool> m_is_incremented = {};
     std::vector<int64_t> m_element_type_sizes = {};
@@ -133,7 +135,7 @@ public:
     void set_work_amount(size_t new_work_amount);
     void set_evaluate_once(bool once);
 
-    void update(const lowered::RuntimeConfig::LoopDescriptor& descriptor);
+    void update(const lowered::RuntimeConfig::LoopDescriptor& descriptor) override;
 
 protected:
     std::vector<int64_t> m_ptr_increments = {};
@@ -150,6 +152,8 @@ public:
                    std::vector<int64_t> element_type_sizes, size_t input_num, size_t output_num, size_t id);
 
     std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& inputs) const override;
+
+    void update(const lowered::RuntimeConfig::LoopDescriptor& descriptor) override;
 };
 
 } // namespace op
