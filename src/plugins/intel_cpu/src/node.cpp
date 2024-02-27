@@ -559,6 +559,7 @@ void Node::updateDynamicParams() {
                     " with name: ",
                     getName());
     if (isExecutable()) {
+        auto start_time = std::chrono::high_resolution_clock::now();
         if (needPrepareParams()) {
             OPENVINO_ASSERT(inputShapesDefined(),
                             "Can't prepare params for ",
@@ -570,6 +571,8 @@ void Node::updateDynamicParams() {
                       " ", getName(), " ", getOriginalLayers());
             prepareParams();
         }
+        auto end_time = std::chrono::high_resolution_clock::now();
+        //std::cout << std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count() << std::endl;
     }
 }
 void Node::executeDynamic(dnnl::stream strm) {

@@ -70,10 +70,12 @@ void SubgraphBaseTest::run() {
         ASSERT_FALSE(targetStaticShapes.empty() && !function->get_parameters().empty()) << "Target Static Shape is empty!!!";
         std::string errorMessage;
         try {
-            compile_model();
-            for (const auto& targetStaticShapeVec : targetStaticShapes) {
-                generate_inputs(targetStaticShapeVec);
-                validate();
+            for (size_t i = 0; i < 20; ++i) {
+                compile_model();
+                for (const auto& targetStaticShapeVec : targetStaticShapes) {
+                    generate_inputs(targetStaticShapeVec);
+                    validate();
+                }
             }
             status = ov::test::utils::PassRate::Statuses::PASSED;
         } catch (const std::exception& ex) {
@@ -472,27 +474,8 @@ std::vector<ov::Tensor> SubgraphBaseTest::get_plugin_outputs() {
 void SubgraphBaseTest::validate() {
     std::vector<ov::Tensor> expectedOutputs, actualOutputs;
 
-#ifndef NDEBUG
     actualOutputs = get_plugin_outputs();
     expectedOutputs = calculate_refs();
-#else
-    if (targetDevice == "TEMPLATE") {
-        // TODO: Fix it in CVS-129397
-        // This is workaround to reduce occurrence of SIGABRT on Windows build when using TEMPLATE device
-        actualOutputs = get_plugin_outputs();
-        expectedOutputs = calculate_refs();
-    } else {
-        std::thread t_device([&] {
-            actualOutputs = get_plugin_outputs();
-        });
-        std::thread t_ref([&] {
-            expectedOutputs = calculate_refs();
-        });
-
-        t_device.join();
-        t_ref.join();
-    }
-#endif
 
     if (expectedOutputs.empty()) {
         return;

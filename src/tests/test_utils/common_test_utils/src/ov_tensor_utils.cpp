@@ -415,12 +415,12 @@ void compare(const ov::Tensor& expected,
             }
         }
     }
-    if (!std::isnan(abs_threshold)) {
-        std::cout << "[ COMPARATION ] rel_threshold: " << rel_threshold << std::endl;
-    }
-    if (!std::isnan(rel_threshold)) {
-        std::cout << "[ COMPARATION ] abs_threshold: " << abs_threshold << std::endl;
-    }
+    //if (!std::isnan(abs_threshold)) {
+    //    std::cout << "[ COMPARATION ] rel_threshold: " << rel_threshold << std::endl;
+    //}
+    //if (!std::isnan(rel_threshold)) {
+    //    std::cout << "[ COMPARATION ] abs_threshold: " << abs_threshold << std::endl;
+    //}
 
     auto max_type_expected = std::numeric_limits<ExpectedT>::max();
     auto max_type_actual = std::numeric_limits<ActualT>::max();

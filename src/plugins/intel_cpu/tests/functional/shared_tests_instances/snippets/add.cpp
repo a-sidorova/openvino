@@ -34,16 +34,30 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_Eltwise, Add,
                          Add::getTestCaseName);
 
 // DS
+//std::vector<InputShape> inShapesDynamic1{
+//        {
+//        {{ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()},
+//        {{1, 3, 1, 10}, {1, 3, 10, 10}, {1, 3, 1, 10}}},
+//        }
+//};
+//std::vector<InputShape> inShapesDynamic2{
+//        {
+//        {{ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()},
+//        {{1, 3, 10, 1}, {1, 3, 1, 1}, {1, 3, 10, 1}}},
+//        }
+//};
 std::vector<InputShape> inShapesDynamic1{
         {
         {{ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()},
-        {{1, 3, 1, 10}, {1, 3, 10, 10}, {1, 3, 1, 10}}},
+        {{1, 54, 512, 1024}, {1, 54, 1024, 512}, {1, 54, 512, 1024}, {1, 54, 512, 512}, {1, 54, 1024, 512},
+         {1, 54, 1024, 512}, {1, 54, 512, 1024}, {1, 54, 512, 1024}, {1, 54, 512, 1}}},
         }
 };
 std::vector<InputShape> inShapesDynamic2{
         {
         {{ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic(), ov::Dimension::dynamic()},
-        {{1, 3, 10, 1}, {1, 3, 1, 1}, {1, 3, 10, 1}}},
+        {{1, 54, 512, 1024}, {1, 54, 1024, 512}, {1, 54, 512, 1}, {1, 54, 512, 512}, {1, 54, 1024, 512},
+         {1, 54, 1024, 512}, {1, 54, 512, 1024}, {1, 54, 512, 1}, {1, 54, 512, 1}}},
         }
 };
 INSTANTIATE_TEST_SUITE_P(smoke_Snippets_Eltwise_Add, Add,
