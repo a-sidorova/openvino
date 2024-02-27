@@ -182,7 +182,7 @@ void Subgraph::initSupportedPrimitiveDescriptors() {
     // - ShapeAgnostic dynamism supports only Planar layouts since ShapeInfer works on LIR after canonicalization.
     //   There might be incompatible shapes
     const bool isOnlyPlanarApplicable = snippetAttrs->snippet->has_domain_sensitive_ops();
-    const bool isChannelsFirstApplicable = dnnl::impl::utils::one_of(ndims, 1u, 2u, 3u, 4u, 5u) && dimRanksAreEqual && !isOnlyPlanarApplicable && !isDynamic;
+    const bool isChannelsFirstApplicable = dnnl::impl::utils::one_of(ndims, 1u, 2u, 3u, 4u, 5u) && dimRanksAreEqual && !isOnlyPlanarApplicable;
     // Todo: Snippets currently don't support per-channel broadcasting of Blocked descriptors because
     //  canonicalization can't distinguish between <N, C, H, W, c> and <N, C, D, H, W> cases.
     //  See snippets::op::Subgraph::canonicalize for details.

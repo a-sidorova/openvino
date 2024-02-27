@@ -441,7 +441,7 @@ void Subgraph::control_flow_transformations(const std::shared_ptr<lowered::pass:
     pipeline.register_pass<lowered::pass::InsertBuffers>(buffer_allocation_rank);
     pipeline.register_pass<lowered::pass::InsertLoadStore>(vector_size);
     pipeline.register_pass<lowered::pass::MoveScalarToConsumer>();
-    pipeline.register_pass<lowered::pass::InsertBroadcastMove>();
+    //pipeline.register_pass<lowered::pass::InsertBroadcastMove>();
     pipeline.register_pass<lowered::pass::LoadMoveBroadcastToBroadcastLoad>();
     pipeline.register_pass<lowered::pass::ValidateLoops>();
     pipeline.register_pass<lowered::pass::InitLoops>();
