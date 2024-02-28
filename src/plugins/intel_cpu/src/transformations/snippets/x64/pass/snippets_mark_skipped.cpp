@@ -347,27 +347,7 @@ bool isSuitableParentForFusingSumActivation(const std::shared_ptr<const Node> &n
             return false;
         const auto conv = n->get_input_source_output(0);
         const auto bias = n->get_input_source_output(1);
-        if (!(ov::is_type<ov::op::v0::Constant>(bias.get_node_shared_ptr()) && isSuitableConvolutionParent(conv.get_node_shared_ptr())))
-            return false;
-        const auto conv_shape = conv.get_partial_shape();
-        const auto bias_shape = bias.get_partial_shape();
-        if  (bias_shape.is_dynamic() || conv_shape.is_dynamic() || bias_shape.size() > conv_shape.size())
-            return false;
-        auto getNormalizedDims = [](const ov::Shape &dims, size_t ndims) -> std::vector<size_t>{
-            std::vector<size_t> normalizedDims = dims;
-            for (size_t i = 0; i < (ndims - dims.size()); i++) {
-                normalizedDims.insert(normalizedDims.begin(), 1);
-            }
-            return normalizedDims;
-        };
-        const auto bias_norm_dims = getNormalizedDims(bias_shape.get_shape(), conv_shape.size());
-        if (bias_norm_dims.size() < 2 || bias_norm_dims[0] != 1 || conv_shape[1] != bias_norm_dims[1])
-            return false;
-        for (size_t i = 2; i < bias_norm_dims.size(); i++) {
-            if (bias_norm_dims[i] != 1)
-                return false;
-        }
-        return true;
+        return ov::is_type<ov::op::v0::Constant>(bias.get_node_shared_ptr()) && isSuitableConvolutionParent(conv.get_node_shared_ptr());
     };
     auto isFusedFQNode = [&isFusedBiasNode](std::shared_ptr<Node> n) {
         if (!(ov::is_type<ov::op::v0::FakeQuantize>(n) &&
