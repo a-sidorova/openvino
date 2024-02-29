@@ -182,7 +182,7 @@ void Subgraph::initSupportedPrimitiveDescriptors() {
     // - ShapeAgnostic dynamism supports only Planar layouts since ShapeInfer works on LIR after canonicalization.
     //   There might be incompatible shapes
     const bool isOnlyPlanarApplicable = snippetAttrs->snippet->has_domain_sensitive_ops();
-    const bool isChannelsFirstApplicable = dnnl::impl::utils::one_of(ndims, 1u, 2u, 3u, 4u, 5u) && dimRanksAreEqual && !isOnlyPlanarApplicable && !isDynamic;
+    const bool isChannelsFirstApplicable = dnnl::impl::utils::one_of(ndims, 1u, 2u, 3u, 4u, 5u) && dimRanksAreEqual && !isOnlyPlanarApplicable;
     // Todo: Snippets currently don't support per-channel broadcasting of Blocked descriptors because
     //  canonicalization can't distinguish between <N, C, H, W, c> and <N, C, D, H, W> cases.
     //  See snippets::op::Subgraph::canonicalize for details.
@@ -305,8 +305,8 @@ void Subgraph::createPrimitive() {
     input_num = config.inConfs.size();
     output_num = config.outConfs.size();
 
-    in_planar_shapes.resize(input_num);
     in_blocked_shapes.resize(input_num);
+    is_blocked_out_layout.resize(output_num);
 
     init_memory_ptrs();
     init_attrs();
@@ -343,6 +343,7 @@ void Subgraph::init_attrs() {
         const auto& memDesc = dstMemPtrs[i]->getDescWithType<BlockedMemoryDesc>();
         snippetAttrs->outMemPrecs[i] = memDesc->getPrecision();
         snippetAttrs->outMemOrders[i] = memDesc->getOrder();
+        is_blocked_out_layout[i] = !memDesc->hasLayoutType(LayoutType::ncsp);
     }
 }
 
@@ -473,25 +474,62 @@ std::vector<ov::snippets::lowered::pass::PassPipeline::PositionedPassLowered> Su
     return backend_passes;
 }
 
+IShapeInfer::Result Subgraph::blocked_shape_infer() const {
+    auto preorder_dims = [](const VectorDims& original_shape, const VectorDims& order) {
+        OPENVINO_ASSERT(original_shape.size() == order.size(), "Layout and shape ranks must be equal!");
+        VectorDims result(order.size());
+        for (size_t j = 0; j < order.size(); j++) {
+           OPENVINO_ASSERT(order[j] < result.size(), "layout index is greater than the shape size");
+           result[order[j]] = original_shape[j];
+        }
+        return result;
+    };
+
+    try {
+        std::vector<std::reference_wrapper<const VectorDims>> input_shapes;
+        auto input_value_port_mask = shapeInference->get_port_mask();
+
+        input_shapes.reserve(inputShapes.size());
+        for (size_t port = 0; port < inputShapes.size(); ++port)
+            input_shapes.emplace_back(std::ref(in_blocked_shapes[port]));
+
+        std::unordered_map<size_t, MemoryPtr> input_values;
+        if (input_value_port_mask) {
+            for (size_t port = 0; port < inputShapes.size(); ++port) {
+                if (input_value_port_mask & (1 << port)) {
+                    input_values[port] = getSrcMemoryAtPort(port);
+                }
+            }
+        }
+
+        auto result = shapeInference->infer(input_shapes, input_values);
+        for (size_t i = 0; i < result.dims.size(); ++i) {
+            if (is_blocked_out_layout[i])
+                result.dims[i] = preorder_dims(result.dims[i], snippetAttrs->outMemOrders[i]);
+        }
+        return result;
+    }
+    catch (const std::runtime_error& exp) {
+        OPENVINO_THROW("Shape inference of ", getTypeStr() , " node with name ", getName(), " failed: ", exp.what());
+    }
+}
+
 IShapeInfer::Result Subgraph::shapeInfer() const {
     const auto cache = context->getParamsCache();
     for (size_t i = 0; i < srcMemPtrs.size(); i++) {
-        in_planar_shapes[i] = srcMemPtrs[i]->getStaticDims();
+        in_blocked_shapes[i] = srcMemPtrs[i]->getDescWithType<BlockedMemoryDesc>()->getBlockDims();
     }
 
     auto builder = [this](const SnippetsOutputShapesKey& key) -> std::shared_ptr<SnippetsOutputShapes> {
-        return std::make_shared<SnippetsOutputShapes>(Node::shapeInfer());
+        return std::make_shared<SnippetsOutputShapes>(blocked_shape_infer());
     };
 
-    const auto result = cache->getOrCreate(SnippetsOutputShapesKey(in_planar_shapes, snippetAttrs->bodyHash), builder);
+    const auto result = cache->getOrCreate(SnippetsOutputShapesKey(in_blocked_shapes, snippetAttrs->bodyHash), builder);
     return result.first->shape_infer_result;
 }
 
 void Subgraph::prepareParams() {
     const auto cache = context->getParamsCache();
-    for (size_t i = 0; i < srcMemPtrs.size(); i++) {
-        in_blocked_shapes[i] = srcMemPtrs[i]->getDescWithType<BlockedMemoryDesc>()->getBlockDims();
-    }
 
     auto builder = [this, cache](const SnippetKey& key) -> std::shared_ptr<SnippetExecutor> {
         if (is_dynamic) {

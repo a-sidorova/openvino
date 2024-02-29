@@ -60,6 +60,7 @@ private:
     void init_precisions(std::vector<ov::element::Type>& input_types, std::vector<ov::element::Type>& output_types) const;
     void init_blocked_broadcasting_mask(uint8_t& mask) const;
     void lower();
+    IShapeInfer::Result blocked_shape_infer() const;
 
     std::vector<ov::snippets::pass::Manager::PositionedPassBase> get_data_flow_passes() const;
     std::vector<ov::snippets::lowered::pass::PassPipeline::PositionedPassLowered> get_control_flow_passes() const;
@@ -79,8 +80,8 @@ private:
     std::vector<ptrdiff_t> start_offset_out = {};
 
     // Input shapes that are used in ShapeInfer, PrepareParams to avoid frequent memory allocation
-    mutable std::vector<VectorDims> in_planar_shapes;
-    std::vector<VectorDims> in_blocked_shapes;
+    mutable std::vector<VectorDims> in_blocked_shapes;
+    std::vector<bool> is_blocked_out_layout;
 
     bool is_dynamic = false;
 
