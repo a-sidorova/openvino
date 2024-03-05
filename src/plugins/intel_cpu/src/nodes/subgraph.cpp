@@ -393,14 +393,9 @@ void Snippet::initOptimalPrimitiveDescriptor() {
     snippetAttrs.snippet->data_flow_transformations(in_blocked_shapes, input_precisions, output_precisions, backend_passes);
     // Note: minimal JIT work amount is a predefined value that describes the number of kernel iterations (work amount)
     // needed to cover kernel call overhead. It is used for balancing between parallel and JIT work amounts in domain optimization.
-#ifdef SNIPPETS_LIBXSMM_TPP
     const auto& lir = snippetAttrs.snippet->convert_body_to_linear_ir(static_cast<size_t>(parallel_get_max_threads()), 256,
                                                                       std::make_shared<snippets::CPUShapeInferSnippetsFactory>());
     lir->set_loop_depth(std::min(2ul, lir->get_master_shape().size()));
-#else
-    snippetAttrs.snippet->convert_body_to_linear_ir(static_cast<size_t>(parallel_get_max_threads()), 256,
-                                                    std::make_shared<snippets::CPUShapeInferSnippetsFactory>());
-#endif
 }
 
 ov::element::Type Snippet::getRuntimePrecision() const {
@@ -664,10 +659,9 @@ void Snippet::SnippetJitExecutor::generate(const jit_snippets_compile_args* jcp)
     SNIPPETS_REGISTER_PASS_RELATIVE(Place::After, ov::intel_cpu::pass::FuseLoadStoreConvert,
                                     ov::intel_cpu::pass::SetBrgemmCopyBBuffersShape);
 
-    auto lowering_config = std::make_shared<ov::snippets::lowered::pass::PassConfig>();
-#ifdef SNIPPETS_LIBXSMM_TPP
-    // Note: temporary disabled. Re-enable after ticket 132833 is resolved
+    auto lowering_config = std::make_shared<ov::snippets::lowered::pass::PassConfig>();// Note: temporary disabled. Re-enable after ticket 132833 is resolved
     lowering_config->disable<ov::snippets::lowered::pass::OptimizeDomain>();
+#ifdef SNIPPETS_LIBXSMM_TPP
     SNIPPETS_REGISTER_PASS_RELATIVE(Place::After, ov::intel_cpu::pass::FuseLoadStoreConvert,
                                     ov::intel_cpu::tpp::pass::SetTPPLeadingDim);
 #endif
