@@ -749,7 +749,7 @@ void Transformations::MainSnippets(void) {
     // - MHA has BRGEMM that is supported only on AVX512 platforms
     // - CPU Plugin Subgraph supports only f32, bf16 (and quantized) BRGEMM
     //   [122494] Need to add support of f16
-    const bool isMHASupported =
+    const bool isMHASupported = false &&
             dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core) &&
             one_of(inferencePrecision, ov::element::bf16, ov::element::f32);
     if (!isMHASupported) {
