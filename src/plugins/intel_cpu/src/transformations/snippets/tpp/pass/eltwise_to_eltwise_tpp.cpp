@@ -39,10 +39,10 @@ EltwiseToEltwiseTPP::EltwiseToEltwiseTPP() {
         const auto& tpp_eltwise = op::TPPNodeFactory::create(node);
         OPENVINO_ASSERT(tpp_eltwise, "Failed to create TPP node");
 
-        const size_t M_block = 32;
+        const size_t M_block = 1;
         const size_t N_block = ov::is_type<ov::snippets::op::ReduceBase>(node) ?
                                snippets::lowered::PortDescriptor::ServiceDimensions::FULL_DIM :
-                               64;
+                               512;
         ov::replace_node(node, tpp_eltwise);
         for (size_t i = 0; i < node->get_input_size(); i++)
             snippets::lowered::set_port_desc(tpp_eltwise->input(i), {M_block, N_block});
