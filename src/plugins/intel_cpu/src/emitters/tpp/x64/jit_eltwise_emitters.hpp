@@ -8,7 +8,10 @@
 namespace ov {
 namespace intel_cpu {
 
+class DebugTppEmitter;
+
 class BinaryEltwiseTppEmitter : public TppEmitter {
+    friend class DebugTppEmitter;
 public:
     BinaryEltwiseTppEmitter(dnnl::impl::cpu::x64::jit_generator* h,
                             dnnl::impl::cpu::x64::cpu_isa_t isa,
@@ -27,6 +30,7 @@ protected:
 };
 
 class UnaryEltwiseTppEmitter : public TppEmitter {
+    friend class DebugTppEmitter;
 public:
     UnaryEltwiseTppEmitter(dnnl::impl::cpu::x64::jit_generator* h,
                             dnnl::impl::cpu::x64::cpu_isa_t isa,

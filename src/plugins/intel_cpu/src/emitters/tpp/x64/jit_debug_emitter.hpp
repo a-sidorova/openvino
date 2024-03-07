@@ -4,6 +4,7 @@
 
 #pragma once
 #include "jit_tpp_emitter.hpp"
+#include "jit_eltwise_emitters.hpp"
 
 namespace ov {
 namespace intel_cpu {
@@ -34,18 +35,38 @@ protected:
         OV_CPU_JIT_EMITTER_ASSERT(emitter && emitter->m_execute_function && emitter->m_compiled_kernel,
                                   "Unable to execute unary kernel");
         // Note: put a breakpoint here and analyze all the necessary debug info in runtime
-        std::cout << emitter->m_source_node->get_friendly_name() << std::endl;
-        auto f = reinterpret_cast<void(*)(uintptr_t, void*, void*)>(emitter->m_execute_function);
-        f(emitter->m_compiled_kernel, in0, out0);
+        const auto original = std::dynamic_pointer_cast<UnaryEltwiseTppEmitter>(emitter->m_original);
+        OV_CPU_JIT_EMITTER_ASSERT(original, "Incorrect emitter");
+        const auto& m_shape = original->m_shape;
+        float* in_ptr = reinterpret_cast<float*>(in0);
+        float* out_ptr = reinterpret_cast<float*>(out0);
+        for (int n = 0; n < m_shape.n; n++) {
+            mempcpy(out_ptr, in_ptr, m_shape.m * sizeof(float));
+            in_ptr += m_shape.ldi;
+            out_ptr += m_shape.ldo;
+        }
     }
 
     static void execute_kernel_binary(const DebugTppEmitter* emitter, void* in0, void* in1, void* out0) {
         OV_CPU_JIT_EMITTER_ASSERT(emitter && emitter->m_execute_function && emitter->m_compiled_kernel,
                                   "Unable to execute binary kernel");
         // Note: put a breakpoint here and analyze all the necessary debug info in runtime
-        std::cout << emitter->m_source_node->get_friendly_name() << std::endl;
-        auto f = reinterpret_cast<void(*)(uintptr_t, void*, void*, void*)>(emitter->m_execute_function);
-        f(emitter->m_compiled_kernel, in0, in1, out0);
+        const auto original = std::dynamic_pointer_cast<BinaryEltwiseTppEmitter>(emitter->m_original);
+        OV_CPU_JIT_EMITTER_ASSERT(original, "Incorrect emitter");
+        const auto& m_shape = original->m_shape;
+        const auto& m_flags = original->m_compile_flags;
+        float* in0_ptr = reinterpret_cast<float*>(in0);
+        float* in1_ptr = reinterpret_cast<float*>(in1);
+        float* out_ptr = reinterpret_cast<float*>(out0);
+        for (int n = 0; n < m_shape.n; n++) {
+            auto src_ptr = m_flags & LIBXSMM_MELTW_FLAG_BINARY_BCAST_ROW_IN_1 ? in0_ptr : in1_ptr;
+            mempcpy(out_ptr, src_ptr, m_shape.m * sizeof(float));
+            if (!(m_flags & LIBXSMM_MELTW_FLAG_BINARY_BCAST_COL_IN_0))
+                in0_ptr += m_shape.ldi;
+            if (!(m_flags & LIBXSMM_MELTW_FLAG_BINARY_BCAST_COL_IN_1))
+                in1_ptr += m_shape.ldi2;
+            out_ptr += m_shape.ldo;
+        }
     }
 
     const uintptr_t get_execute_function_ptr() const override {
