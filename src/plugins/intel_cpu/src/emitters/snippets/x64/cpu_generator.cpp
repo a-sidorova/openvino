@@ -252,25 +252,25 @@ intel_cpu::CPUTargetMachine::CPUTargetMachine(dnnl::impl::cpu::x64::cpu_isa_t ho
 
 #ifdef SNIPPETS_LIBXSMM_TPP
     jitters[intel_cpu::tpp::op::BrgemmTPP::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(BrgemmTppEmitter);
-    jitters[intel_cpu::tpp::op::Add::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(BinaryEltwiseTppEmitter);
-    jitters[intel_cpu::tpp::op::Subtract::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(BinaryEltwiseTppEmitter);
-    jitters[intel_cpu::tpp::op::Multiply::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(BinaryEltwiseTppEmitter);
-    jitters[intel_cpu::tpp::op::Divide::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(BinaryEltwiseTppEmitter);
+    jitters[intel_cpu::tpp::op::Add::get_type_info_static()] = CREATE_DEBUG_TPP_EMITTER(BinaryEltwiseTppEmitter);
+    jitters[intel_cpu::tpp::op::Subtract::get_type_info_static()] = CREATE_DEBUG_TPP_EMITTER(BinaryEltwiseTppEmitter);
+    jitters[intel_cpu::tpp::op::Multiply::get_type_info_static()] = CREATE_DEBUG_TPP_EMITTER(BinaryEltwiseTppEmitter);
+    jitters[intel_cpu::tpp::op::Divide::get_type_info_static()] = CREATE_DEBUG_TPP_EMITTER(BinaryEltwiseTppEmitter);
 
-    jitters[intel_cpu::tpp::op::Exp::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(UnaryEltwiseTppEmitter);
+    jitters[intel_cpu::tpp::op::Exp::get_type_info_static()] = CREATE_DEBUG_TPP_EMITTER(UnaryEltwiseTppEmitter);
     // Note: you can use can register Debug emitter for Unary/Binary operations as shown below:
     // jitters[intel_cpu::tpp::op::Add::get_type_info_static()] = CREATE_DEBUG_TPP_EMITTER(UnaryEltwiseTppEmitter);
     //
     // Note: ypu can register Reference emitter for Unary operations using std::function or lambda function as shown below:
     // jitters[intel_cpu::tpp::op::Exp::get_type_info_static()] =
-    //        CREATE_SNIPPETS_EMITTER(ReferenceUnaryEltwiseTppEmitter, static_cast<float(*)(float)>(std::exp));
+    //        CREATE_DEBUG_TPP_EMITTER(ReferenceUnaryEltwiseTppEmitter, static_cast<float(*)(float)>(std::exp));
     // jitters[intel_cpu::tpp::op::Reciprocal::get_type_info_static()] =
-    //         CREATE_SNIPPETS_EMITTER(ReferenceUnaryEltwiseTppEmitter, [](float x){ return 1.f/x; });
-    jitters[intel_cpu::tpp::op::Reciprocal::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(UnaryEltwiseTppEmitter);
+    //         CREATE_DEBUG_TPP_EMITTER(ReferenceUnaryEltwiseTppEmitter, [](float x){ return 1.f/x; });
+    jitters[intel_cpu::tpp::op::Reciprocal::get_type_info_static()] = CREATE_DEBUG_TPP_EMITTER(UnaryEltwiseTppEmitter);
 
-    jitters[intel_cpu::tpp::op::Relu::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(UnaryEltwiseTppEmitter);
-    jitters[intel_cpu::tpp::op::Square::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(UnaryEltwiseTppEmitter);
-    jitters[intel_cpu::tpp::op::SquareRoot::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(UnaryEltwiseTppEmitter);
+    jitters[intel_cpu::tpp::op::Relu::get_type_info_static()] = CREATE_DEBUG_TPP_EMITTER(UnaryEltwiseTppEmitter);
+    jitters[intel_cpu::tpp::op::Square::get_type_info_static()] = CREATE_DEBUG_TPP_EMITTER(UnaryEltwiseTppEmitter);
+    jitters[intel_cpu::tpp::op::SquareRoot::get_type_info_static()] = CREATE_DEBUG_TPP_EMITTER(UnaryEltwiseTppEmitter);
     jitters[intel_cpu::tpp::op::ReduceMax::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(ReduceTppEmitter);
     jitters[intel_cpu::tpp::op::ReduceSum::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(ReduceTppEmitter);
     jitters[intel_cpu::tpp::op::Scalar::get_type_info_static()] = CREATE_SNIPPETS_EMITTER(ScalarTppEmitter);
