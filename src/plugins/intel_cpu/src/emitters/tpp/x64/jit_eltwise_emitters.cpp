@@ -25,6 +25,8 @@ BinaryEltwiseTppEmitter::BinaryEltwiseTppEmitter(jit_generator* h, cpu_isa_t isa
     const auto N = get_broadcasted_dim(N_in0, N_in1, n_bcast_flags);
     const auto M = get_broadcasted_dim(M_in0, M_in1, m_bcast_flags);
 
+    is_first = N == N_in0 && M == M_in0;
+
     m_compile_flags = LIBXSMM_MELTW_FLAG_BINARY_NONE;
     if (m_bcast_flags.first && n_bcast_flags.first) {
         m_compile_flags |= LIBXSMM_MELTW_FLAG_BINARY_BCAST_SCALAR_IN_0;

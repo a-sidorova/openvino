@@ -23,6 +23,7 @@ public:
     static std::set<std::vector<element::Type>> get_supported_precisions(const std::shared_ptr<ov::Node>& node = nullptr);
 
 protected:
+    bool is_first = true;
     libxsmm_meltw_binary_shape m_shape;
     libxsmm_meltw_binary_type m_op_type;
     void validate_arguments(const std::vector<size_t> &in, const std::vector<size_t> &out) const override;

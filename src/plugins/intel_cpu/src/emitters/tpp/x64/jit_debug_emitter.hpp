@@ -55,16 +55,12 @@ protected:
         OV_CPU_JIT_EMITTER_ASSERT(original, "Incorrect emitter");
         const auto& m_shape = original->m_shape;
         const auto& m_flags = original->m_compile_flags;
-        float* in0_ptr = reinterpret_cast<float*>(in0);
-        float* in1_ptr = reinterpret_cast<float*>(in1);
+        const auto& ldi = original->is_first ? m_shape.ldi : m_shape.ldi2;
+        float* in_ptr = original->is_first ? reinterpret_cast<float*>(in0) : reinterpret_cast<float*>(in1);
         float* out_ptr = reinterpret_cast<float*>(out0);
         for (int n = 0; n < m_shape.n; n++) {
-            auto src_ptr = m_flags & LIBXSMM_MELTW_FLAG_BINARY_BCAST_ROW_IN_1 ? in0_ptr : in1_ptr;
-            mempcpy(out_ptr, src_ptr, m_shape.m * sizeof(float));
-            if (!(m_flags & LIBXSMM_MELTW_FLAG_BINARY_BCAST_COL_IN_0))
-                in0_ptr += m_shape.ldi;
-            if (!(m_flags & LIBXSMM_MELTW_FLAG_BINARY_BCAST_COL_IN_1))
-                in1_ptr += m_shape.ldi2;
+            mempcpy(out_ptr, in_ptr, m_shape.m * sizeof(float));
+            in_ptr += ldi;
             out_ptr += m_shape.ldo;
         }
     }
