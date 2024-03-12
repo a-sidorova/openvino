@@ -181,15 +181,16 @@ public:
     static std::vector<size_t> get_common_outer_loops(const std::vector<ExpressionPtr>& exprs);
 
     /**
-     * @brief Create new LoopInfo and mark all expressions in loop bounds by new loop ID
+     * @brief Create new LoopInfos' and mark all expressions in loop bounds by new loop IDs'.
+     *        The count of loop is equal to `loop_depth`.
      * @param loop_begin_pos the first expression iterator
      * @param loop_end_pos the next iterator after last expression
      * @param loop_depth count of loops for marking
      * @param vector_size increment of loop
      */
-    void mark_loop(LinearIR::constExprIt loop_begin_pos,
-                   LinearIR::constExprIt loop_end_pos,
-                   size_t loop_depth, size_t vector_size);
+    void mark_loops(LinearIR::constExprIt loop_begin_pos,
+                    LinearIR::constExprIt loop_end_pos,
+                    size_t loop_depth, size_t vector_size);
     /**
      * @brief Create new LoopInfo and mark all expressions in loop bounds by new loop ID with more manual parameters
      * @param loop_begin_pos the first expression iterator

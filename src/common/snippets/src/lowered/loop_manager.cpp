@@ -359,9 +359,9 @@ void LinearIR::LoopManager::get_io_loop_ports(LinearIR::constExprIt loop_begin_p
     }
 }
 
-void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
-                                      LinearIR::constExprIt loop_end_pos,
-                                      size_t loop_depth, size_t vector_size) {
+void LinearIR::LoopManager::mark_loops(LinearIR::constExprIt loop_begin_pos,
+                                       LinearIR::constExprIt loop_end_pos,
+                                       size_t loop_depth, size_t vector_size) {
     std::vector<ExpressionPort> loop_entry_points, loop_exit_points;
     LoopManager::get_io_loop_ports(loop_begin_pos, loop_end_pos, loop_entry_points, loop_exit_points);
 
@@ -420,6 +420,13 @@ void LinearIR::LoopManager::mark_loop(LinearIR::constExprIt loop_begin_pos,
         OPENVINO_ASSERT(dim_idx < loop_tensor.size(), "Incorrect indexes of Loop for markup");
         const auto work_amount = *(loop_tensor.rbegin() + dim_idx);
         const auto increment = subtensor_value;
+        // Loop Invariants case
+        //     Relu_0 [16x1]     Relu_1 [16x128]
+        //                \           /
+        //                 Add [16x128]
+        // `Relu_0` can be not marked by inner Loop - it allow `Relu_0` to be executed only 16 times instead of `16 x [128 / inner_increment]` times
+        if (dim_idx == 0 && work_amount == 1)
+            continue;
         mark_loop(loop_begin_pos, loop_end_pos, work_amount, increment, dim_idx, loop_entry_points, loop_exit_points);
     }
 }
