@@ -814,7 +814,7 @@ void Subgraph::SnippetJitDynamicSpecializedExecutor::schedule_6d(const std::vect
     // Use parallel_nt instead of parallel_for5d to create thread-local `jit_snippets_call_args` entity
     // with inited buffer scratchpad ptr and loop args only once.
     const auto& callable = schedule->get_callable<dynamic_kernel>();
-    parallel_nt(0, [&](const int ithr, const int nthr) {
+    parallel_nt(1, [&](const int ithr, const int nthr) {
         jit_snippets_call_args call_args;
         init_call_args(call_args);
 

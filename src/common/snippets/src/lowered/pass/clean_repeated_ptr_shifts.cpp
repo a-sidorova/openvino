@@ -86,27 +86,19 @@ bool CleanRepeatedDataPointerShifts::reuse_increments(const LinearIR::LoopManage
     auto loop_entries = loop_info->get_entry_points();
     auto loop_exits = loop_info->get_exit_points();
     auto new_is_incremented = loop_end->get_is_incremented();
-    if (const auto loop_end_dynamic = ov::as_type_ptr<op::LoopEndDynamic>(loop_end_expr->get_node())) {
-        for (auto idx_to_drop : resetting_data_indexes) {
-            new_is_incremented[idx_to_drop] = false;
-            auto& loop_port = idx_to_drop < input_count ? loop_entries[idx_to_drop] : loop_exits[idx_to_drop - input_count];
-            loop_port.is_incremented = false;
-        }
-    } else if (const auto loop_end_static = ov::as_type_ptr<op::LoopEndStatic>(loop_end_expr->get_node())) {
-        auto new_ptr_increments = loop_end_static->get_ptr_increments();
-        auto new_finalization_offsets = loop_end_static->get_finalization_offsets();
-        for (auto idx_to_drop : resetting_data_indexes) {
-            new_ptr_increments[idx_to_drop] = 0;
-            new_finalization_offsets[idx_to_drop] = 0;
-            new_is_incremented[idx_to_drop] = false;
-            auto& loop_port = idx_to_drop < input_count ? loop_entries[idx_to_drop] : loop_exits[idx_to_drop - input_count];
-            loop_port.ptr_increment = 0;
-            loop_port.finalization_offset = 0;
-            loop_port.is_incremented = false;
-        }
-        loop_end_static->set_ptr_increments(new_ptr_increments);
-        loop_end_static->set_finalization_offsets(new_finalization_offsets);
+    auto new_ptr_increments = loop_end->get_ptr_increments();
+    auto new_finalization_offsets = loop_end->get_finalization_offsets();
+    for (auto idx_to_drop : resetting_data_indexes) {
+        new_ptr_increments[idx_to_drop] = 0;
+        new_finalization_offsets[idx_to_drop] = 0;
+        new_is_incremented[idx_to_drop] = false;
+        auto& loop_port = idx_to_drop < input_count ? loop_entries[idx_to_drop] : loop_exits[idx_to_drop - input_count];
+        loop_port.ptr_increment = 0;
+        loop_port.finalization_offset = 0;
+        loop_port.is_incremented = false;
     }
+    loop_end->set_ptr_increments(new_ptr_increments);
+    loop_end->set_finalization_offsets(new_finalization_offsets);
     loop_end->set_is_incremented(new_is_incremented);
     loop_info->set_entry_points(loop_entries);
     loop_info->set_exit_points(loop_exits);

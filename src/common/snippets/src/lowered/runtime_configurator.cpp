@@ -227,7 +227,8 @@ inline void RuntimeConfigurator::LoopInitializer::init_data_ptr_shifts(const Lin
 
     if (there_is_before_loop) {
         finalization_offsets = last_execution_loop_before->finalization_offsets;
-        std::fill(last_execution_loop_before->finalization_offsets.begin(), last_execution_loop_before->finalization_offsets.end(), 0);
+        std::replace_if(last_execution_loop_before->finalization_offsets.begin(), last_execution_loop_before->finalization_offsets.end(),
+                        [](const int64_t& offset) { return !utils::is_dynamic_value(offset); }, 0);
     }
 }
 

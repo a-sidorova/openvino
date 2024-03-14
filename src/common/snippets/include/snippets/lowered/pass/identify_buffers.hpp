@@ -46,6 +46,9 @@ public:
         int64_t ptr_increment = 0;
         int64_t finalization_offset = 0;
 
+        inline bool is_dynamic() const;
+        inline bool is_static() const;
+
         friend bool operator==(const ShiftPtrParams& lhs, const ShiftPtrParams& rhs);
         friend bool operator!=(const ShiftPtrParams& lhs, const ShiftPtrParams& rhs);
     };

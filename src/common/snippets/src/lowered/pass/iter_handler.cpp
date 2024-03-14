@@ -85,7 +85,7 @@ TransformInnerSplitLoop::TransformInnerSplitLoop(size_t tail_size) : RangedPass(
 bool TransformInnerSplitLoop::run(LinearIR& linear_ir, LinearIR::constExprIt begin, LinearIR::constExprIt end) {
     const auto& expr = *end;
     const auto node = expr->get_node();
-    const auto loop_end = ov::as_type_ptr<op::LoopEndStatic>(node);
+    const auto loop_end = ov::as_type_ptr<op::LoopEnd>(node);
     OPENVINO_ASSERT(loop_end, "the last operation in range must be LoopEnd");
 
     const auto& loop_manager = linear_ir.get_loop_manager();
@@ -97,7 +97,7 @@ bool TransformInnerSplitLoop::run(LinearIR& linear_ir, LinearIR::constExprIt beg
     bool modified = false;
     for (auto it = begin; it != end; ++it) {
         const auto& expr = *it;
-        const auto inner_loop_end = ov::as_type_ptr<op::LoopEndStatic>(expr->get_node());
+        const auto inner_loop_end = ov::as_type_ptr<op::LoopEnd>(expr->get_node());
         if (!inner_loop_end)
             continue;
         const auto inner_loop_info = loop_manager->get_loop_info(inner_loop_end->get_id());
@@ -109,6 +109,7 @@ bool TransformInnerSplitLoop::run(LinearIR& linear_ir, LinearIR::constExprIt beg
         const auto inner_loop_increment = inner_loop_end->get_increment();
         auto inner_finalization_offsets = inner_loop_end->get_finalization_offsets();
         for (auto& offset : inner_finalization_offsets) {
+            OPENVINO_ASSERT(!utils::is_dynamic_value(offset), "finalizatiion_offset must be static in TransformInnerSplitLoop");
             offset = offset / inner_loop_work_amount * static_cast<int64_t>(m_tail_size);
         }
         inner_loop_end->set_work_amount(m_tail_size);

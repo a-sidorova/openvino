@@ -18,7 +18,7 @@ bool CleanupLoopOffsets::run(lowered::LinearIR& linear_ir, lowered::LinearIR::co
     bool is_modified = false;
     for (auto expr_it = begin; expr_it != end; expr_it++) {
         const auto& node = expr_it->get()->get_node();
-        if (auto loop_end = as_type_ptr<op::LoopEndStatic>(node)) {
+        if (auto loop_end = as_type_ptr<op::LoopEnd>(node)) {
             auto next_expr_it = std::next(expr_it);
             while (ov::is_type<op::RankNormalization>(next_expr_it->get()->get_node())) {
                 next_expr_it = std::next(next_expr_it);
@@ -32,7 +32,7 @@ bool CleanupLoopOffsets::run(lowered::LinearIR& linear_ir, lowered::LinearIR::co
                 const auto& fin_offsets = loop_end->get_finalization_offsets();
                 loop_end->set_finalization_offsets(std::vector<int64_t>(fin_offsets.size(), 0));
                 is_modified = true;
-            } else if (auto outer_loop_end = as_type_ptr<op::LoopEndStatic>(next_node)) {
+            } else if (auto outer_loop_end = as_type_ptr<op::LoopEnd>(next_node)) {
                 const auto& is_incremented = loop_end->get_is_incremented();
                 auto fin_offsets = loop_end->get_finalization_offsets();
                 std::unordered_map<PortConnectorPtr, size_t> per_port_connector_offset;
@@ -51,6 +51,8 @@ bool CleanupLoopOffsets::run(lowered::LinearIR& linear_ir, lowered::LinearIR::co
                     const auto& found = per_port_connector_offset.find(managed_connector);
                     if (found != per_port_connector_offset.end()) {
                         if (!is_incremented[found->second])
+                            continue;
+                        if (utils::is_dynamic_value(outer_ptr_increments[i]) || utils::is_dynamic_value(fin_offsets[found->second]))
                             continue;
                         // Since data ptr is incremented on [ptr_increment x increment],
                         // we should guarantee proportionality of ptr shifts.

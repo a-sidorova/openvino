@@ -90,11 +90,11 @@ void validate_buffer(const ExpressionPtr& expr, const LinearIR& linear_ir) {
     }
 }
 
-void validate_loop_end_static(const ExpressionPtr& expr, const LinearIR& linear_ir) {
-    const auto loop_end = ov::as_type_ptr<op::LoopEndStatic>(expr->get_node());
-    OPENVINO_ASSERT(loop_end, "LoopEndStatic validation expects LoopEndStatic op");
-    OPENVINO_ASSERT(ov::is_type<op::LoopBeginStatic>(loop_end->get_loop_begin()),
-                    "LoopEndStatic must be connected to the LoopBeginStatic");
+void validate_loop_end(const ExpressionPtr& expr, const LinearIR& linear_ir) {
+    const auto loop_end = ov::as_type_ptr<op::LoopEnd>(expr->get_node());
+    OPENVINO_ASSERT(loop_end, "LoopEnd validation expects LoopEnd op");
+    OPENVINO_ASSERT(ov::is_type<op::LoopBegin>(loop_end->get_loop_begin()),
+                    "LoopEnd must be connected to the LoopBegin");
 
     const auto& loop_manager = linear_ir.get_loop_manager();
     const auto& loop_info = loop_manager->get_loop_info(loop_end->get_id());
@@ -124,34 +124,6 @@ void validate_loop_end_static(const ExpressionPtr& expr, const LinearIR& linear_
     validate_loop_ports(exit_points, loop_end->get_input_num());
 }
 
-void validate_loop_end_dynamic(const ExpressionPtr& expr, const LinearIR& linear_ir) {
-    const auto loop_end = ov::as_type_ptr<op::LoopEndDynamic>(expr->get_node());
-    OPENVINO_ASSERT(loop_end, "LoopEndDynamic validation expects LoopEndStatic op");
-    OPENVINO_ASSERT(ov::is_type<op::LoopBeginDynamic>(loop_end->get_loop_begin()),
-                    "LoopEndDynamic must be connected to the LoopBeginDynamic");
-
-    const auto& loop_manager = linear_ir.get_loop_manager();
-    const auto& loop_info = loop_manager->get_loop_info(loop_end->get_id());
-    OPENVINO_ASSERT(loop_info->get_increment() == loop_end->get_increment(),
-                    "Incompatible LoopEndDynamic and the corresponding LoopInfo");
-
-    const auto& entry_points = loop_info->get_entry_points();
-    const auto& exit_points = loop_info->get_exit_points();
-    OPENVINO_ASSERT(entry_points.size() == loop_end->get_input_num() &&
-                    exit_points.size() == loop_end->get_output_num(),
-                    "Incompatible LoopEndStatic and the corresponding LoopInfo");
-
-    const auto& is_incremented = loop_end->get_is_incremented();
-
-    auto validate_loop_ports = [&](const std::vector<LinearIR::LoopManager::LoopPort>& loop_ports, size_t shift = 0) {
-        for (size_t i = 0; i < loop_ports.size(); ++i) {
-        OPENVINO_ASSERT(is_incremented[i + shift] == loop_ports[i].is_incremented,
-                        "Incompatible data ptr shifts in LoopEndStatic and the corresponding LoopInfo");
-        }
-    };
-    validate_loop_ports(entry_points);
-    validate_loop_ports(exit_points, loop_end->get_input_num());
-}
 } // namespace
 
 Validate::Validate() {
@@ -159,8 +131,7 @@ Validate::Validate() {
         {ov::op::v0::Parameter::get_type_info_static(), validate_parameter},
         {ov::op::v0::Result::get_type_info_static(), validate_result},
         {ov::snippets::op::Buffer::get_type_info_static(), validate_buffer},
-        {ov::snippets::op::LoopEndStatic::get_type_info_static(), validate_loop_end_static},
-        {ov::snippets::op::LoopEndDynamic::get_type_info_static(), validate_loop_end_dynamic}
+        {ov::snippets::op::LoopEnd::get_type_info_static(), validate_loop_end},
     };
 }
 
