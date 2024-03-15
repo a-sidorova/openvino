@@ -15,6 +15,7 @@
 #include "snippets/lowered/pass/split_loops.hpp"
 #include "snippets/lowered/pass/insert_buffers.hpp"
 #include "snippets/lowered/pass/reduce_decomposition.hpp"
+#include "snippets/lowered/pass/compute_buffer_allocation_size.hpp"
 
 #include "transformations/snippets/x64/shape_inference.hpp"
 #include "transformations/snippets/x64/pass/lowered/brgemm_blocking.hpp"
@@ -83,7 +84,8 @@ protected:
         pipeline.register_pass<ov::snippets::lowered::pass::ReduceDecomposition>(m_vector_size);
         pipeline.register_pass<ov::snippets::lowered::pass::FuseLoops>();
         pipeline.register_pass<ov::snippets::lowered::pass::SplitLoops>();
-        pipeline.register_pass<ov::snippets::lowered::pass::InsertBuffers>(2);
+        pipeline.register_pass<ov::snippets::lowered::pass::InsertBuffers>();
+        pipeline.register_pass<ov::snippets::lowered::pass::ComputeBufferAllocationSize>(2);
         pipeline.register_pass<ov::snippets::lowered::pass::InsertLoadStore>(m_vector_size);
         pipeline.register_pass<ov::snippets::lowered::pass::InitLoops>();
         pipeline.register_pass<ov::snippets::lowered::pass::InsertLoops>();

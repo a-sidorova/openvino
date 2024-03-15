@@ -17,6 +17,8 @@
 #include "snippets/lowered/pass/split_loops.hpp"
 #include "snippets/lowered/pass/insert_buffers.hpp"
 #include "snippets/lowered/pass/reduce_decomposition.hpp"
+#include "snippets/lowered/pass/compute_buffer_allocation_size.hpp"
+#include "snippets/lowered/pass/serialize_data_flow.hpp"
 
 #include "common_test_utils/common_utils.hpp"
 
@@ -72,11 +74,13 @@ void BufferAllocationTest::ApplyTransformations(const std::shared_ptr<ov::snippe
     pipeline.register_pass<ov::snippets::lowered::pass::ReduceDecomposition>(m_vector_size);
     pipeline.register_pass<ov::snippets::lowered::pass::FuseLoops>();
     pipeline.register_pass<ov::snippets::lowered::pass::SplitLoops>();
-    pipeline.register_pass<ov::snippets::lowered::pass::InsertBuffers>(2);
+    pipeline.register_pass<ov::snippets::lowered::pass::InsertBuffers>();
+    pipeline.register_pass<ov::snippets::lowered::pass::ComputeBufferAllocationSize>(2);
     pipeline.register_pass<ov::snippets::lowered::pass::InsertLoadStore>(m_vector_size);
     pipeline.register_pass<ov::snippets::lowered::pass::InitLoops>();
     pipeline.register_pass<ov::snippets::lowered::pass::InsertLoops>();
     pipeline.register_pass<ov::snippets::lowered::pass::AllocateBuffers>(m_buffer_scratchpad, m_is_buffer_optimized);
+    pipeline.register_pass<ov::snippets::lowered::pass::SerializeDataFlow>("lir.xml");
     pipeline.run(m_linear_ir);
 }
 

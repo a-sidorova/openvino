@@ -46,6 +46,7 @@
 #include "snippets/lowered/pass/set_load_store_scalar.hpp"
 #include "snippets/lowered/pass/pass_config.hpp"
 #include "snippets/lowered/pass/reduce_decomposition.hpp"
+#include "snippets/lowered/pass/compute_buffer_allocation_size.hpp"
 
 #include "transformations/utils/utils.hpp"
 
@@ -439,7 +440,8 @@ void Subgraph::control_flow_transformations(const std::shared_ptr<lowered::pass:
     pipeline.register_pass<lowered::pass::FuseLoops>();
     pipeline.register_pass<lowered::pass::SplitLoops>();
     pipeline.register_pass<lowered::pass::MoveResultOutOfLoop>();
-    pipeline.register_pass<lowered::pass::InsertBuffers>(buffer_allocation_rank);
+    pipeline.register_pass<lowered::pass::InsertBuffers>();
+    pipeline.register_pass<lowered::pass::ComputeBufferAllocationSize>(buffer_allocation_rank);
     pipeline.register_pass<lowered::pass::InsertLoadStore>(vector_size);
     pipeline.register_pass<lowered::pass::MoveScalarToConsumer>();
     pipeline.register_pass<lowered::pass::InsertBroadcastMove>();
