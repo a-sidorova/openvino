@@ -27,13 +27,13 @@ Expression::Expression(const std::shared_ptr<Node>& n, const std::shared_ptr<ISh
     }
 }
 
-Expression::Expression(const Expression& other) :
+Expression::Expression(const Expression& other, bool deep_shape_clone) :
     std::enable_shared_from_this<Expression>(other), m_source_node(other.m_source_node),
     m_emitter(other.m_emitter), m_loop_ids(other.m_loop_ids), m_shapeInference(other.m_shapeInference) {
-    auto clone_ports_descriptors = [](const std::vector<PortDescriptorPtr>& src, std::vector<PortDescriptorPtr>& dst) {
+    auto clone_ports_descriptors = [deep_shape_clone](const std::vector<PortDescriptorPtr>& src, std::vector<PortDescriptorPtr>& dst) {
         dst.resize(src.size());
         for (size_t i = 0; i < src.size(); i++)
-            dst[i] = src[i]->clone();
+            dst[i] = deep_shape_clone ? src[i]->deep_clone() : src[i]->clone();
     };
     clone_ports_descriptors(other.m_input_port_descriptors, m_input_port_descriptors);
     clone_ports_descriptors(other.m_output_port_descriptors, m_output_port_descriptors);
@@ -150,14 +150,16 @@ void Expression::update_node_and_connectors(const std::vector<PortConnectorPtr>&
 }
 
 ExpressionPtr Expression::clone_with_new_inputs(const std::vector<PortConnectorPtr>& new_inputs,
-                                                const std::shared_ptr<Node>& new_node) const {
-    const auto& expr = std::shared_ptr<Expression>(new Expression(*this));
+                                                const std::shared_ptr<Node>& new_node,
+                                                bool deep_shape_clone) const {
+    const auto& expr = std::shared_ptr<Expression>(new Expression(*this, deep_shape_clone));
     expr->update_node_and_connectors(new_inputs, new_node);
     return expr;
 }
 
 ExpressionPtr Expression::clone_with_new_inputs(const ExpressionMap& expr_map,
-                                                const std::shared_ptr<Node>& new_node) const {
+                                                const std::shared_ptr<Node>& new_node,
+                                                bool deep_shape_clone) const {
     std::vector<PortConnectorPtr> new_inputs;
     new_inputs.reserve(m_input_port_connectors.size());
     for (const auto& input : m_input_port_connectors) {
@@ -170,7 +172,7 @@ ExpressionPtr Expression::clone_with_new_inputs(const ExpressionMap& expr_map,
             new_inputs.emplace_back(input);
         }
     }
-    return clone_with_new_inputs(new_inputs, new_node);
+    return clone_with_new_inputs(new_inputs, new_node, deep_shape_clone);
 }
 
 ExpressionPort Expression::get_input_port(size_t i) {
@@ -234,9 +236,12 @@ IOExpression::IOExpression(const std::shared_ptr<ov::opset1::Parameter>& par, in
 IOExpression::IOExpression(const std::shared_ptr<ov::opset1::Result>& res, int64_t index, const std::shared_ptr<IShapeInferSnippetsFactory>& factory)
         : Expression(res, factory), m_index(index), m_type{io_type::OUTPUT} {}
 
+IOExpression::IOExpression(const IOExpression& other, bool deep_shape_clone)
+    : Expression(other, deep_shape_clone), m_index(other.m_index), m_type(other.m_type) {}
+
 ExpressionPtr IOExpression::clone_with_new_inputs(const std::vector<PortConnectorPtr>& new_inputs,
-                                                  const std::shared_ptr<Node>& new_node) const {
-    const auto& expr = std::shared_ptr<IOExpression>(new IOExpression(*this));
+                                                  const std::shared_ptr<Node>& new_node, bool deep_shape_clone) const {
+    const auto& expr = std::shared_ptr<IOExpression>(new IOExpression(*this, deep_shape_clone));
     expr->update_node_and_connectors(new_inputs, new_node);
     return expr;
 }

@@ -36,7 +36,7 @@ std::vector<size_t> InsertBroadcastMove::get_last_dims(const ExpressionPtr& expr
     std::vector<size_t> last_dims(descriptors.size());
     std::transform(descriptors.begin(), descriptors.end(), last_dims.begin(),
                    [](const std::shared_ptr<PortDescriptor>& d){
-                        return d->get_shape().size() > 0 ? d->get_shape().back() : 1; });
+                        return d->get_shape_ptr()->size() > 0 ? d->get_shape_ptr()->back() : 1; });
     return last_dims;
 }
 

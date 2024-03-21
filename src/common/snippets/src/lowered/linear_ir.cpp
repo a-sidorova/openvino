@@ -41,10 +41,10 @@ LinearIR::LinearIR(const std::shared_ptr<ov::Model>& model, const std::shared_pt
                 last_param = it;
             switch (io_expr->get_type()) {
                 case IOExpression::io_type::INPUT:
-                    m_is_dynamic = m_is_dynamic || utils::is_dynamic_vdims(io_expr->get_output_port_descriptor(0)->get_shape());
+                    m_is_dynamic = m_is_dynamic || utils::is_dynamic_vdims(io_expr->get_output_port_descriptor(0)->get_shape_ptr());
                     break;
                 case IOExpression::io_type::OUTPUT:
-                    m_is_dynamic = m_is_dynamic || utils::is_dynamic_vdims(io_expr->get_input_port_descriptor(0)->get_shape());
+                    m_is_dynamic = m_is_dynamic || utils::is_dynamic_vdims(io_expr->get_input_port_descriptor(0)->get_shape_ptr());
                     break;
                 default:
                     OPENVINO_THROW("Incorrect IO Expression type");
@@ -173,7 +173,8 @@ std::vector<std::shared_ptr<ov::Node>> clone_nodes(const std::vector<std::shared
 
 LinearIR::container LinearIR::deep_copy_range(LinearIR::container::const_iterator begin,
                                               LinearIR::container::const_iterator end,
-                                              ExpressionMap& expression_map) {
+                                              ExpressionMap& expression_map,
+                                              bool deep_shape_clone) {
     OPENVINO_ASSERT(expression_map.empty(), "deep_copy_range expects empty expression_map as an input");
     LinearIR::container result;
     NodeVector original_nodes;
@@ -187,7 +188,7 @@ LinearIR::container LinearIR::deep_copy_range(LinearIR::container::const_iterato
 
     for (auto it = begin; it != end; it++) {
         const auto& expr = *it;
-        const auto& new_expr = expr->clone_with_new_inputs(expression_map, node_map[expr->get_node().get()]);
+        const auto& new_expr = expr->clone_with_new_inputs(expression_map, node_map[expr->get_node().get()], deep_shape_clone);
         result.push_back(new_expr);
         expression_map[expr.get()] = new_expr;
     }

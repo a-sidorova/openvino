@@ -62,11 +62,12 @@ public:
     const std::vector<size_t>& get_loop_ids() const;
     void set_loop_ids(const std::vector<size_t>& loops);
     virtual ExpressionPtr clone_with_new_inputs(const std::vector<PortConnectorPtr>& new_inputs,
-                                                const std::shared_ptr<Node>& new_node) const;
-    ExpressionPtr clone_with_new_inputs(const ExpressionMap& expr_map, const std::shared_ptr<Node>& new_node) const;
+                                                const std::shared_ptr<Node>& new_node,
+                                                bool deep_shape_clone = true) const;
+    ExpressionPtr clone_with_new_inputs(const ExpressionMap& expr_map, const std::shared_ptr<Node>& new_node, bool deep_shape_clone = true) const;
 
 protected:
-    Expression(const Expression& other);
+    Expression(const Expression& other, bool deep_shape_clone = true);
     // Note: The constructor initialization is private since an expression can be created only by Linear IR.
     //       The method must be used only by Linear IR builder of expressions!
     Expression(const std::shared_ptr<Node>& n, const std::shared_ptr<IShapeInferSnippetsFactory>& factory);
@@ -90,13 +91,13 @@ class IOExpression : public Expression {
 public:
     enum class io_type {INPUT, OUTPUT, UNDEFINED};
     ExpressionPtr clone_with_new_inputs(const std::vector<PortConnectorPtr>& new_inputs,
-                                        const std::shared_ptr<Node>& new_node) const override;
+                                        const std::shared_ptr<Node>& new_node, bool deep_shape_clone = true) const override;
     int64_t get_index() const  { return m_index; }
     io_type get_type() const { return m_type; }
     // Result needs shapeInfer to copy shape from Parent's output to this expr input
     bool needShapeInfer() const override {return m_type == io_type::OUTPUT; }
 private:
-    IOExpression(const IOExpression& other) = default;
+    IOExpression(const IOExpression& other, bool deep_shape_clone = true);
     explicit IOExpression(const std::shared_ptr<ov::opset1::Parameter>& n, int64_t index, const std::shared_ptr<IShapeInferSnippetsFactory>& factory);
     explicit IOExpression(const std::shared_ptr<ov::opset1::Result>& n, int64_t index, const std::shared_ptr<IShapeInferSnippetsFactory>& factory);
 

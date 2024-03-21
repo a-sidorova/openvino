@@ -108,7 +108,7 @@ ExpressionPtr LinearIR::ExpressionFactory::create(const std::shared_ptr<op::Loop
     }
     const auto& last_input = inputs.back()->get_source();
     OPENVINO_ASSERT(ov::is_type<op::LoopBegin>(last_input.get_expr()->get_node()), "LoopEnd expression expects LoopBegin on last input");
-    expr->m_input_port_descriptors[inputs.size() - 1] = last_input.get_descriptor_ptr()->clone();
+    expr->m_input_port_descriptors[inputs.size() - 1] = last_input.get_descriptor_ptr()->deep_clone();
     init_expression_inputs(expr, inputs);
     // The LoopEnd node don't need output port (because of sense of the node). But each node in openvino must have one output at least.
     // The port descriptors are automatically created in constructor. We manually clean output ports.
