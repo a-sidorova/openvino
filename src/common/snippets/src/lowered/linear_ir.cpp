@@ -54,12 +54,12 @@ LinearIR::LinearIR(const std::shared_ptr<ov::Model>& model, const std::shared_pt
     m_shape_infer = std::make_shared<LIRShapeInfer>(m_expressions, m_io_expressions);
 }
 
-std::shared_ptr<LinearIR> LinearIR::clone() const {
+std::shared_ptr<LinearIR> LinearIR::clone(bool deep_shape_clone) const {
     auto cloned = std::make_shared<LinearIR>();
     cloned->m_config = m_config;
 
     ExpressionMap expression_map;
-    cloned->m_expressions = deep_copy_range(m_expressions.cbegin(), m_expressions.cend(), expression_map);
+    cloned->m_expressions = deep_copy_range(m_expressions.cbegin(), m_expressions.cend(), expression_map, deep_shape_clone);
     for (const auto& expr : cloned->m_expressions) {
         cloned->m_node2expression_map[expr->get_node()] = expr;
         if (const auto& io = std::dynamic_pointer_cast<IOExpression>(expr))

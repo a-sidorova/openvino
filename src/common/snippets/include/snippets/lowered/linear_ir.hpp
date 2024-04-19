@@ -70,7 +70,7 @@ public:
 
     ExpressionPtr create_expression(const std::shared_ptr<Node>& n, const std::vector<PortConnectorPtr>& inputs) const;
 
-    std::shared_ptr<LinearIR> clone() const;
+    std::shared_ptr<LinearIR> clone(bool deep_shape_clone = true) const;
     static LinearIR::container deep_copy_range(LinearIR::container::const_iterator begin,
                                                LinearIR::container::const_iterator end,
                                                ExpressionMap& expression_map,
