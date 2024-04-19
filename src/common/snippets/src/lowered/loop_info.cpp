@@ -184,7 +184,7 @@ ExpandedLoopInfo::ExpandedLoopInfo(size_t work_amount, size_t increment,
     m_unified_loop_info = std::move(unified_loop_info);
 
     const auto count = entries.size() + exits.size();
-    OPENVINO_ASSERT(utils::everyone_is(count, ptr_increments.size(), final_offsets.size(), data_sizes.size()),
+    OPENVINO_ASSERT(utils::everyone_is(count, m_ptr_increments.size(), m_finalization_offsets.size(), m_data_sizes.size()),
                     "Incompatible data ptr shifts!");
 }
 
