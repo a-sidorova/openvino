@@ -249,7 +249,7 @@ void Subgraph::initSupportedPrimitiveDescriptors() {
     const size_t ndims = outputShapes[0].getRank();
     // Domain sensitive operations and dynamic Subgraphs support only Planar layout
     const bool isOnlyPlanarApplicable = snippetAttrs->snippet->has_domain_sensitive_ops();
-    const bool isChannelsFirstApplicable = dnnl::impl::utils::one_of(ndims, 1u, 2u, 3u, 4u, 5u) && dimRanksAreEqual && !isOnlyPlanarApplicable && !isDynamic;
+    const bool isChannelsFirstApplicable = dnnl::impl::utils::one_of(ndims, 1u, 2u, 3u, 4u, 5u) && dimRanksAreEqual && !isOnlyPlanarApplicable;
     // Todo: Subgraphs currently don't support per-channel broadcasting of Blocked descriptors because
     //  canonicalization can't distinguish between <N, C, H, W, c> and <N, C, D, H, W> cases.
     //  See snippets::op::Subgraph::canonicalize for details.
@@ -408,6 +408,8 @@ void Subgraph::init_memory_ptrs() {
 void Subgraph::init_attrs() {
     const auto config = getSelectedPrimitiveDescriptor()->getConfig();
 
+    is_blocked_out_layout.resize(input_num);
+
     snippetAttrs->inMemPrecs.resize(input_num);
     snippetAttrs->outMemPrecs.resize(output_num);
 
@@ -423,6 +425,7 @@ void Subgraph::init_attrs() {
         const auto& memDesc = dstMemPtrs[i]->getDescWithType<BlockedMemoryDesc>();
         snippetAttrs->outMemPrecs[i] = memDesc->getPrecision();
         snippetAttrs->outMemOrders[i] = memDesc->getOrder();
+        is_blocked_out_layout[i] = !memDesc->hasLayoutType(LayoutType::ncsp);
     }
 }
 
@@ -549,13 +552,6 @@ uint8_t Subgraph::get_broadcasting_mask(const std::vector<VectorDims>& input_sha
     return mask;
 }
 
-bool Subgraph::need_blocked_shape_infer() const {
-    const auto& inConfs = getSelectedPrimitiveDescriptor()->getConfig().inConfs;
-    return std::any_of(inConfs.cbegin(), inConfs.cend(), [](const PortConfig& conf) {
-        return !conf.getMemDesc()->as<BlockedMemoryDesc>()->hasLayoutType(LayoutType::ncsp);
-    });
-}
-
 void Subgraph::lower() {
     snippets::op::Subgraph::BlockedShapeVector in_blocked_shapes;
     std::vector<ov::element::Type> input_precisions, output_precisions;
@@ -568,12 +564,10 @@ void Subgraph::lower() {
 
     // TODO: Snippets don't support backend-provided blocking, so we need to reshape body
     //       using blocked shapes first. This can be removed after [121670]
-    if (need_blocked_shape_infer()) {
-        std::vector<snippets::VectorDimsRef> in_shapes;
-        for (const auto& s : in_blocked_shapes)
-            in_shapes.emplace_back(s.first);
-        subgraph->shape_infer(in_shapes);
-    }
+    std::vector<snippets::VectorDimsRef> in_shapes;
+    for (const auto& s : in_blocked_shapes)
+        in_shapes.emplace_back(s.first);
+    subgraph->shape_infer(in_shapes);
 
     // Note: minimal JIT work amount is a predefined value that describes the number of kernel iterations (work amount)
     // needed to cover kernel call overhead. It is used for balancing between parallel and JIT work amounts in domain optimization.
@@ -620,12 +614,42 @@ IShapeInfer::Result Subgraph::shapeInfer() const {
         in_shapes[i] = srcMemPtrs[i]->getDescWithType<BlockedMemoryDesc>()->getBlockDims();
 
     auto builder = [this](const SubgraphShapeInferResultKey& key) -> std::shared_ptr<SubgraphShapeInferResult> {
-        return std::make_shared<SubgraphShapeInferResult>(Node::shapeInfer());
+        return std::make_shared<SubgraphShapeInferResult>(blocked_shape_infer());
     };
 
     const auto cache = context->getParamsCache();
     const auto result = cache->getOrCreate(SubgraphShapeInferResultKey(in_shapes, snippetAttrs->bodyHash), builder);
     return result.first->result;
+}
+
+IShapeInfer::Result Subgraph::blocked_shape_infer() const {
+    auto preorder_dims = [](const VectorDims& original_shape, const VectorDims& order) {
+        OPENVINO_ASSERT(original_shape.size() == order.size(), "Layout and shape ranks must be equal!");
+        VectorDims result(order.size());
+        for (size_t j = 0; j < order.size(); j++) {
+           OPENVINO_ASSERT(order[j] < result.size(), "layout index is greater than the shape size");
+           result[order[j]] = original_shape[j];
+        }
+        return result;
+    };
+
+    try {
+        std::vector<std::reference_wrapper<const VectorDims>> input_shapes;
+        input_shapes.reserve(inputShapes.size());
+        for (size_t port = 0; port < inputShapes.size(); ++port)
+            input_shapes.emplace_back(std::ref(in_shapes[port]));
+
+        // Subgraph don't have data_dependency
+        auto result = shapeInference->infer(input_shapes, {});
+        for (size_t i = 0; i < result.dims.size(); ++i) {
+            if (is_blocked_out_layout[i])
+                result.dims[i] = preorder_dims(result.dims[i], snippetAttrs->outMemOrders[i]);
+        }
+        return result;
+    }
+    catch (const std::runtime_error& exp) {
+        OPENVINO_THROW("Shape inference of ", getTypeStr() , " node with name ", getName(), " failed: ", exp.what());
+    }
 }
 
 bool Subgraph::canBeInPlace() const {

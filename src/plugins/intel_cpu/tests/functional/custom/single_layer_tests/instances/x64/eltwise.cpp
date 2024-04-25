@@ -445,7 +445,7 @@ const auto params_4D_per_channel_dyn_const = ::testing::Combine(
                 ::testing::ValuesIn(additional_config())),
         ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_4D_PerChannel())),
         ::testing::Values(emptyFusingSpec),
-        ::testing::Values(false)); // CPU Plugin supports only planar layout for dynamic Subgraphs
+        ::testing::ValuesIn(enforceSnippets()));
 
 INSTANTIATE_TEST_SUITE_P(smoke_CompareWithRefs_4D_PerChannel_MemOrder_dyn_const_x64, EltwiseLayerCPUTest, params_4D_per_channel_dyn_const,
                          EltwiseLayerCPUTest::getTestCaseName);
@@ -499,7 +499,7 @@ const auto params_4D_perchannel_dyn_param = ::testing::Combine(
                 ::testing::ValuesIn(additional_config())),
         ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_4D_PerChannel())),
         ::testing::Values(emptyFusingSpec),
-        ::testing::Values(false)); // CPU Plugin supports only planar layout for dynamic Subgraphs
+        ::testing::ValuesIn(enforceSnippets()));
 
 INSTANTIATE_TEST_SUITE_P(smoke_CompareWithRefs_4D_PerChannel_MemOrder_dyn_param_x64, EltwiseLayerCPUTest, params_4D_perchannel_dyn_param,
                          EltwiseLayerCPUTest::getTestCaseName);
@@ -553,7 +553,7 @@ const auto params_4D_perchannel_dyn_param_fusing = ::testing::Combine(
                 ::testing::ValuesIn(additional_config())),
         ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_4D_PerChannel())),
         ::testing::ValuesIn(fusingParamsSet_x64),
-        ::testing::Values(false)); // CPU Plugin supports only planar layout for dynamic Subgraphs
+        ::testing::ValuesIn(enforceSnippets()));
 
 INSTANTIATE_TEST_SUITE_P(smoke_CompareWithRefs_4D_perchannel_dyn_param_fusing, EltwiseLayerCPUTest, params_4D_perchannel_dyn_param_fusing,
                          EltwiseLayerCPUTest::getTestCaseName);

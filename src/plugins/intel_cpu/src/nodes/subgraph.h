@@ -61,7 +61,7 @@ private:
     void init_precisions(std::vector<ov::element::Type>& input_types, std::vector<ov::element::Type>& output_types) const;
     void lower();
 
-    bool need_blocked_shape_infer() const;
+    IShapeInfer::Result blocked_shape_infer() const;
 
     static uint64_t get_body_hash(const std::shared_ptr<snippets::op::Subgraph>& snippet);
 
@@ -90,6 +90,7 @@ private:
     bool is_dynamic = false;
     // Input shapes that are used in PrepareParams and ShapeInfer to avoid frequent memory allocation
     mutable std::vector<VectorDims> in_shapes;
+    std::vector<bool> is_blocked_out_layout;
 
     std::shared_ptr<SubgraphExecutor> execPtr = nullptr;
 };
