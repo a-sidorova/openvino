@@ -32,6 +32,8 @@ void InsertLoops::insertion(LinearIR& linear_ir, const LoopManagerPtr& loop_mana
 
     const auto is_incremented = loop_info->get_is_incremented();
     const auto io_data_sizes = loop_info->get_data_sizes();
+    const auto ptr_increments = loop_info->get_ptr_increments();
+    const auto finalization_offsets = loop_info->get_finalization_offsets();
 
     // Should be inited by LoopInfo
     const auto is_dynamic_loop = is_loop_dynamic(loop_info);
@@ -40,13 +42,10 @@ void InsertLoops::insertion(LinearIR& linear_ir, const LoopManagerPtr& loop_mana
     std::shared_ptr<op::LoopEnd> loop_end = nullptr;
     if (is_dynamic_loop) {
         loop_begin = std::make_shared<op::LoopBeginDynamic>();
-        loop_end = std::make_shared<op::LoopEndDynamic>(loop_begin, work_amount_increment, is_incremented, io_data_sizes,
-                                                        loop_entries.size(), loop_exits.size(), loop_id);
+        loop_end = std::make_shared<op::LoopEndDynamic>(loop_begin, work_amount, work_amount_increment, is_incremented, ptr_increments,
+                                                        finalization_offsets, io_data_sizes, loop_entries.size(), loop_exits.size(), loop_id);
 
     } else {
-        const auto ptr_increments = loop_info->get_ptr_increments();
-        const auto finalization_offsets = loop_info->get_finalization_offsets();
-
         loop_begin = std::make_shared<op::LoopBeginStatic>();
         loop_end = std::make_shared<op::LoopEndStatic>(loop_begin, work_amount, work_amount_increment, is_incremented, ptr_increments,
                                                        finalization_offsets, io_data_sizes, loop_entries.size(), loop_exits.size(), loop_id);
