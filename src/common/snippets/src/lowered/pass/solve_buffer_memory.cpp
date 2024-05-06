@@ -64,22 +64,40 @@ std::vector<ov::MemorySolver::Box> SolveBufferMemory::init_boxes(const AllocateB
     return boxes;
 }
 
-
 bool SolveBufferMemory::run(LinearIR& linear_ir) {
     OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "Snippets::SolveBufferMemory");
 
-    const auto boxes = init_boxes(m_clusters);
+    auto is_dynamic_scratchpad = [this]() {
+        //for (const auto& buffer_cluster : m_clusters) {
+        //    if (std::any_of(buffer_cluster.cbegin(), buffer_cluster.cend(),
+        //                    [](const ExpressionPtr& expr) { return buffer->get_byte_size()}))
+        //}
+        return false;
+    };
 
-    ov::MemorySolver memSolver(boxes);
-    m_buffer_scratchpad_size = static_cast<size_t>(memSolver.solve()) * m_alignment;  // alignment in byte
+    if (is_dynamic_scratchpad()) {
+        m_buffer_scratchpad_size = utils::get_dynamic_value<size_t>();
 
-    // Set offsets for Buffers
-    for (const auto& box : boxes) {
-        for (const auto& buffer : m_clusters[box.id]) {
-            const auto offset = static_cast<size_t>(memSolver.get_offset(static_cast<int>(box.id)));
-            AllocateBuffers::set_buffer_offset(buffer, offset * m_alignment);  // alignment in byte
+        for (const auto& cluster : m_clusters) {
+            for (const auto& buffer : cluster) {
+                AllocateBuffers::set_buffer_offset(buffer, utils::get_dynamic_value<size_t>());
+            }
+        }
+    } else {
+        const auto boxes = init_boxes(m_clusters);
+
+        ov::MemorySolver memSolver(boxes);
+        m_buffer_scratchpad_size = static_cast<size_t>(memSolver.solve()) * m_alignment;  // alignment in byte
+
+        // Set offsets for Buffers
+        for (const auto& box : boxes) {
+            const auto offset = static_cast<size_t>(memSolver.get_offset(static_cast<int>(box.id))) * m_alignment;  // alignment in byte
+            for (const auto& buffer : m_clusters[box.id]) {
+                AllocateBuffers::set_buffer_offset(buffer, offset);
+            }
         }
     }
+
     return m_buffer_scratchpad_size > 0;
 }
 
