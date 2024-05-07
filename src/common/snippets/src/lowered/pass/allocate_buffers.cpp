@@ -8,9 +8,9 @@
 #include "snippets/lowered/pass/enumerate_expressions.hpp"
 #include "snippets/lowered/pass/solve_buffer_memory.hpp"
 #include "snippets/lowered/pass/init_buffers_default.hpp"
-#include "snippets/lowered/pass/identify_buffers.hpp"
+#include "snippets/lowered/pass/set_buffer_reg_group.hpp"
 #include "snippets/lowered/pass/define_buffer_clusters.hpp"
-#include "snippets/lowered/pass/normalize_buffer_ids.hpp"
+#include "snippets/lowered/pass/normalize_buffer_reg_groups.hpp"
 #include "snippets/pass/tokenization.hpp"
 #include "snippets/itt.hpp"
 #include "snippets/utils.hpp"
@@ -75,10 +75,10 @@ bool AllocateBuffers::run(lowered::LinearIR& linear_ir, lowered::LinearIR::const
         BufferClusters buffer_clusters;
         PassPipeline pipeline;
         pipeline.register_pass<EnumerateExpressions>();
-        pipeline.register_pass<IdentifyBuffers>();
+        pipeline.register_pass<SetBufferRegGroup>();
         pipeline.register_pass<DefineBufferClusters>(buffer_clusters);
         pipeline.register_pass<SolveBufferMemory>(m_buffer_scratchpad_size, buffer_clusters);
-        pipeline.register_pass<NormalizeBufferIDs>();
+        pipeline.register_pass<NormalizeBufferRegisterGroups>();
         pipeline.run(linear_ir);
     } else {
         InitBuffersDefault(m_buffer_scratchpad_size).run(linear_ir, linear_ir.cbegin(), linear_ir.cend());

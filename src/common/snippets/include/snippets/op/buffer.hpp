@@ -15,33 +15,34 @@ namespace op {
  * @interface Buffer
  * @brief This is a base class for memory storage.
  *        Notes:
- *               - All buffers with the same ID in a graph have the same memory pointer. So if we have a few buffers,
+ *               - All buffers with the same reg_group in a graph have the same memory pointer. So if we have a few buffers,
  *                 each the corresponding MemoryAccess op for Buffer should have offset for common memory pointer of this Buffer
  *               - Buffer should be a single consumer for operation output port
  * @param m_shape - output allocation shape for Buffer with type NewMemory
  * @param m_offset - offset in common Buffer scratchpad
- * @param m_id - Buffer ID in common Buffer system
+ * @param m_reg_group - number of register group. The Buffers from the same group will have the same GPR
  * @ingroup snippets
  */
 class Buffer : public ov::op::Op {
 public:
     OPENVINO_OP("Buffer", "SnippetsOpset");
     Buffer() = default;
-    Buffer(const OutputVector& arguments, const ov::Shape& shape, size_t id, ov::element::Type element_type = ov::element::u8);
+    Buffer(const OutputVector& arguments, const ov::Shape& shape, size_t reg_group = SIZE_MAX, ov::element::Type element_type = ov::element::u8);
 
     bool visit_attributes(AttributeVisitor& visitor) override;
 
-    size_t get_id() const { return m_id; }
+    size_t get_reg_group() const { return m_reg_group; }
     int64_t get_offset() const { return m_offset; }
-    void set_id(size_t id) { m_id = id; }
     const ov::Shape& get_allocation_shape() const { return m_shape; }
+    size_t get_byte_size() const;
+
+    void set_reg_group(size_t reg_group) { m_reg_group = reg_group; }
     void set_allocation_shape(const ov::Shape& allocation_shape) { m_shape = allocation_shape; }
     void set_offset(int64_t offset) { m_offset = offset; }
-    size_t get_byte_size() const;
 
 protected:
     ov::Shape m_shape = {};
-    size_t m_id = 0;  // Default ID - 0. All Buffers are from the same set
+    size_t m_reg_group = SIZE_MAX;
     ov::element::Type m_element_type = ov::element::u8;  // u8 - default 1 byte
     int64_t m_offset = 0;
 };
@@ -56,8 +57,8 @@ class IntermediateMemoryBuffer : public Buffer {
 public:
     OPENVINO_OP("IntermediateMemoryBuffer", "SnippetsOpset", Buffer);
     IntermediateMemoryBuffer() = default;
-    IntermediateMemoryBuffer(const ov::Output<ov::Node>& arg, const ov::Shape& shape, size_t id = 0);
-    IntermediateMemoryBuffer(const ov::Output<ov::Node>& arg, int32_t allocation_rank = -1, size_t id = 0);
+    IntermediateMemoryBuffer(const ov::Output<ov::Node>& arg, const ov::Shape& shape, size_t reg_group = SIZE_MAX);
+    IntermediateMemoryBuffer(const ov::Output<ov::Node>& arg, int32_t allocation_rank = -1, size_t reg_group = SIZE_MAX);
 
     void validate_and_infer_types() override;
     std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& new_args) const override;
@@ -76,7 +77,7 @@ class NewMemoryBuffer : public Buffer {
 public:
     OPENVINO_OP("NewMemoryBuffer", "SnippetsOpset", Buffer);
     NewMemoryBuffer() = default;
-    NewMemoryBuffer(const ov::Shape& shape, size_t id = 0, ov::element::Type element_type = ov::element::u8);
+    NewMemoryBuffer(const ov::Shape& shape, size_t reg_group = SIZE_MAX, ov::element::Type element_type = ov::element::u8);
 
     void validate_and_infer_types() override;
     void set_element_type(ov::element::Type element_type);

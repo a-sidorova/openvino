@@ -96,7 +96,7 @@ protected:
         std::set<size_t> gprs;
         for (const auto& expr : m_linear_ir) {
             if (const auto buffer = ov::as_type_ptr<ov::snippets::op::Buffer>(expr->get_node())) {
-                gprs.insert(buffer->get_id());
+                gprs.insert(buffer->get_reg_group());
             }
         }
         EXPECT_EQ(gprs.size(), m_expected_count);

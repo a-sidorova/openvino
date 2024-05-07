@@ -17,17 +17,17 @@ namespace pass {
 bool InitBuffersDefault::run(lowered::LinearIR& linear_ir, lowered::LinearIR::constExprIt begin, lowered::LinearIR::constExprIt end) {
     OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "Snippets::InitBuffersDefault");
 
-    size_t id = 0;
+    size_t reg_group = 0;
     size_t offset = 0;
     for (auto expr_it = begin; expr_it != end; ++expr_it) {
         const auto& expr = *expr_it;
         const auto op = expr->get_node();
         if (const auto buffer = ov::as_type_ptr<op::Buffer>(op)) {
             AllocateBuffers::set_buffer_offset(expr, offset);
-            buffer->set_id(id);
+            buffer->set_reg_group(reg_group);
 
             offset += buffer->get_byte_size();
-            id++;
+            reg_group++;
         }
     }
 
