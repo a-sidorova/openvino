@@ -36,11 +36,11 @@ public:
     bool run(LinearIR& linear_ir, lowered::LinearIR::constExprIt begin, lowered::LinearIR::constExprIt end) override;
 
     /**
-     * @brief Set offset to Buffer op and propagates its to the connected memory access ops
+     * @brief Propagates offset to the connected memory access ops to thr Buffer
      * @param buffer_expr expression with Buffer op
      * @param offset offset in common buffer scratchpad
      */
-    static void set_buffer_offset(const ExpressionPtr& buffer_expr, const size_t offset);
+    static void propagate_offset_to_memory_access_ops(const ExpressionPtr& buffer_expr, const size_t offset);
 
     using BufferCluster = std::set<ExpressionPtr>;
     using BufferClusters = std::vector<BufferCluster>;

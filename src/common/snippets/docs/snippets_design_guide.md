@@ -612,7 +612,7 @@ The optimized one calculates minimal memory size and minimal unique `ID` count r
 The non-optimized version assigns each buffer an unique `ID` and `offset`.
 The first mode is the default one, while the second one might be used for debugging the optimized version.
 The optimized algorithm `AllocateBuffers` has the main following steps:
-1. `IdentifyBuffers` - analyzes `Buffers` access patterns to avoid redundant pointer increments. A graph coloring algorithm is utilized for this purpose.
+1. `SetBufferRegGroup` - analyzes `Buffers` access patterns to avoid redundant pointer increments. A graph coloring algorithm is utilized for this purpose.
 2. `DefineBufferClusters` - creates sets of `Buffer` ops - `BufferClusters`.
 `Buffers` from one `BufferCluster` refer to the same memory area (they have the same `offset` relative to the `Buffer scratchpad` data pointer).
 For example, there is a loop with `Buffer` ops on input and output. If the body of this loop can write data to the memory from which it was read, these `Buffers` are in one `BufferCluster`.

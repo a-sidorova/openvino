@@ -77,7 +77,7 @@ bool SolveBufferMemory::run(LinearIR& linear_ir) {
     for (const auto& box : boxes) {
         for (const auto& buffer : m_clusters[box.id]) {
             const auto offset = static_cast<size_t>(memSolver.get_offset(static_cast<int>(box.id)));
-            AllocateBuffers::set_buffer_offset(buffer, offset * m_alignment);  // alignment in byte
+            AllocateBuffers::propagate_offset_to_memory_access_ops(buffer, offset * m_alignment);  // alignment in byte
         }
     }
     return m_buffer_scratchpad_size > 0;

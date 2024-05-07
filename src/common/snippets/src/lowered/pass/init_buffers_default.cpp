@@ -23,7 +23,7 @@ bool InitBuffersDefault::run(lowered::LinearIR& linear_ir, lowered::LinearIR::co
         const auto& expr = *expr_it;
         const auto op = expr->get_node();
         if (const auto buffer = ov::as_type_ptr<op::Buffer>(op)) {
-            AllocateBuffers::set_buffer_offset(expr, offset);
+            AllocateBuffers::propagate_offset_to_memory_access_ops(expr, offset);
             buffer->set_reg_group(reg_group);
 
             offset += buffer->get_byte_size();

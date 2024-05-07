@@ -14,14 +14,13 @@ namespace snippets {
 namespace op {
 
 Buffer::Buffer(const OutputVector& arguments, const ov::Shape& shape, size_t reg_group, ov::element::Type element_type)
-    : Op(arguments), m_shape(shape), m_reg_group(reg_group), m_element_type(std::move(element_type)), m_offset(0) {
+    : Op(arguments), m_shape(shape), m_reg_group(reg_group), m_element_type(std::move(element_type)) {
     constructor_validate_and_infer_types();
 }
 
 bool Buffer::visit_attributes(AttributeVisitor& visitor) {
     INTERNAL_OP_SCOPE(Buffer_visit_attributes);
     visitor.on_attribute("allocation_shape", m_shape);
-    visitor.on_attribute("offset", m_offset);
     visitor.on_attribute("reg_group", m_reg_group);
     visitor.on_attribute("element_type", m_element_type);
     return true;
@@ -62,9 +61,7 @@ void IntermediateMemoryBuffer::validate_and_infer_types() {
 std::shared_ptr<Node> IntermediateMemoryBuffer::clone_with_new_inputs(const OutputVector& new_args) const {
     INTERNAL_OP_SCOPE(Buffer_clone_with_new_inputs);
     check_new_args_count(this, new_args);
-    auto new_buffer = std::make_shared<IntermediateMemoryBuffer>(new_args.at(0), m_shape, m_reg_group);
-    new_buffer->set_offset(m_offset);
-    return new_buffer;
+    return std::make_shared<IntermediateMemoryBuffer>(new_args.at(0), m_shape, m_reg_group);
 }
 
 NewMemoryBuffer::NewMemoryBuffer(const ov::Shape& shape, size_t reg_group, ov::element::Type element_type)
@@ -81,9 +78,7 @@ void NewMemoryBuffer::validate_and_infer_types() {
 std::shared_ptr<Node> NewMemoryBuffer::clone_with_new_inputs(const OutputVector& new_args) const {
     INTERNAL_OP_SCOPE(Buffer_clone_with_new_inputs);
     check_new_args_count(this, new_args);
-    auto new_buffer = std::make_shared<NewMemoryBuffer>(m_shape, m_reg_group, m_element_type);
-    new_buffer->set_offset(m_offset);
-    return new_buffer;
+    return std::make_shared<NewMemoryBuffer>(m_shape, m_reg_group, m_element_type);
 }
 
 void NewMemoryBuffer::set_element_type(ov::element::Type element_type) {

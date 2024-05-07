@@ -23,13 +23,12 @@ namespace pass {
 AllocateBuffers::AllocateBuffers(size_t& buffer_scratchpad_size, bool is_optimized)
     : m_buffer_scratchpad_size(buffer_scratchpad_size), m_is_optimized_mode(is_optimized) {}
 
-void AllocateBuffers::set_buffer_offset(const ExpressionPtr& buffer_expr, const size_t offset) {
+void AllocateBuffers::propagate_offset_to_memory_access_ops(const ExpressionPtr& buffer_expr, const size_t offset) {
     // If Buffer has offset We set this offset in the connected MemoryAccess ops
     // to correctly read and write data because all Buffers have the common data pointer on buffer scratchpad
 
     const auto buffer = ov::as_type_ptr<op::Buffer>(buffer_expr->get_node());
     OPENVINO_ASSERT(buffer, "Failed to set Buffer offset: AllocateBuffers expects Buffer op");
-    buffer->set_offset(static_cast<int64_t>(offset));
 
     // Propagate to up: in Store. Buffer can have only one Store
     if (ov::is_type<op::IntermediateMemoryBuffer>(buffer)) {

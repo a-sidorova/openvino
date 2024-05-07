@@ -19,7 +19,6 @@ namespace op {
  *                 each the corresponding MemoryAccess op for Buffer should have offset for common memory pointer of this Buffer
  *               - Buffer should be a single consumer for operation output port
  * @param m_shape - output allocation shape for Buffer with type NewMemory
- * @param m_offset - offset in common Buffer scratchpad
  * @param m_reg_group - number of register group. The Buffers from the same group will have the same GPR
  * @ingroup snippets
  */
@@ -32,19 +31,16 @@ public:
     bool visit_attributes(AttributeVisitor& visitor) override;
 
     size_t get_reg_group() const { return m_reg_group; }
-    int64_t get_offset() const { return m_offset; }
     const ov::Shape& get_allocation_shape() const { return m_shape; }
     size_t get_byte_size() const;
 
     void set_reg_group(size_t reg_group) { m_reg_group = reg_group; }
     void set_allocation_shape(const ov::Shape& allocation_shape) { m_shape = allocation_shape; }
-    void set_offset(int64_t offset) { m_offset = offset; }
 
 protected:
     ov::Shape m_shape = {};
     size_t m_reg_group = SIZE_MAX;
     ov::element::Type m_element_type = ov::element::u8;  // u8 - default 1 byte
-    int64_t m_offset = 0;
 };
 
 /**
