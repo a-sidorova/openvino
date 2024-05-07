@@ -26,7 +26,7 @@ class Buffer : public ov::op::Op {
 public:
     OPENVINO_OP("Buffer", "SnippetsOpset");
     Buffer() = default;
-    Buffer(const OutputVector& arguments, const ov::Shape& shape, size_t reg_group = SIZE_MAX, ov::element::Type element_type = ov::element::u8);
+    Buffer(const OutputVector& arguments, const ov::Shape& shape, size_t reg_group = 0, ov::element::Type element_type = ov::element::u8);
 
     bool visit_attributes(AttributeVisitor& visitor) override;
 
@@ -39,7 +39,7 @@ public:
 
 protected:
     ov::Shape m_shape = {};
-    size_t m_reg_group = SIZE_MAX;
+    size_t m_reg_group = 0;
     ov::element::Type m_element_type = ov::element::u8;  // u8 - default 1 byte
 };
 
@@ -53,8 +53,8 @@ class IntermediateMemoryBuffer : public Buffer {
 public:
     OPENVINO_OP("IntermediateMemoryBuffer", "SnippetsOpset", Buffer);
     IntermediateMemoryBuffer() = default;
-    IntermediateMemoryBuffer(const ov::Output<ov::Node>& arg, const ov::Shape& shape, size_t reg_group = SIZE_MAX);
-    IntermediateMemoryBuffer(const ov::Output<ov::Node>& arg, int32_t allocation_rank = -1, size_t reg_group = SIZE_MAX);
+    IntermediateMemoryBuffer(const ov::Output<ov::Node>& arg, const ov::Shape& shape, size_t reg_group = 0);
+    IntermediateMemoryBuffer(const ov::Output<ov::Node>& arg, int32_t allocation_rank = -1, size_t reg_group = 0);
 
     void validate_and_infer_types() override;
     std::shared_ptr<Node> clone_with_new_inputs(const OutputVector& new_args) const override;
@@ -73,7 +73,7 @@ class NewMemoryBuffer : public Buffer {
 public:
     OPENVINO_OP("NewMemoryBuffer", "SnippetsOpset", Buffer);
     NewMemoryBuffer() = default;
-    NewMemoryBuffer(const ov::Shape& shape, size_t reg_group = SIZE_MAX, ov::element::Type element_type = ov::element::u8);
+    NewMemoryBuffer(const ov::Shape& shape, size_t reg_group = 0, ov::element::Type element_type = ov::element::u8);
 
     void validate_and_infer_types() override;
     void set_element_type(ov::element::Type element_type);
