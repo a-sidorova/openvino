@@ -72,11 +72,11 @@ void BufferAllocationTest::ApplyTransformations(const std::shared_ptr<ov::snippe
     pipeline.register_pass<ov::snippets::lowered::pass::ReduceDecomposition>(m_vector_size);
     pipeline.register_pass<ov::snippets::lowered::pass::FuseLoops>();
     pipeline.register_pass<ov::snippets::lowered::pass::SplitLoops>();
-    pipeline.register_pass<ov::snippets::lowered::pass::InsertBuffers>(2);
+    pipeline.register_pass<ov::snippets::lowered::pass::InsertBuffers>();
     pipeline.register_pass<ov::snippets::lowered::pass::InsertLoadStore>(m_vector_size);
     pipeline.register_pass<ov::snippets::lowered::pass::InitLoops>();
     pipeline.register_pass<ov::snippets::lowered::pass::InsertLoops>();
-    pipeline.register_pass<ov::snippets::lowered::pass::AllocateBuffers>(m_buffer_scratchpad, m_is_buffer_optimized);
+    pipeline.register_pass<ov::snippets::lowered::pass::AllocateBuffers>(m_buffer_scratchpad, 2, m_is_buffer_optimized);
     pipeline.run(m_linear_ir);
 }
 

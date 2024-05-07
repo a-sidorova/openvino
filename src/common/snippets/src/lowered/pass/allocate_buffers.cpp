@@ -5,6 +5,7 @@
 
 #include "snippets/lowered/pass/allocate_buffers.hpp"
 
+#include "snippets/lowered/pass/compute_buffer_allocation_size.hpp"
 #include "snippets/lowered/pass/enumerate_expressions.hpp"
 #include "snippets/lowered/pass/solve_buffer_memory.hpp"
 #include "snippets/lowered/pass/init_buffers_default.hpp"
@@ -20,8 +21,8 @@ namespace snippets {
 namespace lowered {
 namespace pass {
 
-AllocateBuffers::AllocateBuffers(size_t& buffer_scratchpad_size, bool is_optimized)
-    : m_buffer_scratchpad_size(buffer_scratchpad_size), m_is_optimized_mode(is_optimized) {}
+AllocateBuffers::AllocateBuffers(size_t& buffer_scratchpad_size, size_t buffer_allocation_rank, bool is_optimized)
+    : m_buffer_scratchpad_size(buffer_scratchpad_size), m_buffer_allocation_rank(buffer_allocation_rank), m_is_optimized_mode(is_optimized) {}
 
 void AllocateBuffers::propagate_offset_to_memory_access_ops(const ExpressionPtr& buffer_expr, const size_t offset) {
     // If Buffer has offset We set this offset in the connected MemoryAccess ops
@@ -69,6 +70,8 @@ void AllocateBuffers::propagate_offset_to_memory_access_ops(const ExpressionPtr&
 bool AllocateBuffers::run(lowered::LinearIR& linear_ir, lowered::LinearIR::constExprIt begin, lowered::LinearIR::constExprIt end) {
     OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "Snippets::AllocateBuffers");
     m_buffer_scratchpad_size = 0;
+
+    ComputeBufferAllocationSize(m_buffer_allocation_rank).run(linear_ir, linear_ir.cbegin(), linear_ir.cend());
 
     if (m_is_optimized_mode) {
         BufferClusters buffer_clusters;
