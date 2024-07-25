@@ -387,6 +387,8 @@ std::vector<std::string> disabledTestPatterns() {
 #endif
 
 #if defined(OPENVINO_ARCH_RISCV64)
+    // object is not initialized
+    retVector.emplace_back(R"(.*StaticLoopDynamicSubgraphCPUTest.smoke_StaticLoopWithDynSubgraph.*)");
     // crash with 'double free or corruption (!prev)'
     retVector.emplace_back(R"(.*smoke_InterpolateBilinearPillow_Layout_Test.*)");
     retVector.emplace_back(R"(.*smoke_InterpolateBicubicPillow_Layout_Test.*)");
