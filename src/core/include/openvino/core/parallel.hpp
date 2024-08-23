@@ -147,6 +147,8 @@ void parallel_nt(int nthr, const F& func) {
         func(ithr, nthr);
     });
 #elif OV_THREAD == OV_THREAD_OMP
+    if (nthr == 0)
+        nthr = parallel_get_max_threads();
     if (nthr == 1) {
         func(0, 1);
         return;
