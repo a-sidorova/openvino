@@ -208,7 +208,7 @@ public:
      * Activate execution graph using \p externalInputMemory and \p externalOutputMemory
      */
     void Activate(const std::vector<MemoryPtr>& externalInputMemory = {},
-                            const std::vector<MemoryPtr>& externalOutputMemory = {});
+                  const std::vector<MemoryPtr>& externalOutputMemory = {});
 
 protected:
     void ForgetGraphData() {

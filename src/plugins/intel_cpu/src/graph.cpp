@@ -349,7 +349,7 @@ static void UseExternalOutputMemory(const std::map<std::size_t, NodePtr>& output
 }
 
 void Graph::Activate(const std::vector<MemoryPtr>& externalInputMemory,
-                               const std::vector<MemoryPtr>& externalOutputMemory) {
+                     const std::vector<MemoryPtr>& externalOutputMemory) {
     OPENVINO_ASSERT(status == Status::Initialized, "Invalid graph status");
 
     const bool hasDynNodes = ProcessDynNodes();

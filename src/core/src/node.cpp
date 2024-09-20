@@ -241,6 +241,11 @@ void ov::Node::set_argument(size_t position, const Output<Node>& argument) {
             m_inputs.emplace_back(this, m_inputs.size());
         }
         m_inputs.emplace_back(this, position, output_descriptor);
+
+        // here we don't use replace_output method, so we have to reset cache manually here
+        for_each(this->m_shared_rt_info.cbegin(), this->m_shared_rt_info.cend(), [](std::shared_ptr<SharedRTInfo> info) {
+            info->set_use_topological_cache(false);
+        });
     }
 }
 

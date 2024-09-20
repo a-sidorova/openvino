@@ -165,15 +165,21 @@ auto Subgraph::get_estimated_buffer_count(const ov::NodeVector& ops) -> size_t {
     return used_precision_size.size();
 }
 
+Subgraph::Subgraph() : MultiSubGraphOp(2) {}
+
 Subgraph::Subgraph(const OutputVector& args, const std::shared_ptr<ov::Model>& body)
-        : SubGraphOp(args), m_generator(nullptr) {
-    SubGraphOp::set_function(body);
+        : MultiSubGraphOp(args, 2), m_generator(nullptr) {
+    set_function(0, body);
+    set_function(1, body->clone());
     init_config();
     constructor_validate_and_infer_types();
-    for (size_t i = 0; i < body->get_parameters().size(); ++i)
-        m_input_descriptions[0].push_back(std::make_shared<InvariantInputDescription>(i, i));
-    for (size_t i = 0; i < body->get_output_size(); ++i)
-        m_output_descriptions[0].push_back(std::make_shared<BodyOutputDescription>(i, i));
+    for (size_t body_index = 0; body_index < m_bodies.size(); ++body_index) {
+        const auto& body = m_bodies[body_index];
+        for (size_t i = 0; i < body->get_parameters().size(); ++i)
+            m_input_descriptions[body_index].push_back(std::make_shared<InvariantInputDescription>(i, i));
+        for (size_t i = 0; i < body->get_output_size(); ++i)
+            m_output_descriptions[body_index].push_back(std::make_shared<BodyOutputDescription>(i, i));
+    }
     m_transformations_allowed = false;
     m_shape_infer = std::make_shared<OVShapeInfer>(body);
 }
@@ -183,12 +189,52 @@ Subgraph::Subgraph(const NodeVector& args, const std::shared_ptr<ov::Model>& bod
 
 std::shared_ptr<Node> Subgraph::clone_with_new_inputs(const OutputVector& inputs) const {
     INTERNAL_OP_SCOPE(Subgraph);
-    return make_shared<Subgraph>(inputs, body().clone());
+    check_new_args_count(this, inputs);
+
+    const auto cloned = make_shared<Subgraph>();
+    cloned->set_arguments(inputs);
+    for (size_t body_index = 0; body_index < m_bodies.size(); ++body_index) {
+        cloned->m_bodies[body_index] = m_bodies[body_index]->clone();
+        for (const auto& m_input_descr : m_input_descriptions[body_index]) {
+            cloned->m_input_descriptions[body_index].push_back(m_input_descr->copy());
+        }
+        for (const auto& m_output_descr : m_output_descriptions[body_index]) {
+            cloned->m_output_descriptions[body_index].push_back(m_output_descr->copy());
+        }
+    }
+    cloned->m_transformations_allowed = m_transformations_allowed;
+    cloned->m_virtual_port_count = m_virtual_port_count;
+    cloned->tile_rank = tile_rank;
+    cloned->init_config();
+
+    if (m_linear_ir)
+        cloned->m_linear_ir = lowered::LinearIRBuilder().clone(m_linear_ir);
+    if (m_shape_infer_linear_ir)
+        cloned->m_shape_infer_linear_ir = lowered::LinearIRBuilder().clone(m_shape_infer_linear_ir);
+    if (m_generator)
+        cloned->m_generator = m_generator->clone();
+
+    cloned->m_shape_infer = cloned->m_shape_infer_linear_ir ? cloned->m_shape_infer_linear_ir->get_shape_infer_instance() :
+                            cloned->m_linear_ir ? cloned->m_linear_ir->get_shape_infer_instance() :
+                            std::make_shared<OVShapeInfer>(cloned->body_ptr());
+
+    cloned->validate_and_infer_types();
+
+    return cloned;
+}
+
+void Subgraph::set_input(const Output<Node>& value, const std::shared_ptr<ov::op::v0::Parameter>& body_parameter) {
+    OPENVINO_ASSERT(body_parameter, "Missing parameter");
+    auto param_index = body_ptr()->get_parameter_index(body_parameter);
+    OPENVINO_ASSERT(param_index != -1, "Missing parameter ", body_parameter->get_friendly_name());
+    m_input_descriptions[0].push_back(std::make_shared<InvariantInputDescription>(input_for_value(value).get_index(), param_index));
 }
 
 void Subgraph::validate_and_infer_types() {
     INTERNAL_OP_SCOPE(Subgraph);
     OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "Snippets::validate_and_infer_types")
+    OPENVINO_ASSERT(m_bodies.size() == 2 && body_ptr() && original_body_ptr(), "Incorrect bodies!");
+
     ov::ParameterVector old_parameters;
     for (const auto& op : body_ptr()->get_parameters()) {
         old_parameters.push_back(op);
@@ -214,6 +260,10 @@ bool Subgraph::visit_attributes(AttributeVisitor& visitor) {
     visitor.on_attribute("body", body_ptr());
     visitor.on_attribute("input_descriptions", m_input_descriptions[0]);
     visitor.on_attribute("output_descriptions", m_output_descriptions[0]);
+
+    visitor.on_attribute("original_body", original_body_ptr());
+    visitor.on_attribute("original_input_descriptions", m_input_descriptions[1]);
+    visitor.on_attribute("original_output_descriptions", m_output_descriptions[1]);
     return true;
 }
 
@@ -376,19 +426,11 @@ std::shared_ptr<Subgraph> Subgraph::clone() const {
         auto new_input = std::make_shared<ov::opset1::Parameter>(input.get_element_type(), input.get_partial_shape());
         subgraph_node_inputs.push_back(new_input);
     }
-    std::shared_ptr<ov::Model> new_body = body_ptr()->clone();
-    auto result = std::make_shared<snippets::op::Subgraph>(subgraph_node_inputs, new_body);
+    auto result = ov::as_type_ptr<Subgraph>(clone_with_new_inputs(subgraph_node_inputs));
     // Note: ov::copy_runtime_info accepts only shared_ptr<ov::Node> as "from" but never modifies it,
     // so we have to cast away constness to copy runtime info
     ov::copy_runtime_info(const_pointer_cast<Node>(shared_from_this()), result);
     result->set_friendly_name(get_friendly_name());
-    if (m_linear_ir)
-        result->m_linear_ir = lowered::LinearIRBuilder().clone(m_linear_ir);
-    if (m_shape_infer_linear_ir)
-        result->m_shape_infer_linear_ir = lowered::LinearIRBuilder().clone(m_shape_infer_linear_ir);
-    // Note: we don't update shapeInfer here, since it's initialized in the constructor
-    if (m_generator)
-        result->m_generator = m_generator->clone();
     return result;
 }
 
@@ -517,6 +559,12 @@ void Subgraph::control_flow_transformations(size_t min_parallel_work_amount, siz
     gen_pipeline.register_pass<lowered::pass::CleanupLoopOffsets>();
     gen_pipeline.register_pass<lowered::pass::OptimizeLoopSingleEvaluation>();
     gen_pipeline.run(*m_linear_ir);
+}
+
+void Subgraph::analyze(const std::shared_ptr<snippets::lowered::pass::AnalyzerPass>& analyzer) const {
+    OPENVINO_ASSERT(analyzer, "Analyzer is missed!");
+    OPENVINO_ASSERT(m_linear_ir, "Cannot analyze emoty LinearIR!");
+    analyzer->run(*m_linear_ir);
 }
 
 snippets::Schedule Subgraph::generate(const BlockedShapeVector& blocked_input_shapes,

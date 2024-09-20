@@ -32,6 +32,7 @@
 #include "transformations/snippets/aarch64/shape_inference.hpp"
 #else
 #include "emitters/snippets/x64/cpu_generator.hpp"
+#include "transformations/snippets/x64/pass/lowered/need_fallback.hpp"
 #include "transformations/snippets/x64/pass/lowered/brgemm_cpu_blocking.hpp"
 #include "transformations/snippets/x64/pass/lowered/insert_brgemm_copy_b_buffers.hpp"
 #include "transformations/snippets/x64/pass/remove_converts.hpp"
@@ -534,6 +535,7 @@ void Subgraph::createPrimitive() {
         initAttributes();
         initStartOffsets();
         optimizeIR();
+        initializeFallbackGraph();
     }
 
     Node::createPrimitive();
@@ -750,8 +752,21 @@ void Subgraph::optimizeIR() {
                                            control_flow_config, control_flow_passes);
 }
 
+void Subgraph::initializeFallbackGraph() {
+    if (Fallback::needed(subgraph_attrs->snippet)) {
+        fallback = Fallback(subgraph_attrs->snippet, this);
+    }
+}
+
 void Subgraph::prepareParams() {
     const auto& cache = context->getParamsCache();
+
+    if (Fallback::needed(subgraph_attrs->snippet)) {
+        std::cout << "FALLBACK\n";
+        execPtr = nullptr;
+        return;
+    }
+    std::cout << "EXECUTOR\n";
 
     auto builder = [this, &cache](const SubgraphKey& key) -> std::shared_ptr<SubgraphExecutor> {
         const auto& snippet = subgraph_attrs->snippet;
@@ -839,8 +854,15 @@ bool Subgraph::created() const {
 }
 
 void Subgraph::execute(dnnl::stream strm) {
-    OPENVINO_ASSERT(execPtr, "Can't execute Subgraph node. Primitive didn't created");
-    execPtr->exec(srcMemPtrs, dstMemPtrs);
+    if (execPtr) {
+        execPtr->exec(srcMemPtrs, dstMemPtrs);
+        return;
+    }
+    if (fallback.is_ready()) {
+        fallback.infer();
+        return;
+    }
+    OPENVINO_THROW("Can't execute Subgraph node. Executor and fallback subgraph were not created");
 }
 
 void Subgraph::executeDynamicImpl(dnnl::stream strm) {
@@ -962,6 +984,53 @@ void Subgraph::SubgraphExecutor::parallel_forNd(const std::function<void(jit_sni
             caller(call_args, indexes.data());
         }
     });
+}
+
+
+bool Subgraph::Fallback::needed(const std::shared_ptr<snippets::op::Subgraph>& subgraph) {
+    bool needed = false;
+    auto fallback_analyzer = std::make_shared<ov::intel_cpu::pass::NeedFallbackOnCPUGraph>(needed);
+    subgraph->analyze(fallback_analyzer);
+    return needed;
+}
+
+Subgraph::Fallback::Fallback(const std::shared_ptr<snippets::op::Subgraph>& subgraph, Subgraph* node) {
+    OPENVINO_ASSERT(node, "Node is missed");
+    // The count of inputs of the original and the changeable (current) bodies might be different due to
+    // extractable non-scalar Constants from the body to the model level
+    const auto& input_descs = subgraph->get_original_input_descriptions();
+    OPENVINO_ASSERT(input_descs.size() <= node->getOriginalInputsNumber(), "Incorrect count of Subgraph inputs");
+    std::vector<Input::InputConfig> graphInputConfig;
+    for (const auto& input_desc : input_descs)
+        graphInputConfig.emplace_back(node::Input::InputConfig{node->getParentOutputMemDesc(node->getParentEdgeAt(input_desc->m_input_index)), true});
+
+    std::vector<Input::OutputConfig> graphOutputConfig;
+    for (size_t i = 0; i < node->getChildEdges().size(); i++)
+        graphOutputConfig.emplace_back(node::Input::OutputConfig{true, true});
+
+    // configure the inner graph
+    graph.Init(subgraph->original_body_ptr(), node->context, graphInputConfig, graphOutputConfig);
+    OPENVINO_ASSERT(graph.getStatus() == Graph::Status::Initialized, "Fallback Graph is not initialized");
+
+    // The count of inputs of the original and the changeable (current) bodies might be different due to
+    // extractable non-scalar Constants from the body to the model level
+    std::vector<MemoryPtr> inputMemory;
+    for (const auto& input_desc : subgraph->get_original_input_descriptions())
+        inputMemory.emplace_back(node->getSrcMemoryAtPort(input_desc->m_input_index));
+    OPENVINO_ASSERT(inputMemory.size() == graph.GetInputNodesMap().size(),
+                    "Number of node inputs must be equal the number of inner graph's inputs");
+
+    std::vector<MemoryPtr> outputMemory;
+    for (const auto& output_desc : subgraph->get_original_output_descriptions())
+        outputMemory.emplace_back(node->getDstMemoryAtPort(output_desc->m_output_index));
+    OPENVINO_ASSERT(outputMemory.size() == graph.GetOutputNodesMap().size(),
+                    "Number of node outputs must be equal the number of inner graph's outputs");
+
+    graph.Activate(inputMemory, outputMemory);
+}
+
+void Subgraph::Fallback::infer() {
+    graph.Infer();
 }
 
 }   // namespace node

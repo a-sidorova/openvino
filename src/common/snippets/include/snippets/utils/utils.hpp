@@ -144,6 +144,10 @@ bool merge_dynamic_dim(size_t& dst, const size_t& d1, const size_t& d2);
 VectorDims pshape_to_vdims(const PartialShape&);
 ov::PartialShape vdims_to_pshape(const VectorDims&);
 
+inline ov::Dimension size_t_to_dimension(size_t value) {
+    return is_dynamic_value(value) ? ov::Dimension::dynamic() : ov::Dimension(value);
+}
+
 inline size_t dimension_to_size_t(const ov::Dimension& dim) {
     return dim.is_dynamic() ? snippets::utils::get_dynamic_value<VectorDims::value_type>() : static_cast<size_t>(dim.get_length());
 }

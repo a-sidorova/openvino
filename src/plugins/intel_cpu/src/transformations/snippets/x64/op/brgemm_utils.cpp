@@ -7,6 +7,7 @@
 #include "dnnl_extension_utils.h"
 #include "emitters/utils.hpp"
 #include "snippets/utils/utils.hpp"
+#include "transformations/snippets/x64/op/brgemm_cpu.hpp"
 #include "transformations/snippets/x64/op/brgemm_copy_b.hpp"
 #include "utils/general_utils.h"
 
@@ -52,7 +53,7 @@ BRGEMM_TYPE get_brgemm_type(const ov::element::Type& element_type_a, const Dimen
     const auto brgemmVNNIFactor = 4 / element_type_a.size();
     if (one_of(element_type_a, element::u8, element::i8, element::bf16) &&
         dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core_amx) &&
-        K_dim.is_static() && K_dim.get_length() % brgemmVNNIFactor == 0)
+        (K_dim.is_dynamic() || (K_dim.get_length() % brgemmVNNIFactor == 0)))
         return BRGEMM_TYPE::WITH_AMX;
     // Note: this condition reproduces logic from the OneDNN Brgemm implementation. This is needed to align with the
     // backend requirements. More details in onednn/src/cpu/x64/brgemm/brgemm_utils.cpp

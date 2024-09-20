@@ -38,7 +38,7 @@ void Composite::selectOptimalPrimitiveDescriptor() {
     }
 
     std::vector<Input::OutputConfig> graphOutputConfig;
-    for (size_t i = 0; i < getParentEdges().size(); i++) {
+    for (size_t i = 0; i < getChildEdges().size(); i++) {
         graphOutputConfig.emplace_back(node::Input::OutputConfig{true, true});
     }
 

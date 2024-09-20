@@ -130,6 +130,21 @@ private:
     std::vector<std::shared_ptr<PassBase>> m_passes;
 };
 
+/**
+ * @interface AnalyzerPass
+ * @brief Base class for LIR passes which analyze something on a full constant LIR body
+ * @ingroup snippets
+ */
+class AnalyzerPass : public PassBase {
+public:
+    /**
+     * @brief Apply the pass to the Linear IR
+     * @param linear_ir the target Linear IR
+     * @return status of the pass
+     */
+    virtual void run(const lowered::LinearIR& linear_ir) = 0;
+};
+
 } // namespace pass
 } // namespace lowered
 } // namespace snippets

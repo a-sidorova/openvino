@@ -105,14 +105,14 @@ std::vector<std::vector<ov::test::InputShape>> transpose_b_shapes{
     // All dimensions are dynamic
     {
         {PartialShape{-1, -1, -1, -1}, {{2, 1, 32, 64},  {2, 2, 10, 20}, {2, 2, 100, 600}, {2, 1, 32, 64}}},
-        {PartialShape{-1, -1, -1, -1}, {{1, 3, 128, 64}, {2, 2, 30, 20}, {2, 2, 120, 600}, {1, 3, 128, 64}}}
+        {PartialShape{-1, -1, -1, -1}, {{1, 3, 197, 64}, {2, 2, 30, 20}, {2, 2, 120, 600}, {1, 3, 197, 64}}}
     },
     // Only M is dynamic
     {
         {PartialShape{2, 2,  -1, 64}, {{2, 2, 40, 64},  {2, 2, 16, 64}}},
         {PartialShape{2, 2, 100, 64}, {{2, 2, 100, 64}, {2, 2, 100, 64}}}
     },
-    // Only N is static
+    // Only K is static
     {
         {PartialShape{2, 2, -1, 100}, {{2, 2, 32, 100},  {2, 2, 10, 100},  {2, 2, 10, 100}}},
         {PartialShape{2, 2, -1, 100}, {{2, 2, 100, 100}, {2, 2, 64, 100}, {2, 2, 100, 100}}}

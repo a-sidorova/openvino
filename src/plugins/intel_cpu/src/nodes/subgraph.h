@@ -5,6 +5,7 @@
 #pragma once
 
 #include "node.h"
+#include "graph.h"
 
 #include "emitters/snippets/cpu_runtime_configurator.hpp"
 #include "emitters/snippets/jit_snippets_call_args.hpp"
@@ -66,6 +67,7 @@ private:
     void initStartOffsets();
     void initPluginBlockedShapes() const;
     void optimizeIR();
+    void initializeFallbackGraph();
 
     snippets::op::Subgraph::BlockedShapeVector getSnippetsBlockedShapes() const;
     std::pair<std::vector<ov::element::Type>, std::vector<ov::element::Type>> getIOPrecisions() const;
@@ -102,9 +104,23 @@ private:
 
     bool is_dynamic = false;
     // Input shapes that are used in PrepareParams and ShapeInfer to avoid frequent memory allocation
-    mutable std::vector<VectorDims> in_shapes;
+    mutable std::vector<VectorDims> in_shapes = {};
 
     std::shared_ptr<SubgraphExecutor> execPtr = nullptr;
+
+    class Fallback {
+        Graph graph = {};
+    public:
+        Fallback() = default;
+        Fallback(const std::shared_ptr<snippets::op::Subgraph>& subgraph, Subgraph* node);
+
+        void infer();
+
+        static bool needed(const std::shared_ptr<snippets::op::Subgraph>& subgraph);
+        inline bool is_ready() const {
+            return one_of(graph.getStatus(), Graph::Status::ReadyDynamic, Graph::Status::ReadyDynamicSeq, Graph::Status::ReadyStatic);
+        }
+    } fallback = {};
 };
 
 class Subgraph::SubgraphCodeGenerator {
@@ -130,6 +146,8 @@ public:
     virtual ~SubgraphExecutor() = default;
 
     virtual void exec(const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs) = 0;
+
+    static bool can_be_executed(const std::shared_ptr<snippets::op::Subgraph>& snippet);
 
 protected:
     void parallel_for6d(const std::function<void(jit_snippets_call_args&, size_t)>& initializer,
