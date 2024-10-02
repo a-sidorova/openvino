@@ -40,7 +40,7 @@ BrgemmConfig::BrgemmConfig(const ov::element::Type& src_dt, const ov::element::T
     }
     OPENVINO_ASSERT(m_isa != isa_undef, "ISA is undefined!");
 
-    m_need_copy_a = is_amx() && (is_dynamic_value(K) || (K % compute_vnni_factor(src_dt) != 0));
+    m_need_copy_a = is_amx() && (!is_dynamic_value(K) && (K % compute_vnni_factor(src_dt) != 0));
     m_need_copy_b = !is_fp32 || transposed_b;
 
     m_need_compensations = src_dt == ov::element::i8 && !one_of(m_isa, avx512_core_amx, avx2_vnni_2);
