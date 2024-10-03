@@ -178,14 +178,14 @@ void BrgemmCopyBKernel::generate() {
     };
 
     // OneDNN requires tail handling before main iterations
-    if (wei_N_tail != 0) {
-        emit_brgemm_copy_b_kernel_call(wei_N_tail, K, start_in, start_out, start_comp);
-        add_ptr_increments(wei_N_tail);
-    }
-
-    for (auto nb = wei_N_tail; nb < N_blk; nb += wei_N_blk) {
+    for (auto nb = 0; nb < N_blk - wei_N_tail; nb += wei_N_blk) {
         emit_brgemm_copy_b_kernel_call(wei_N_blk, K, start_in, start_out, start_comp);
         add_ptr_increments(wei_N_blk);
+    }
+
+    if (wei_N_tail != 0) {
+        emit_brgemm_copy_b_kernel_call(wei_N_tail, K, start_in, start_out, start_comp);
+        //add_ptr_increments(wei_N_tail);
     }
 
     postamble();

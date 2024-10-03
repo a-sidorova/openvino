@@ -68,20 +68,20 @@ void RepackedWeightsBufferExpression::init_allocation_size(const std::shared_ptr
 
     const auto& precision = get_node()->get_input_element_type(0);
     // Repacking buffer shape is set in accordance to OneDNN requirements
-    const size_t N_dim = std::max(n_blk, compute_inner_n_block(precision));
-    if (!in_layout.empty() && in_layout.back() != in_layout.size() - 1) {
-        // In case of transpose, K dimension must be rounded-up to number of elems in vector register
-        // For the details, please see 'transpose16x8' and 'fixup16x16' implementations and usage in onednn/src/cpu/x64/matmul/brgemm_matmul_copy_utils.cpp
-        const auto elems_in_vec = brgemm_utils::get_elems_in_vec(precision);
-        m_allocation_size = snippets::utils::dynamic_safe_mul(N_dim, snippets::utils::rnd_up(k_blk, elems_in_vec));
-    } else {
-        // Low precision repacking writes the result by m_brgemmVNNIFactor * m_inner_n_block blocks
-        // despite the actual size of the input data. Because of that we have to round-up the allocation shape to always have enough memory allocated.
-        // For the details, please see 'copy_4x64' and 'copy_2x32' implementations and usage in onednn/src/cpu/x64/matmul/brgemm_matmul_copy_utils.cpp
-        const auto brgemmVNNIFactor = brgemm_utils::compute_vnni_factor(precision);
-        OPENVINO_ASSERT(brgemmVNNIFactor > 0, "brgemmVNNIFactor value must be positive.");
-        m_allocation_size = snippets::utils::dynamic_safe_mul(N_dim, snippets::utils::rnd_up(k_blk, brgemmVNNIFactor));
-    }
+    const size_t N_dim = rnd_up(n_blk, compute_inner_n_block(precision));
+    //if (!in_layout.empty() && in_layout.back() != in_layout.size() - 1) {
+    // In case of transpose, K dimension must be rounded-up to number of elems in vector register
+    // For the details, please see 'transpose16x8' and 'fixup16x16' implementations and usage in onednn/src/cpu/x64/matmul/brgemm_matmul_copy_utils.cpp
+    const auto elems_in_vec = brgemm_utils::get_elems_in_vec(precision);
+    m_allocation_size = snippets::utils::dynamic_safe_mul(N_dim, snippets::utils::rnd_up(k_blk, elems_in_vec));
+    //} else {
+    //    // Low precision repacking writes the result by m_brgemmVNNIFactor * m_inner_n_block blocks
+    //    // despite the actual size of the input data. Because of that we have to round-up the allocation shape to always have enough memory allocated.
+    //    // For the details, please see 'copy_4x64' and 'copy_2x32' implementations and usage in onednn/src/cpu/x64/matmul/brgemm_matmul_copy_utils.cpp
+    //    const auto brgemmVNNIFactor = brgemm_utils::compute_vnni_factor(precision);
+    //    OPENVINO_ASSERT(brgemmVNNIFactor > 0, "brgemmVNNIFactor value must be positive.");
+    //    m_allocation_size = snippets::utils::dynamic_safe_mul(N_dim, snippets::utils::rnd_up(k_blk, brgemmVNNIFactor));
+    //}
 }
 
 CompensationsBufferExpression::CompensationsBufferExpression(const std::shared_ptr<ov::Node>& n,
@@ -109,7 +109,7 @@ void CompensationsBufferExpression::init_allocation_size(const std::shared_ptr<s
         m_allocation_size = snippets::utils::get_dynamic_value<size_t>();
     } else {
         const auto& precision = parent_expr->get_node()->get_input_element_type(0);
-        m_allocation_size = std::max(n_blk, compute_inner_n_block(precision));
+        m_allocation_size = rnd_up(n_blk, compute_inner_n_block(precision));
     }
 }
 

@@ -78,7 +78,7 @@ size_t compute_LDA(const size_t k_block, const ov::element::Type& precision) {
 }
 
 size_t compute_LDB(const size_t n_block, const ov::element::Type& precision) {
-    return std::max(n_block, compute_inner_n_block(precision));
+    return rnd_up(n_block, compute_inner_n_block(precision));
 }
 
 size_t compute_inner_n_block(const ov::element::Type& precision) {
