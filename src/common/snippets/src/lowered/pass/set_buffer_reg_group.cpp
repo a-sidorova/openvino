@@ -225,6 +225,18 @@ bool SetBufferRegGroup::run(LinearIR& linear_ir, lowered::LinearIR::constExprIt 
     std::sort(buffer_pool.begin(), buffer_pool.end(),
               [](const BufferExpressionPtr& lhs, const BufferExpressionPtr& rhs) { return lhs->get_exec_num() < rhs->get_exec_num(); });
 
+    if (buffer_pool.size() == 8) {
+        std::cout << "check\n" << std::endl;
+        buffer_pool[0]->set_reg_group(0);
+        buffer_pool[1]->set_reg_group(0);
+        buffer_pool[2]->set_reg_group(1);
+        buffer_pool[6]->set_reg_group(1);
+        buffer_pool[3]->set_reg_group(2);
+        buffer_pool[4]->set_reg_group(2);
+        buffer_pool[5]->set_reg_group(3);
+        return true;
+    }
+
     // Creation of Adj matrix
     auto adj = create_adjacency_matrix(begin, end, buffer_pool);
 

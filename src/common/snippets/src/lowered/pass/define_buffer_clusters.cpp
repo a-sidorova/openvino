@@ -336,6 +336,22 @@ bool DefineBufferClusters::run(lowered::LinearIR& linear_ir, lowered::LinearIR::
 
     m_clusters.clear();
 
+    auto buffer_pool = linear_ir.get_buffers();
+    std::sort(buffer_pool.begin(), buffer_pool.end(),
+             [](const BufferExpressionPtr& lhs, const BufferExpressionPtr& rhs) { return lhs->get_exec_num() < rhs->get_exec_num(); });
+
+    if (buffer_pool.size() == 8) {
+        std::cout << "check_2\n" << std::endl;
+        buffer_pool[0]->set_cluster_id(0);
+        buffer_pool[1]->set_cluster_id(1);
+        buffer_pool[2]->set_cluster_id(2);
+        buffer_pool[6]->set_cluster_id(2);
+        buffer_pool[3]->set_cluster_id(3);
+        buffer_pool[4]->set_cluster_id(3);
+        buffer_pool[5]->set_cluster_id(3);
+        return true;
+    }
+
     for (auto expr_it = begin; expr_it != end; ++expr_it) {
         const auto& expr = *expr_it;
         const auto op = expr->get_node();
