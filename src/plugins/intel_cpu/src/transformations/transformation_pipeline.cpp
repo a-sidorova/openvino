@@ -984,7 +984,8 @@ void Transformations::MainSnippets(void) {
             return false;
         // [150842] The execution of Brgemm INT8/BF16 on AMX platforms depends on the value of "K % VNNIFactor".
         //          For more details, please teake a look at the ticket 150842
-        if (dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core_amx)) {
+        const char* env = std::getenv("REFERENCE");
+        if (env && dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core_amx)) {
             const auto& b_shape = matmul->get_input_partial_shape(1);
             const auto K = matmul->get_transpose_b() ? *b_shape.rbegin() : *++b_shape.rbegin();
             if (is_bf16) return K.is_static() && (K.get_length() % 2 == 0);
@@ -1112,6 +1113,7 @@ void Transformations::MainSnippets(void) {
 
     CPU_SET_CALLBACK_COMMON(snippetsManager,
     [&](const std::shared_ptr<const ov::Node>& n) -> bool {
+        return true;
         if (!ignoreCallback) {
             if (n->is_dynamic() || !is_supported_op(n))
                 return true;
@@ -1174,6 +1176,21 @@ void Transformations::MainSnippets(void) {
     snippets::pass::ExplicitTransposeMatMulInputs);
 
     snippetsManager.run_passes(model);
+
+    size_t softmax = 0;
+    size_t mha = 0;
+    const auto& ops = model->get_ordered_ops();
+    for (const auto& op : ops) {
+        if (ov::is_type<ov::op::v1::Softmax>(op)) {
+            softmax++;
+        } else if (const auto subgraph = ov::as_type_ptr<ov::snippets::op::Subgraph>(op)) {
+            if (subgraph->has_domain_sensitive_ops()) {
+                mha++;
+            }
+        }
+    }
+    std::cout << "SOFTMAX: " << softmax << std::endl;
+    std::cout << "MHA: " << mha << std::endl;
 }
 
 void Transformations::PostSnippets(void) {
