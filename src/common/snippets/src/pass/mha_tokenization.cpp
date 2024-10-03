@@ -413,9 +413,9 @@ ov::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets(const SnippetsToken
             }
         };
 
-        const auto transpose1 = ov::as_type_ptr<ov::opset1::Transpose>(parent);
-        const auto transpose0 = ov::as_type_ptr<ov::opset1::Transpose>(matmul0->get_input_node_shared_ptr(0));
-        const auto transpose2 = ov::as_type_ptr<ov::opset1::Transpose>(matmul1->get_input_node_shared_ptr(1));
+        const auto transpose1 = nullptr; // ov::as_type_ptr<ov::opset1::Transpose>(parent);
+        const auto transpose0 = nullptr; // ov::as_type_ptr<ov::opset1::Transpose>(matmul0->get_input_node_shared_ptr(0));
+        const auto transpose2 = nullptr; // ov::as_type_ptr<ov::opset1::Transpose>(matmul1->get_input_node_shared_ptr(1));
         tokenize_transpose(transpose1, is_transposed_b_0, get_decomposed_transpose_order(pattern_rank), ordered_ops.begin());
         tokenize_transpose(transpose0, matmul0->get_transpose_a(), get_fusion_transpose_order(pattern_rank), ordered_ops.begin());
         tokenize_transpose(transpose2, matmul1->get_transpose_b(), get_fusion_transpose_order(pattern_rank), ordered_ops.end());
