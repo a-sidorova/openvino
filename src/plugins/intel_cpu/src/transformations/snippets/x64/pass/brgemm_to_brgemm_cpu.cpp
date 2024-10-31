@@ -9,6 +9,7 @@
 #include "snippets/utils/utils.hpp"
 #include "snippets/op/brgemm.hpp"
 #include "snippets/op/buffer.hpp"
+#include "transformations/snippets/x64/op/brgemm_copy_a.hpp"
 #include "transformations/snippets/x64/op/brgemm_copy_b.hpp"
 #include "transformations/snippets/x64/op/brgemm_cpu.hpp"
 #include "transformations/tpp/x64/op/modifiers.hpp"
@@ -63,6 +64,7 @@ pass::BrgemmToBrgemmCPU::BrgemmToBrgemmCPU() {
         const auto element_type_b = brgemm->get_input_element_type(1);
 
         std::shared_ptr<BrgemmCPU> brgemm_cpu = nullptr;
+        std::shared_ptr<BrgemmCopyA> brgemm_copy_a = nullptr;
         std::shared_ptr<BrgemmCopyB> brgemm_copy_b = nullptr;
 
         auto brgemm_in0 = brgemm->input_value(0);
@@ -77,7 +79,17 @@ pass::BrgemmToBrgemmCPU::BrgemmToBrgemmCPU() {
         auto offset_c = brgemm->get_offset_c();
 
         const bool transpose_b = !layout_b.empty() && layout_b.back() != layout_b.size() - 1;
-        const auto brgemm_config = brgemm_utils::BrgemmConfig(element_type_a, element_type_b, K, transpose_b);
+        const auto brgemm_config = brgemm_utils::BrgemmConfig(element_type_a, element_type_b, transpose_b);
+
+        if (brgemm_config.need_copy_a(K)) {
+            brgemm_copy_a = std::make_shared<BrgemmCopyA>(brgemm_in0, brgemm_config, offset_a, 0, layout_a);
+            PortDescriptorUtils::set_port_descriptor(brgemm_copy_a->input(0), brgemm_in0_desc->get_subtensor(), layout_a);
+            set_full_port_desc(brgemm_copy_a->output(0));
+
+            brgemm_in0 = brgemm_copy_a->output(0);
+            layout_a.clear();
+            offset_a = 0;
+        }
 
         if (brgemm_config.need_copy_b()) {
             brgemm_copy_b = std::make_shared<BrgemmCopyB>(brgemm_in1, element_type_a, brgemm_config, offset_b, 0, 0, layout_b);
@@ -112,7 +124,12 @@ pass::BrgemmToBrgemmCPU::BrgemmToBrgemmCPU() {
         // need to run validate_and_infer_types manually: either input shapes were updated or
         // output Layout was updated (out shape will be updated in validate_and_infer_types())
 
-        PortDescriptorUtils::set_port_descriptor(brgemm_cpu->input(0), brgemm_in0_desc->get_subtensor(), layout_a);
+        if (brgemm_copy_a) {
+            set_full_port_desc(brgemm_cpu->input(0));
+            brgemm_copy_a->validate_and_infer_types();
+        } else {
+            PortDescriptorUtils::set_port_descriptor(brgemm_cpu->input(0), brgemm_in0_desc->get_subtensor(), layout_a);
+        }
 
         if (brgemm_copy_b) {
             set_full_port_desc(brgemm_cpu->input(1));

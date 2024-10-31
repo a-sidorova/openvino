@@ -172,13 +172,19 @@ ov::PartialShape get_preordered_pshape(const ov::PartialShape& shape, const std:
     return get_pshape(shape, order, false);
 }
 
-ov::PartialShape get_planar_pshape(const Input<Node>& in) {
+ov::PartialShape get_planar_pshape(const Input<const Node>& in) {
     const auto& port = snippets::lowered::PortDescriptorUtils::get_port_descriptor_ptr(in);
     return get_planar_pshape(ov::Shape{port->get_shape()}, port->get_layout());
 }
-ov::PartialShape get_preordered_pshape(const Output<Node>& out) {
+ov::PartialShape get_planar_pshape(const Input<Node>& in) {
+    return get_planar_pshape(ov::Input<const Node>(in.get_node(), in.get_index()));
+}
+ov::PartialShape get_preordered_pshape(const Output<const Node>& out) {
     const auto& port = snippets::lowered::PortDescriptorUtils::get_port_descriptor_ptr(out);
     return get_preordered_pshape(ov::Shape{port->get_shape()}, port->get_layout());
+}
+ov::PartialShape get_preordered_pshape(const Output<Node>& out) {
+    return get_preordered_pshape(ov::Output<const Node>(out.get_node(), out.get_index()));
 }
 
 VectorDims get_planar_vdims(const VectorDims& shape, const std::vector<size_t>& order) {

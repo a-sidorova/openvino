@@ -126,6 +126,21 @@ std::shared_ptr<Node> BrgemmCPU::clone_with_new_inputs(const OutputVector& new_a
         snippets::lowered::PortDescriptorUtils::get_port_descriptor_ptr(output(0))->get_layout());
 }
 
+std::shared_ptr<BrgemmCopyA> BrgemmCPU::get_brgemm_copy_a() const {
+    const auto K_dim = ov::snippets::utils::dimension_to_size_t(*ov::snippets::utils::get_planar_pshape(input(0)).rbegin());
+    OPENVINO_ASSERT(m_config.need_copy_a(K_dim), "Brgemm doesn't need BrgemmCopyA");
+    const auto& a_input_node = get_input_node_shared_ptr(0);
+    if (const auto& brgemm_copy_a = ov::as_type_ptr<BrgemmCopyA>(a_input_node)) {
+        return brgemm_copy_a;
+    }
+    if (ov::is_type<snippets::op::Buffer>(a_input_node)) {
+        if (const auto& brgemm_copy_a = ov::as_type_ptr<BrgemmCopyA>(a_input_node->get_input_node_shared_ptr(0))) {
+            return brgemm_copy_a;
+        }
+    }
+    OPENVINO_THROW("BrgemmCopyA hasn't been found!");
+}
+
 std::shared_ptr<BrgemmCopyB> BrgemmCPU::get_brgemm_copy_b() const {
     OPENVINO_ASSERT(m_config.need_copy_b(), "Brgemm doesn't need BrgemmCopyB");
     const auto& b_input_node = get_input_node_shared_ptr(1);

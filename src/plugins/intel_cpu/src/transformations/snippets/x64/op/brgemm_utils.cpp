@@ -18,10 +18,11 @@ namespace ov {
 namespace intel_cpu {
 namespace brgemm_utils {
 
-BrgemmConfig::BrgemmConfig(const ov::element::Type& src_dt, const ov::element::Type& wei_dt, size_t K, bool transposed_b) {
-    const auto is_fp32 = src_dt == ov::element::f32 && wei_dt == ov::element::f32;
-    const auto is_bf16 = src_dt == ov::element::bf16 && wei_dt == ov::element::bf16;
-    const auto is_int8 = (src_dt == ov::element::i8 || src_dt == ov::element::u8) && wei_dt == ov::element::i8;
+BrgemmConfig::BrgemmConfig(ov::element::Type src_dt, ov::element::Type wei_dt, bool transposed_b)
+    : m_src_dt(std::move(src_dt)) {
+    const auto is_fp32 = m_src_dt == ov::element::f32 && wei_dt == ov::element::f32;
+    const auto is_bf16 = m_src_dt == ov::element::bf16 && wei_dt == ov::element::bf16;
+    const auto is_int8 = (m_src_dt == ov::element::i8 || m_src_dt == ov::element::u8) && wei_dt == ov::element::i8;
     OPENVINO_ASSERT(is_fp32 || is_bf16 || is_int8, "Incorrect configuration");
 
     // Init ISA
@@ -41,15 +42,24 @@ BrgemmConfig::BrgemmConfig(const ov::element::Type& src_dt, const ov::element::T
 
     m_need_copy_b = !is_fp32 || transposed_b;
 
-    m_need_compensations = src_dt == ov::element::i8 && !one_of(m_isa, avx512_core_amx, avx2_vnni_2);
+    m_need_compensations = m_src_dt == ov::element::i8 && !one_of(m_isa, avx512_core_amx, avx2_vnni_2);
     m_need_wsp = m_isa == avx512_core_amx;
 
     validate();
 }
 
-BrgemmConfig::BrgemmConfig(const ov::element::Type& src_dt, cpu_isa_t isa, bool need_copy_b, bool need_compensations, bool need_wsp)
-    : m_isa(isa), m_need_copy_b(need_copy_b), m_need_compensations(need_compensations), m_need_wsp(need_wsp) {
+BrgemmConfig::BrgemmConfig(ov::element::Type src_dt, cpu_isa_t isa, bool need_copy_b, bool need_compensations, bool need_wsp)
+    : m_isa(isa), m_need_copy_b(need_copy_b), m_need_compensations(need_compensations), m_need_wsp(need_wsp), m_src_dt(std::move(src_dt)) {
     validate();
+}
+
+bool BrgemmConfig::need_copy_a(size_t K) const {
+    return is_amx() && (is_dynamic_value(K) || (K % compute_vnni_factor(m_src_dt) != 0));
+}
+
+bool BrgemmConfig::need_copy_a_only_for_tail(size_t K) const {
+    // currently we support only AMX scenario with CopyA where we should process only [M_blk, K_Tail] tensor
+    return need_copy_a(K);
 }
 
 void BrgemmConfig::validate() const {
@@ -77,6 +87,10 @@ size_t compute_inner_n_block(const ov::element::Type& precision) {
         case element::f32: return 16;
         default: OPENVINO_THROW("BrgemmCopyB doesn't support precision ", precision);
     }
+}
+
+size_t compute_inner_k_block(const ov::element::Type& precision) {
+    return brgemm_utils::get_elems_in_vec(precision);
 }
 }   // namespace repacking
 }   // namespace brgemm_utils

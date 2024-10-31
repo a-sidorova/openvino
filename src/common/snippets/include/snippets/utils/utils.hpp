@@ -193,6 +193,7 @@ ov::PartialShape get_preordered_pshape(const ov::PartialShape& shape, const std:
  * @param in input of node
  * @return new reordered partial shape: `planar_shape[i]` = `shape[order[i]]`
  */
+ov::PartialShape get_planar_pshape(const Input<const Node>& in);
 ov::PartialShape get_planar_pshape(const Input<Node>& in);
 /**
  * @brief Returns original shape of node output before applying the order.
@@ -200,6 +201,7 @@ ov::PartialShape get_planar_pshape(const Input<Node>& in);
  * @param out output of node
  * @return preordered partial shape: `shape[i]` = `planar_shape[order[i]]` where `shape` is shape before applying the order.
  */
+ov::PartialShape get_preordered_pshape(const Output<const Node>& out);
 ov::PartialShape get_preordered_pshape(const Output<Node>& out);
 /**
  * @brief Returns a dense shape after applying the order.
