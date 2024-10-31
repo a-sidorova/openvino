@@ -25,7 +25,7 @@ bool pass::AdjustBrgemmCopyBLoopPorts::update_loop_info(const std::shared_ptr<sn
             const auto& node = p.get_expr()->get_node();
             if (auto brg = as_type_ptr<BrgemmCPU>(node)) {
                 const auto precision = node->get_input_element_type(1);
-                if (brgemm_utils::with_repacking(brg->get_type()) &&
+                if (brg->get_config().need_copy_b() &&
                     precision != element::f32 && loop_port.is_incremented) {
                     // K blocking loop
                     if (loop_port.dim_idx == 1) {

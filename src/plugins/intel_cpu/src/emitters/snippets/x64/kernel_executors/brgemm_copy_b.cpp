@@ -291,7 +291,7 @@ void BrgemmCopyBKernelExecutor::update_config(const ov::snippets::lowered::Expre
         } else {
             OPENVINO_ASSERT(loop_idx < loop_ids.size(), "Loop is missed");
             const auto& current_expanded_loop_info = loop_manager->get_loop_info<ov::snippets::lowered::ExpandedLoopInfo>(loop_ids[loop_idx++]);
-            blk = current_expanded_loop_info->get_increment();
+            blk = current_expanded_loop_info->get_work_amount() > 0 ? current_expanded_loop_info->get_increment() : 0;
             input_desc->set_subtensor_dim(idx, blk);
             output_desc->set_subtensor_dim(idx, blk);
             OV_CPU_JIT_EMITTER_ASSERT(blk <= dim, "BrgemmCopyB has incompatible subtensor dimensions");

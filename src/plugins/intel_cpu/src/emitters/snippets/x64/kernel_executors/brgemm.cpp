@@ -230,7 +230,7 @@ void BrgemmKernelExecutor::update_config(const ov::snippets::lowered::Expression
         OPENVINO_ASSERT(in_ports.size() > 1 && std::all_of(in_ports.cbegin(), in_ports.cend(), check_port) &&
                         out_ports.size() == 1 && check_port(out_ports.back()),
                         "Incorrect Loop by Brgemm dimension M");
-        M = current_expanded_loop_info->get_increment();
+        M = current_expanded_loop_info->get_work_amount() > 0 ? current_expanded_loop_info->get_increment() : 0;
         input_pds[0]->set_subtensor_dim(1, M);
         output_pds[0]->set_subtensor_dim(1, M);
     }
@@ -249,7 +249,7 @@ void BrgemmKernelExecutor::update_config(const ov::snippets::lowered::Expression
         OPENVINO_ASSERT(in_ports.size() == 2 && !in_ports.front().is_incremented && std::all_of(in_ports.cbegin(), in_ports.cend(), check_port) &&
                         out_ports.size() == 1 && check_port(out_ports.back()),
                         "Incorrect Loop by Brgemm dimension N");
-        N = current_expanded_loop_info->get_increment();
+        N = current_expanded_loop_info->get_work_amount() > 0 ? current_expanded_loop_info->get_increment() : 0;
         input_pds[1]->set_subtensor_dim(0, N);
         output_pds[0]->set_subtensor_dim(0, N);
     }
@@ -272,7 +272,7 @@ void BrgemmKernelExecutor::update_config(const ov::snippets::lowered::Expression
         OPENVINO_ASSERT(in_ports.size() == 2 && in_ports.front().dim_idx == 0 && in_ports.back().dim_idx == 1 &&
                         out_ports.size() == 1 && !out_ports.front().is_incremented,
                         "Incorrect Loop by Brgemm dimension K");
-        K = current_expanded_loop_info->get_increment();
+        K = current_expanded_loop_info->get_work_amount() > 0 ? current_expanded_loop_info->get_increment() : 0;
         input_pds[0]->set_subtensor_dim(0, K);
         input_pds[1]->set_subtensor_dim(1, K);
         if (K > 0)
@@ -285,7 +285,7 @@ void BrgemmKernelExecutor::update_config(const ov::snippets::lowered::Expression
     const auto& brgemm_node = as_type_ptr<ov::intel_cpu::BrgemmCPU>(expr->get_node());
     OV_CPU_JIT_EMITTER_ASSERT(brgemm_node, "Got invalid node type in update_config");
     // In case of data repacking LDB is chosen in accordance with repacking buffer size
-    if (with_repacking(brgemm_node->get_type()))
+    if (brgemm_node->get_config().need_copy_b())
         LDB = brgemm_utils::repacking::compute_out_leading_dim(LDB, brgemm_node->get_input_element_type(1));
 
     config.update(DIM_CAST(M), DIM_CAST(N), DIM_CAST(K), LDA, LDB, LDC, beta);

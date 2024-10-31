@@ -32,7 +32,7 @@ bool InsertBrgemmCopyBBuffers::run(LinearIR& linear_ir, LinearIR::constExprIt be
         BufferExpressionPtr buffer_expr = nullptr;
         if (out_port == 0) {
             buffer_expr = factory->build<RepackedWeightsBufferExpression>(buffer_op, {copy_b_out});
-        } else if (out_port == 1 && with_compensations(copy_b->get_type())) {
+        } else if (out_port == 1 && copy_b->get_config().need_compensations()) {
             buffer_expr = factory->build<CompensationsBufferExpression>(buffer_op, {copy_b_out});
         } else {
             OPENVINO_THROW("BrgemmCopyB has incorrect output ports");

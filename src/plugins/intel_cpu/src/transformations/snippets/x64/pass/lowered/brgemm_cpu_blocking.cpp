@@ -61,30 +61,30 @@ bool BrgemmCPUBlocking::mark_blocking_loops(LinearIR& linear_ir,
                                             size_t k_block) {
     const auto& brgemm_expr = *brgemm_it;
     const auto brgemm = ov::as_type_ptr<ov::intel_cpu::BrgemmCPU>(brgemm_expr->get_node());
-    const auto type = brgemm->get_type();
+    const auto config = brgemm->get_config();
 
     auto res = ov::snippets::lowered::pass::BrgemmBlockingBase::mark_blocking_loops(linear_ir, brgemm_it, m_block, n_block, k_block);
 
-    if (stand_alone(type))
+    if (!config.need_copy_b())
         return res;
 
-    const auto copy_b_expr = linear_ir.get_expr_by_node(brgemm->get_brgemm_copy());
+    const auto copy_b_expr = linear_ir.get_expr_by_node(brgemm->get_brgemm_copy_b());
     copy_b_expr->get_input_port_descriptor(0)->set_subtensor({get_full_dim_value(), get_full_dim_value()});
     copy_b_expr->get_output_port_descriptor(0)->set_subtensor({get_full_dim_value(), get_full_dim_value()});
-    if (with_compensations(type)) {
+    if (config.need_compensations()) {
         const ov::snippets::VectorDims compensations_subtensor{1, n_block};
         OPENVINO_ASSERT(brgemm_expr->get_input_count() == 3, "Brgemm must have 3 inputs in case of compensations.");
         brgemm_expr->get_input_port_descriptor(2)->set_subtensor(compensations_subtensor);
         copy_b_expr->get_output_port_descriptor(1)->set_subtensor(compensations_subtensor);
     }
-    if (with_amx(type)) {
+    if (config.is_amx()) {
         move_new_memory_buffer(linear_ir, brgemm_it);
         auto buffer_it = std::prev(brgemm_it);
         buffer_it->get()->set_loop_ids(brgemm_expr->get_loop_ids());
     }
 
     const auto& loop_manager = linear_ir.get_loop_manager();
-    if (!is_full_dim_value(m_block) && with_compensations(type)) {
+    if (!is_full_dim_value(m_block) && config.need_compensations()) {
         const LoopPort default_port(brgemm_expr->get_input_port(1), false, 1);
         const std::vector<LoopPort> replacement_ports {default_port, LoopPort(brgemm_expr->get_input_port(2), false, 1)};
         auto m_loop_id = brgemm_expr->get_loop_ids().front();
