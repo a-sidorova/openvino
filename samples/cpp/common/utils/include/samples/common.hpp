@@ -386,41 +386,10 @@ static UNUSED void printPerformanceCounts(std::vector<ov::ProfilingInfo> perform
             totalTimeCpu += it.cpu_time;
         }
 
-        std::string toPrint(it.node_name);
-        const int maxPrintLength = 20;
-
-        if (it.node_name.length() >= maxPrintLength) {
-            toPrint = it.node_name.substr(0, maxPrintLength - 5);
-            toPrint += "...";
-        }
-
-        stream << std::setw(maxPrintLength) << std::left << toPrint << " ";
-        switch (it.status) {
-        case ov::ProfilingInfo::Status::EXECUTED:
-            stream << std::setw(21) << std::left << "EXECUTED ";
-            break;
-        case ov::ProfilingInfo::Status::NOT_RUN:
-            stream << std::setw(21) << std::left << "NOT_RUN ";
-            break;
-        case ov::ProfilingInfo::Status::OPTIMIZED_OUT:
-            stream << std::setw(21) << std::left << "OPTIMIZED_OUT ";
-            break;
-        }
-
-        stream << "layerType: ";
-        if (it.node_type.length() >= maxPrintLength) {
-            stream << std::setw(maxPrintLength) << std::left << it.node_type.substr(0, maxPrintLength - 3) + "..."
-                   << " ";
-        } else {
-            stream << std::setw(maxPrintLength) << std::left << it.node_type << " ";
-        }
-
-        stream << std::setw(30) << std::left << "execType: " + std::string(it.exec_type) << " ";
-        stream << "realTime (ms): " << std::setw(10) << std::left << std::fixed << std::setprecision(3)
-               << it.real_time.count() / 1000.0 << " ";
-        stream << "cpuTime (ms): " << std::setw(10) << std::left << std::fixed << std::setprecision(3)
-               << it.cpu_time.count() / 1000.0 << " ";
-        stream << std::endl;
+        if (it.node_name.find("_MHA") == std::string::npos)
+            continue;
+        
+        stream << "SDPA_TIME: " << std::fixed << std::setprecision(3) << it.cpu_time.count() / 1000.0 << std::endl;
     }
     stream << std::setw(25) << std::left << "Total time: " << std::fixed << std::setprecision(3)
            << totalTime.count() / 1000.0 << " milliseconds" << std::endl;

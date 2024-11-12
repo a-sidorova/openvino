@@ -48,18 +48,34 @@ size_t BrgemmCPUBlocking::get_default_n_blk(size_t n) const {
     return dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core) ? 64 : 24;
 }
 
+static size_t count = 0;
+
 std::tuple<size_t, size_t, size_t> BrgemmCPUBlocking::get_blocking_params(const ov::snippets::lowered::ExpressionPtr& brgemm_expr) const {
     const auto brgemm = ov::as_type_ptr<ov::intel_cpu::BrgemmCPU>(brgemm_expr->get_node());
     OPENVINO_ASSERT(brgemm, "BrgemmCPU is expected!");
 
     size_t m_blk, n_blk, k_blk;
     std::tie(m_blk, n_blk, k_blk) = BrgemmBlockingBase::get_blocking_params(brgemm_expr);
-    // Note: K,N blocking is functionally enabled, need to turn it on after blocking heuristic is updated to cover
-    // the low precision cases (ticket: 156014)
-    if (with_repacking(brgemm->get_type())) {
-        n_blk = get_full_dim_value();
-        k_blk = get_full_dim_value();
-    }
+    //// Note: K,N blocking is functionally enabled, need to turn it on after blocking heuristic is updated to cover
+    //// the low precision cases (ticket: 156014)
+    //if (with_repacking(brgemm->get_type())) {
+    //    n_blk = get_full_dim_value();
+    //    k_blk = get_full_dim_value();
+    //}
+
+    auto m_string = std::string("M_blk");
+    auto k_string = std::string("K" + std::to_string(count % 2) + "_blk");
+    auto n_string = std::string("N" + std::to_string(count % 2) + "_blk");
+
+    if (const auto* m = std::getenv(m_string.c_str()))
+        m_blk = atoi(m);
+    if (const auto* k = std::getenv(k_string.c_str()))
+        k_blk = atoi(k);
+    if (const auto* n = std::getenv(n_string.c_str()))
+        n_blk = atoi(n);
+
+    ++count;
+
     return std::make_tuple(m_blk, n_blk, k_blk);
 }
 
