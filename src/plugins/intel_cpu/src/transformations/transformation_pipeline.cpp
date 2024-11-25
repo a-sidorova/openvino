@@ -1202,6 +1202,21 @@ void Transformations::MainSnippets(void) {
     snippets::pass::ExplicitTransposeMatMulInputs);
 
     snippetsManager.run_passes(model);
+
+    size_t softmax = 0;
+    size_t mha = 0;
+    const auto& ops = model->get_ordered_ops();
+    for (const auto& op : ops) {
+        if (ov::is_type<ov::op::v1::Softmax>(op)) {
+            softmax++;
+        } else if (const auto subgraph = ov::as_type_ptr<ov::snippets::op::Subgraph>(op)) {
+            if (subgraph->has_domain_sensitive_ops()) {
+                mha++;
+            }
+        }
+    }
+
+    std::cout << "Tokenization: " << mha << std::endl;
 }
 
 void Transformations::PostSnippets(void) {
