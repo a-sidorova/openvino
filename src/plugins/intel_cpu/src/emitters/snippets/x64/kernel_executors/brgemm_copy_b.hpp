@@ -142,7 +142,7 @@ public:
 
     static void execute(const BrgemmCopyBKernelExecutor* executor, BrgemmCopyBKernel::call_args* args);
 
-protected:
+//protected:
     std::shared_ptr<BrgemmCopyBKernel> compile_kernel(const BrgemmCopyBKernelConfig& c) const override;
 
     void update_config(const ov::snippets::lowered::ExpressionPtr& expr,

@@ -10,6 +10,8 @@
 #include "emitters/snippets/jit_snippets_call_args.hpp"
 #include "snippets/op/subgraph.hpp"
 
+#include "emitters/snippets/x64/kernel_executors/brgemm_copy_b.hpp"
+
 #if defined(OPENVINO_ARCH_ARM64)
 #include "cpu/aarch64/cpu_isa_traits.hpp"
 #else
@@ -126,7 +128,8 @@ public:
                      const std::vector<ptrdiff_t>& start_offset_in,
                      const std::vector<ptrdiff_t>& start_offset_out,
                      const std::shared_ptr<CPURuntimeConfig>& snippet_config,
-                     const BufferScratchpadAllocator& allocator);
+                     const BufferScratchpadAllocator& allocator,
+                     ov::intel_cpu::MultiCacheWeakPtr kernel_cache);
     virtual ~SubgraphExecutor() = default;
 
     void execute(const dnnl::stream& strm, const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs);
@@ -172,6 +175,10 @@ private:
     std::vector<MemoryPtr> reorder_inputs(const dnnl::stream& strm, const std::vector<MemoryPtr>& inMemPtrs);
 
     std::unordered_map<size_t, CpuBlockedMemoryDescPtr> m_in_requested_descs = {};
+
+    std::unordered_map<size_t, std::shared_ptr<BrgemmCopyBKernelExecutor>> m_copy_b_executors = {};
+
+    ov::intel_cpu::MultiCacheWeakPtr m_kernel_cache;
 };
 
 }   // namespace node
