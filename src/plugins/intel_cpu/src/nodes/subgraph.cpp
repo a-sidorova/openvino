@@ -103,8 +103,17 @@ protected:
 
     inline void init_call_args(jit_snippets_call_args& call_args, const std::vector<MemoryPtr>& srcMemPtrs,
                                const std::vector<MemoryPtr>& dstMemPtrs, size_t ithr) {
-        for (size_t i = 0; i < srcMemPtrs.size(); i++)
-            call_args.src_ptrs[i] = srcMemPtrs[i]->getDataAs<const uint8_t>() + m_start_offset_in[i];
+        size_t offset = m_internal_buffer_size;
+        for (size_t i = 0; i < srcMemPtrs.size(); i++) {
+            const auto& desc_it = m_in_requested_descs.find(i);
+            if (desc_it != m_in_requested_descs.cend()) {
+                const auto& size = desc_it->second->getCurrentMemSize();
+                call_args.src_ptrs[i] = m_buffer_scratchpad->getDataAs<uint8_t>() + offset + size * ithr;
+                offset += size * m_nthreads;
+            } else {
+                call_args.src_ptrs[i] = srcMemPtrs[i]->getDataAs<const uint8_t>() + m_start_offset_in[i];
+            }
+        }
 
         for (size_t i = 0; i < dstMemPtrs.size(); i++)
             call_args.dst_ptrs[i] = dstMemPtrs[i]->getDataAs<uint8_t>() + m_start_offset_out[i];
@@ -125,7 +134,6 @@ public:
                                        ov::intel_cpu::MultiCacheWeakPtr kernel_cache)
     : SubgraphExecutor(snippet_attrs, snippet, start_offset_in, start_offset_out, snippet_config, allocator, std::move(kernel_cache)) {
         buffer_offsets = snippet_config->buffer_cluster_offsets;
-        data_offsets = snippet_config->io_data_offsets;
         loop_args = snippet_config->loop_args;
         reset_exec_table_state = snippet_config->kernel_executor_table->get_state_reset();
     }
@@ -201,8 +209,8 @@ protected:
         }
     }
 
+    std::vector<size_t> src_reorder_offsets = {};
     std::vector<size_t> buffer_offsets = {};
-    std::vector<std::vector<size_t>> data_offsets = {};
     std::vector<jit_snippets_call_args::loop_args_t> loop_args = {};
     std::function<void()> reset_exec_table_state;
 };
@@ -815,6 +823,7 @@ void Subgraph::prepareParams() {
     const auto result = cache->getOrCreate(SubgraphKey(subgraph_attrs, in_shapes), builder);
     execPtr = result.first;
     OPENVINO_ASSERT(execPtr != nullptr, "Executor is not created for node ", getName(), ".");
+    execPtr->originalMemPtrs = srcMemPtrs;
 }
 
 IShapeInfer::Result Subgraph::shapeInfer() const {
@@ -904,6 +913,9 @@ Subgraph::SubgraphExecutor::SubgraphExecutor(const std::shared_ptr<Subgraph::Sub
     OPENVINO_ASSERT(snippet_config, "Runtime Config is empty!");
     init_parallel_domain(snippet_config, m_parallel_exec_domain);
 
+    data_offsets = snippet_config->io_data_offsets;
+    original_offsets.resize(data_offsets.size());
+
     m_harness_work_amount = std::accumulate(m_parallel_exec_domain.cbegin(), m_parallel_exec_domain.cend(), size_t(1), std::multiplies<size_t>());
     m_nthreads = std::min(parallel_get_max_threads(), static_cast<int>(m_harness_work_amount));
 
@@ -911,7 +923,7 @@ Subgraph::SubgraphExecutor::SubgraphExecutor(const std::shared_ptr<Subgraph::Sub
     OPENVINO_ASSERT(!ov::snippets::utils::is_dynamic_value(m_buffer_scratchpad_size), "Undefined buffer scratchpad size!");
     m_internal_buffer_size = static_cast<size_t>(m_nthreads) * m_buffer_scratchpad_size;
     m_in_requested_descs = snippet_config->m_in_requested_descs;
-    const auto external_repacking_buffer_size =
+    const auto external_repacking_buffer_size = static_cast<size_t>(m_nthreads) *
         std::accumulate(m_in_requested_descs.begin(),
                         m_in_requested_descs.end(),
                         size_t(0),
@@ -927,12 +939,23 @@ Subgraph::SubgraphExecutor::SubgraphExecutor(const std::shared_ptr<Subgraph::Sub
 
         auto config = BrgemmCopyBKernelConfig(desc->getPrecision(), desc->getPrecision(), dnnl::impl::cpu::x64::cpu_isa_t::avx512_core_amx,
                                               false, false, brgemm_utils::repacking::compute_inner_n_block(desc->getPrecision()));
-        const auto& shape = snippet_attrs->snippet->body_ptr()->get_parameters()[idx]->get_shape();
+        const auto& shape = snippet_config->original_shapes[idx];
         const auto& n = *shape.rbegin();
         const auto& k = *++shape.rbegin();
         m_copy_b_executors[idx] = std::make_shared<BrgemmCopyBKernelExecutor>(m_kernel_cache, config);
         config.update(n, n, k, k, n * desc->getPrecision().size(), brgemm_utils::repacking::compute_LDB(n, desc->getPrecision()));
         m_copy_b_executors[idx]->update_by_config(config);
+
+        const auto idx_stride = snippet_config->tensor_rank - shape.size();
+        auto& offsets = original_offsets[idx];
+        offsets.resize(snippet_config->tensor_rank);
+        std::fill(offsets.begin(), offsets.end(), 0);
+        auto dim_step = desc->getPrecision().size();
+        offsets[offsets.size() - 1] = dim_step;
+        for (int i = static_cast<int>(shape.size()) - 2; i >= 0; i--) {
+            dim_step *= shape[i + 1];
+            offsets[i + idx_stride] = shape[i] != 1 ? dim_step : 0;
+        }
     }
 
 #if defined(__linux__) && defined(OPENVINO_ARCH_X86_64) && defined(SNIPPETS_DEBUG_CAPS)
@@ -970,12 +993,38 @@ void Subgraph::SubgraphExecutor::parallel_for6d(const std::function<void(jit_sni
         jit_snippets_call_args call_args;
         initializer(call_args, ithr);
 
+        std::unordered_map<size_t, std::set<size_t>> processed;
+
         size_t start = 0, end = 0;
         splitter(m_harness_work_amount, nthr, ithr, start, end);
 
         std::vector<size_t> indexes{0, 0, 0, 0, 0};
         parallel_it_init(start, indexes[0], dom[0], indexes[1], dom[1], indexes[2], dom[2], indexes[3], dom[3], indexes[4], dom[4]);
         for (size_t iwork = start; iwork < end; ++iwork) {
+            for (const auto& p : m_copy_b_executors) {
+                const auto& in_idx = p.first;
+
+                const auto& dst_offsets = data_offsets[in_idx];
+                const auto& src_offsets = original_offsets[in_idx];
+
+                size_t src_offset = 0, dst_offset = 0;
+                for (size_t j = 0; j < indexes.size(); j++) {
+                    src_offset += src_offsets[j] * indexes[j];
+                    dst_offset += dst_offsets[j] * indexes[j];
+                }
+
+                auto& offsets = processed[in_idx];
+                if (offsets.count(src_offset) == 0) {
+                    const auto& executor = p.second;
+                    BrgemmCopyBKernel::call_args args;
+                    args.src = originalMemPtrs[in_idx]->getDataAs<uint8_t>() + m_start_offset_in[in_idx] + src_offset;
+                    args.tr_src = reinterpret_cast<uint8_t*>(const_cast<void*>(call_args.src_ptrs[in_idx])) + dst_offset;
+                    BrgemmCopyBKernelExecutor::execute(executor.get(), &args);
+
+                    offsets.insert(src_offset);
+                }
+            }
+
             caller(call_args, indexes);
             parallel_it_step(indexes[0], dom[0], indexes[1], dom[1], indexes[2], dom[2], indexes[3], dom[3], indexes[4], dom[4]);
         }
@@ -1011,45 +1060,7 @@ void Subgraph::SubgraphExecutor::parallel_forNd(const std::function<void(jit_sni
 }
 
 void Subgraph::SubgraphExecutor::execute(const dnnl::stream& strm, const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs) {
-    if (!m_in_requested_descs.empty()) {
-        auto reorderedInMemPtrs = reorder_inputs(strm, inMemPtrs);
-        exec_impl(reorderedInMemPtrs, outMemPtrs);
-    } else {
-        exec_impl(inMemPtrs, outMemPtrs);
-    }
-}
-
-std::vector<MemoryPtr> Subgraph::SubgraphExecutor::reorder_inputs(const dnnl::stream& strm, const std::vector<MemoryPtr>& inMemPtrs) {
-    auto reordered_in_ptrs = inMemPtrs;
-    size_t offset = m_internal_buffer_size;
-    for (const auto& requested_descs_elem : m_in_requested_descs) {
-        const auto in_idx = requested_descs_elem.first;
-        const auto& requested_desc = requested_descs_elem.second;
-
-        void* data_ptr = m_buffer_scratchpad->getDataAs<uint8_t>() + offset;
-        const auto scratch_mem = std::make_shared<Memory>(strm.get_engine(), requested_desc, data_ptr, false);
-
-        const auto& shape = reordered_in_ptrs[in_idx]->getShape().getDims();
-        size_t batch = std::accumulate(shape.rbegin() + 2, shape.rend(), 1lu, std::multiplies<size_t>());
-        size_t in_stride = (*shape.rbegin()) * (*++shape.rbegin()) * requested_desc->getPrecision().size();
-        size_t out_stride = requested_desc->getCurrentMemSize() / batch;
-
-        uint8_t* src = reordered_in_ptrs[in_idx]->getDataAs<uint8_t>();
-        uint8_t* dst = reinterpret_cast<uint8_t*>(data_ptr);
-
-        const auto& executor = m_copy_b_executors[in_idx];
-
-        parallel_for(batch, [&](size_t b0) {
-            BrgemmCopyBKernel::call_args args;
-            args.src = src + b0 * in_stride;
-            args.tr_src = dst + b0 * out_stride;
-            BrgemmCopyBKernelExecutor::execute(executor.get(), &args);
-        });
-
-        reordered_in_ptrs[in_idx] = scratch_mem;
-        offset += requested_desc->getCurrentMemSize();
-    }
-    return reordered_in_ptrs;
+    exec_impl(inMemPtrs, outMemPtrs);
 }
 
 }   // namespace node

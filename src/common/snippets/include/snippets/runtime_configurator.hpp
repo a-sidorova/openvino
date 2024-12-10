@@ -49,6 +49,8 @@ public:
     std::vector<ov::snippets::VectorDims> io_data_offsets = {};
     ov::snippets::VectorDims master_shape = {};
 
+    std::vector<ov::snippets::VectorDims> original_shapes = {};
+
     size_t buffer_scratchpad_size = 0;
     std::vector<size_t> buffer_cluster_offsets {};
     KernelExecutorTablePtr kernel_executor_table = std::make_shared<ov::snippets::KernelExecutorTable>();

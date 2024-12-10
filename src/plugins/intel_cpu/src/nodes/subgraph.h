@@ -134,6 +134,8 @@ public:
 
     void execute(const dnnl::stream& strm, const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs);
 
+    std::vector<MemoryPtr> originalMemPtrs;
+
 protected:
     virtual void exec_impl(const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs) = 0;
 
@@ -166,16 +168,14 @@ protected:
     std::vector<ptrdiff_t> m_start_offset_in = {};
     std::vector<ptrdiff_t> m_start_offset_out = {};
 
+    std::vector<std::vector<size_t>> data_offsets = {};
+    std::vector<std::vector<size_t>> original_offsets = {};
+
 #ifdef SNIPPETS_DEBUG_CAPS
     bool enabled_segfault_detector = false;
     inline void segfault_detector();
 #endif
-
-private:
-    std::vector<MemoryPtr> reorder_inputs(const dnnl::stream& strm, const std::vector<MemoryPtr>& inMemPtrs);
-
     std::unordered_map<size_t, CpuBlockedMemoryDescPtr> m_in_requested_descs = {};
-
     std::unordered_map<size_t, std::shared_ptr<BrgemmCopyBKernelExecutor>> m_copy_b_executors = {};
 
     ov::intel_cpu::MultiCacheWeakPtr m_kernel_cache;

@@ -76,6 +76,7 @@ void RuntimeConfigurator::update(const lowered::LinearIRCPtr& linear_ir) {
     m_config->master_shape = linear_ir->get_master_shape();
     m_config->io_shapes = extract_shapes();
     m_config->io_layouts = extract_layouts();
+    m_config->original_shapes = m_config->io_shapes;
     if (linear_ir->is_dynamic())
         update_loop_info(linear_ir);
 

@@ -386,7 +386,6 @@ ov::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets(const SnippetsToken
         auto tokenize_transpose = [&](const std::shared_ptr<ov::opset1::Transpose>& transpose,
                                       bool is_input_transposed, std::vector<int32_t> order,
                                       const ov::NodeVector::const_iterator& pos) {
-            return;
             // If Transpose has valid order for the Transpose fusing (ExplicitTransposeMatMulInputs pass call), tokenize him.
             // Otherwise, skip the Transpose.
             if (!is_input_transposed) {
@@ -405,9 +404,9 @@ ov::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets(const SnippetsToken
             }
         };
 
-        const auto transpose1 = ov::as_type_ptr<ov::opset1::Transpose>(parent);
+        const auto transpose1 = nullptr; // ov::as_type_ptr<ov::opset1::Transpose>(parent);
         const auto transpose0 = ov::as_type_ptr<ov::opset1::Transpose>(matmul0->get_input_node_shared_ptr(0));
-        const auto transpose2 = ov::as_type_ptr<ov::opset1::Transpose>(matmul1->get_input_node_shared_ptr(1));
+        const auto transpose2 = nullptr; // ov::as_type_ptr<ov::opset1::Transpose>(matmul1->get_input_node_shared_ptr(1));
         tokenize_transpose(transpose1, is_transposed_b_0, get_decomposed_transpose_order(pattern_rank), ordered_ops.begin());
         tokenize_transpose(transpose0, matmul0->get_transpose_a(), get_fusion_transpose_order(pattern_rank), ordered_ops.begin());
         tokenize_transpose(transpose2, matmul1->get_transpose_b(), get_fusion_transpose_order(pattern_rank), ordered_ops.end());
