@@ -103,13 +103,13 @@ protected:
 
     inline void init_call_args(jit_snippets_call_args& call_args, const std::vector<MemoryPtr>& srcMemPtrs,
                                const std::vector<MemoryPtr>& dstMemPtrs, size_t ithr) {
-        size_t offset = m_internal_buffer_size;
+        size_t offset = (m_internal_buffer_size_per_thread + m_external_buffer_size_per_thread) * ithr + m_internal_buffer_size_per_thread;
         for (size_t i = 0; i < srcMemPtrs.size(); i++) {
             const auto& desc_it = m_in_requested_descs.find(i);
             if (desc_it != m_in_requested_descs.cend()) {
                 const auto& size = desc_it->second->getCurrentMemSize();
-                call_args.src_ptrs[i] = m_buffer_scratchpad->getDataAs<uint8_t>() + offset + size * ithr;
-                offset += size * m_nthreads;
+                call_args.src_ptrs[i] = m_buffer_scratchpad->getDataAs<uint8_t>() + offset;
+                offset += size;
             } else {
                 call_args.src_ptrs[i] = srcMemPtrs[i]->getDataAs<const uint8_t>() + m_start_offset_in[i];
             }
@@ -921,17 +921,16 @@ Subgraph::SubgraphExecutor::SubgraphExecutor(const std::shared_ptr<Subgraph::Sub
 
     m_buffer_scratchpad_size = snippet_config->buffer_scratchpad_size;
     OPENVINO_ASSERT(!ov::snippets::utils::is_dynamic_value(m_buffer_scratchpad_size), "Undefined buffer scratchpad size!");
-    m_internal_buffer_size = static_cast<size_t>(m_nthreads) * m_buffer_scratchpad_size;
+    m_internal_buffer_size_per_thread = m_buffer_scratchpad_size;
     m_in_requested_descs = snippet_config->m_in_requested_descs;
-    const auto external_repacking_buffer_size = static_cast<size_t>(m_nthreads) *
+    m_external_buffer_size_per_thread =
         std::accumulate(m_in_requested_descs.begin(),
                         m_in_requested_descs.end(),
                         size_t(0),
                         [](size_t sum, const std::pair<size_t, ov::intel_cpu::MemoryDescPtr>& requested_desc_elem) {
                             return sum + requested_desc_elem.second->getCurrentMemSize();
                         });
-    m_buffer_scratchpad = allocator(m_internal_buffer_size + external_repacking_buffer_size);
-
+    m_buffer_scratchpad = allocator(static_cast<size_t>(m_nthreads) * (m_internal_buffer_size_per_thread + m_external_buffer_size_per_thread));
 
     for (const auto& p : m_in_requested_descs) {
         const auto& idx  = p.first;
