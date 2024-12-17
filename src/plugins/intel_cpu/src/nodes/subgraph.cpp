@@ -103,7 +103,7 @@ protected:
 
     inline void init_call_args(jit_snippets_call_args& call_args, const std::vector<MemoryPtr>& srcMemPtrs,
                                const std::vector<MemoryPtr>& dstMemPtrs, size_t ithr) {
-        size_t offset = (m_internal_buffer_size_per_thread + m_external_buffer_size_per_thread) * ithr + m_internal_buffer_size_per_thread;
+        size_t offset = m_internal_buffer_size;
         for (size_t i = 0; i < srcMemPtrs.size(); i++) {
             const auto& desc_it = m_in_requested_descs.find(i);
             if (desc_it != m_in_requested_descs.cend()) {
@@ -921,16 +921,16 @@ Subgraph::SubgraphExecutor::SubgraphExecutor(const std::shared_ptr<Subgraph::Sub
 
     m_buffer_scratchpad_size = snippet_config->buffer_scratchpad_size;
     OPENVINO_ASSERT(!ov::snippets::utils::is_dynamic_value(m_buffer_scratchpad_size), "Undefined buffer scratchpad size!");
-    m_internal_buffer_size_per_thread = m_buffer_scratchpad_size;
+    m_internal_buffer_size = static_cast<size_t>(m_nthreads) *  m_buffer_scratchpad_size;
     m_in_requested_descs = snippet_config->m_in_requested_descs;
-    m_external_buffer_size_per_thread =
+    m_external_buffer_size =
         std::accumulate(m_in_requested_descs.begin(),
                         m_in_requested_descs.end(),
                         size_t(0),
                         [](size_t sum, const std::pair<size_t, ov::intel_cpu::MemoryDescPtr>& requested_desc_elem) {
                             return sum + requested_desc_elem.second->getCurrentMemSize();
                         });
-    m_buffer_scratchpad = allocator(static_cast<size_t>(m_nthreads) * (m_internal_buffer_size_per_thread + m_external_buffer_size_per_thread));
+    m_buffer_scratchpad = allocator(m_internal_buffer_size + m_external_buffer_size);
 
     for (const auto& p : m_in_requested_descs) {
         const auto& idx  = p.first;
@@ -988,45 +988,30 @@ void Subgraph::SubgraphExecutor::parallel_for6d(const std::function<void(jit_sni
     segfault_detector();
 #endif
 
-    parallel_nt_static(m_nthreads, [&](const int ithr, const int nthr) {
-        jit_snippets_call_args call_args;
-        initializer(call_args, ithr);
+    parallel_for4d(dom[0], dom[1], dom[2], dom[3], [&](int ithr, int nthr, size_t idx0, size_t idx1, size_t idx2, size_t idx3) {
+        for (const auto& p : m_copy_b_executors) {
+            const auto& in_idx = p.first;
 
-        std::unordered_map<size_t, std::set<size_t>> processed;
+            const auto& dst_offsets = data_offsets[in_idx];
+            const auto& src_offsets = original_offsets[in_idx];
 
-        size_t start = 0, end = 0;
-        splitter(m_harness_work_amount, nthr, ithr, start, end);
+            size_t src_offset = src_offsets[0] * idx0 + src_offsets[1] * idx1 + src_offsets[2] * idx2 + src_offsets[3] * idx3;
+            size_t dst_offset = dst_offsets[0] * idx0 + dst_offsets[1] * idx1 + dst_offsets[2] * idx2 + dst_offsets[3] * idx3;
 
-        std::vector<size_t> indexes{0, 0, 0, 0, 0};
-        parallel_it_init(start, indexes[0], dom[0], indexes[1], dom[1], indexes[2], dom[2], indexes[3], dom[3], indexes[4], dom[4]);
-        for (size_t iwork = start; iwork < end; ++iwork) {
-            for (const auto& p : m_copy_b_executors) {
-                const auto& in_idx = p.first;
-
-                const auto& dst_offsets = data_offsets[in_idx];
-                const auto& src_offsets = original_offsets[in_idx];
-
-                size_t src_offset = 0, dst_offset = 0;
-                for (size_t j = 0; j < indexes.size(); j++) {
-                    src_offset += src_offsets[j] * indexes[j];
-                    dst_offset += dst_offsets[j] * indexes[j];
-                }
-
-                auto& offsets = processed[in_idx];
-                if (offsets.count(src_offset) == 0) {
-                    const auto& executor = p.second;
-                    BrgemmCopyBKernel::call_args args;
-                    args.src = originalMemPtrs[in_idx]->getDataAs<uint8_t>() + m_start_offset_in[in_idx] + src_offset;
-                    args.tr_src = reinterpret_cast<uint8_t*>(const_cast<void*>(call_args.src_ptrs[in_idx])) + dst_offset;
-                    BrgemmCopyBKernelExecutor::execute(executor.get(), &args);
-
-                    offsets.insert(src_offset);
-                }
-            }
-
-            caller(call_args, indexes);
-            parallel_it_step(indexes[0], dom[0], indexes[1], dom[1], indexes[2], dom[2], indexes[3], dom[3], indexes[4], dom[4]);
+            const auto& executor = p.second;
+            BrgemmCopyBKernel::call_args args;
+            args.src = originalMemPtrs[in_idx]->getDataAs<const uint8_t>() + src_offset;
+            args.tr_src = m_buffer_scratchpad->getDataAs<uint8_t>() + m_internal_buffer_size + dst_offset;
+            BrgemmCopyBKernelExecutor::execute(executor.get(), &args);
         }
+
+        parallel_for(dom[4], [&](int ithr0, int nthr, size_t idx4) {
+            //std::cout << parallel_get_thread_num() << std::endl;
+            jit_snippets_call_args call_args;
+            initializer(call_args, ithr);
+            std::vector<size_t> indexes{idx0, idx1, idx2, idx3, idx4};
+            caller(call_args, indexes);
+        });
     });
 }
 

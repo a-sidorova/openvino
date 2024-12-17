@@ -146,7 +146,7 @@ protected:
 
     inline void update_scratchpad_ptr(void*& scratchpad_ptr, size_t ithr) const {
         if (m_buffer_scratchpad_size > 0)
-            scratchpad_ptr = m_buffer_scratchpad->getDataAs<uint8_t>() + ithr * (m_internal_buffer_size_per_thread + m_external_buffer_size_per_thread);
+            scratchpad_ptr = m_buffer_scratchpad->getDataAs<uint8_t>() + ithr * m_buffer_scratchpad_size;
     }
 
     std::shared_ptr<snippets::Schedule> m_schedule;
@@ -158,8 +158,8 @@ protected:
     // Buffer scratchpad
     MemoryPtr m_buffer_scratchpad = nullptr;
     size_t m_buffer_scratchpad_size = 0;
-    size_t m_internal_buffer_size_per_thread = 0;
-    size_t m_external_buffer_size_per_thread = 0;
+    size_t m_internal_buffer_size = 0;
+    size_t m_external_buffer_size = 0;
 
     const size_t rank6D = 6;
 
