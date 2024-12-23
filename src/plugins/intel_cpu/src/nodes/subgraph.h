@@ -128,7 +128,8 @@ public:
                      const std::vector<ptrdiff_t>& start_offset_in,
                      const std::vector<ptrdiff_t>& start_offset_out,
                      const std::shared_ptr<CPURuntimeConfig>& snippet_config,
-                     const BufferScratchpadAllocator& allocator);
+                     const BufferScratchpadAllocator& allocator,
+                     const ov::intel_cpu::MultiCacheWeakPtr& kernel_cache);
     virtual ~SubgraphExecutor() = default;
 
     void execute(const dnnl::stream& strm,
@@ -139,9 +140,9 @@ protected:
     virtual void exec_impl(const std::vector<MemoryPtr>& inMemPtrs, const std::vector<MemoryPtr>& outMemPtrs) = 0;
 
     void parallel_for6d(const std::function<void(jit_snippets_call_args&, size_t)>& initializer,
-                        const std::function<void(jit_snippets_call_args&, const std::vector<size_t>&)>& caller);
+                        const std::function<void(jit_snippets_call_args&, const std::vector<size_t>&, size_t)>& caller);
     void parallel_forNd(const std::function<void(jit_snippets_call_args&, size_t)>& initializer,
-                        const std::function<void(jit_snippets_call_args&, const std::vector<size_t>&)>& caller);
+                        const std::function<void(jit_snippets_call_args&, const std::vector<size_t>&, size_t)>& caller);
 
     inline void update_scratchpad_ptr(void*& scratchpad_ptr, size_t ithr) const {
         if (m_buffer_scratchpad_size > 0)
@@ -172,10 +173,48 @@ protected:
     inline void segfault_detector();
 #endif
 
-private:
-    std::vector<MemoryPtr> reorder_inputs(const dnnl::stream& strm, const std::vector<MemoryPtr>& inMemPtrs);
+#ifdef OPENVINO_ARCH_X86_64
+    std::vector<MemoryPtr> separately_repack_inputs(const dnnl::stream& strm, const std::vector<MemoryPtr>& srcMemPtrs);
+    void in_parallel_repack_inputs(const std::vector<MemoryPtr>& inMemPtrs,
+                                   const std::vector<size_t>& indexes,
+                                   int ithr,
+                                   jit_snippets_call_args& call_args);
 
-    std::unordered_map<size_t, CpuBlockedMemoryDescPtr> m_in_requested_descs = {};
+    inline uint8_t* get_external_scratchpad_ptr(size_t ithr, size_t idx) const {
+        if (m_repacked_inputs.empty())
+            return nullptr;
+
+        uint8_t* data_ptr = m_buffer_scratchpad->getDataAs<uint8_t>() + m_internal_buffer_size;
+        for (const auto& p : m_repacked_inputs) {
+            const auto& desc = p.second.desc;
+            const auto size = desc->getCurrentMemSize();
+            if (p.first == idx) {
+                return data_ptr + ithr * size;
+            }
+            data_ptr += m_nthreads * size;
+        }
+        OPENVINO_THROW("External buffer pointer has not been found");
+    }
+
+    // [ Input index - > set of src offsets which are already repacked ]
+    using RepackedSrcOffsets = std::unordered_map<size_t, std::set<size_t>>;
+    std::unordered_map<int, RepackedSrcOffsets> m_repacked_offsets_by_threads = {};
+    std::unordered_map<size_t, CPURuntimeConfig::RepackedInput> m_repacked_inputs = {};
+
+    inline bool should_repacking_be_separately() const {
+        return m_repacking_impl_type == CPURuntimeConfig::RepackingImplType::SEPARATE;
+    }
+    inline bool should_repacking_be_in_parallel() const {
+        return m_repacking_impl_type == CPURuntimeConfig::RepackingImplType::IN_PARALLEL;
+    }
+    inline void clean_repacked_offsets(size_t ithr) {
+        if (should_repacking_be_in_parallel())
+            m_repacked_offsets_by_threads.at(ithr).clear();
+    }
+
+private:
+    CPURuntimeConfig::RepackingImplType m_repacking_impl_type = CPURuntimeConfig::RepackingImplType::NONE;
+#endif  // OPENVINO_ARCH_X86_64
 };
 
 }  // namespace node

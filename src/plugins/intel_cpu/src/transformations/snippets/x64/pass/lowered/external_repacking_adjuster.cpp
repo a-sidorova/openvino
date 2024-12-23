@@ -38,9 +38,14 @@ BrgemmExternalRepackingAdjuster::BrgemmExternalRepackingAdjuster(const ov::snipp
 bool BrgemmExternalRepackingAdjuster::run(const snippets::lowered::LinearIR& linear_ir) {
     OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "Snippets::BrgemmExternalRepackingAdjuster")
     const auto& cpu_config = ov::as_type_ptr<CPURuntimeConfig>(m_configurator->get_config());
-    auto& optimal_descs = cpu_config->m_in_requested_descs;
+    const float L2_cache_size = dnnl::utils::get_cache_size(2, true);
+
+    bool fit_into_L2 = true;
     for (const auto& i : m_param_idces_with_external_repacking) {
         const auto& shape = cpu_config->io_shapes[i];
+        if (shape == cpu_config->latest_shapes[i])
+            continue;
+
         const auto& K = *++shape.rbegin();
         const auto& N = *shape.rbegin();
 
@@ -50,23 +55,67 @@ bool BrgemmExternalRepackingAdjuster::run(const snippets::lowered::LinearIR& lin
         // Firstly, batch dims are set
         VectorDims requested_blocked_shape(shape.begin(), shape.end() - brgemm_kernel_rank);
         // Then, the blocked dims are formed
-        requested_blocked_shape.insert(requested_blocked_shape.end(),
-                                       {snippets::utils::div_up(K, vnni_factor),
-                                        std::max(N, brgemm_utils::repacking::compute_inner_n_block(precision)),
-                                        vnni_factor});
+        const auto new_K = snippets::utils::div_up(K, vnni_factor);
+        const auto new_N = std::max(N, brgemm_utils::repacking::compute_inner_n_block(precision));
+        requested_blocked_shape.insert(requested_blocked_shape.end(), {new_K, new_N, vnni_factor});
 
         VectorDims requested_order(shape.size() - brgemm_kernel_rank);
         std::iota(requested_order.begin(), requested_order.end(), 0);
         const auto last_idx = shape.size() - 1;
         requested_order.insert(requested_order.end(), {last_idx - 1, last_idx, last_idx - 1});
 
-        optimal_descs[i] =
+        const auto desc =
             std::make_shared<CpuBlockedMemoryDesc>(precision, Shape(shape), requested_blocked_shape, requested_order);
+
+        auto config = BrgemmCopyBKernelConfig(precision,
+                                              precision,
+                                              dnnl::impl::cpu::x64::cpu_isa_t::avx512_core_amx,
+                                              false,
+                                              false,
+                                              brgemm_utils::repacking::compute_inner_n_block(precision));
+        const auto executor = std::make_shared<BrgemmCopyBKernelExecutor>(
+            static_cast<const CPURuntimeConfigurator*>(m_configurator)->get_cache(),
+            config);
+        config.update(N,
+                      N,
+                      K,
+                      K,
+                      ov::snippets::utils::get_dim_in_stride(shape, cpu_config->io_layouts[i], 1) * precision.size(),
+                      brgemm_utils::repacking::compute_LDB(N, precision));
+        executor->update_by_config(config);
+
+        // Save original input offsets for input before repacking.
+        const auto in_offsets = cpu_config->io_data_offsets[i];
 
         ov::snippets::VectorDims shape_for_offset(cpu_config->tensor_rank - shape.size(), 1);
         shape_for_offset.insert(shape_for_offset.end(), requested_blocked_shape.begin(), requested_blocked_shape.end());
         m_configurator->compute_offsets(shape_for_offset, i, 0);
+        // Save new input offsets for input after repacking.
+        const auto out_offsets = cpu_config->io_data_offsets[i];
+
+        cpu_config->repacked_inputs[i] = CPURuntimeConfig::RepackedInput(desc, executor, in_offsets, out_offsets);
+
+        const auto src_size = N * K * precision.size();
+        const auto dst_size = new_N * new_K * precision.size();
+        fit_into_L2 &= ((src_size + dst_size) < L2_cache_size);
     }
+
+    if (!cpu_config->repacked_inputs.empty()) {
+        // Heuristic: If external repacking data doesn't fit in the cache L2,
+        //            external repacking should be executed in seperate parallel section before kernel execution.
+        cpu_config->repacking_impl_type = fit_into_L2 ? CPURuntimeConfig::RepackingImplType::IN_PARALLEL
+                                                      : CPURuntimeConfig::RepackingImplType::SEPARATE;
+
+        // In parallel case Kernel should not add offsets to repacked inputs because
+        // they will be applied during repacking in execution stage
+        if (cpu_config->repacking_impl_type == CPURuntimeConfig::RepackingImplType::IN_PARALLEL) {
+            for (const auto& in : cpu_config->repacked_inputs) {
+                auto& offsets = cpu_config->io_data_offsets[in.first];
+                std::fill(offsets.begin(), offsets.end(), 0);
+            }
+        }
+    }
+
     return true;
 }
 
