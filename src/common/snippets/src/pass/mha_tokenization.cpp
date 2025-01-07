@@ -365,12 +365,9 @@ ov::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets(const SnippetsToken
             }
         };
 
-        // [99737]: Due to performance problems, if operations on 2nd input of MatMuls should be explicitly executed
+        // [160177]: Due to performance problems, if operations on 2nd input of MatMuls should be explicitly executed
         //          (in other words, if the Buffer should be inserted between Brgemm and this op sequence),
-        //          we don't tokenize such operations into Subgraph. The reason - is inserted Buffer.
-        //          If the possible Buffer requires a quite large allocation size,
-        //          it can lead to Buffer data being pushed out of the cache during kernel execution.
-        //          Thus, there will be cache misses and performance regressions.
+        //          we don't tokenize such operations into Subgraph. The details are described in the ticket 160177.
         //          Please, return the tokenization of these ops when parallel loops are implemented.
         const auto transpose0 = ov::as_type_ptr<ov::opset1::Transpose>(matmul0->get_input_node_shared_ptr(0));
         const auto transpose1 = ov::as_type_ptr<ov::opset1::Transpose>(matmul0->get_input_node_shared_ptr(1));
