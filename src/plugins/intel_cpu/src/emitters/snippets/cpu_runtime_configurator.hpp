@@ -28,7 +28,7 @@ public:
     };
     RepackingImplType repacking_impl_type = RepackingImplType::NONE;
 
-    std::unordered_map<size_t, RepackedInput> repacked_inputs = {};
+    RepackedInputConfigPtr repacked_input_config = std::make_shared<RepackedInputConfig>();
     std::vector<jit_snippets_call_args::loop_args_t> loop_args = {};
     std::set<size_t> brgemm_external_ptrs_idces = {};
 };

@@ -504,6 +504,11 @@ Subgraph::DataFlowPasses Subgraph::getDataFlowPasses() {
                                                element::f32,
                                                context->getConfig().inferencePrecision);
     }
+
+#if defined(OPENVINO_ARCH_X86_64)
+    const auto cpu_config = ov::as_type_ptr<CPURuntimeConfig>(subgraph_attrs->snippet->get_runtime_configurator()->get_config());
+#endif
+
     SNIPPETS_REGISTER_PASS_RELATIVE_X86_64(Place::Before,
                                            ov::snippets::pass::PropagatePrecision,
                                            ov::intel_cpu::pass::BrgemmToBrgemmCPU);
@@ -526,7 +531,7 @@ Subgraph::DataFlowPasses Subgraph::getDataFlowPasses() {
     }
     SNIPPETS_REGISTER_PASS_RELATIVE_X86_64(Place::After,
                                            ov::intel_cpu::pass::BrgemmToBrgemmCPU,
-                                           ov::intel_cpu::pass::EliminateBrgemmCopyB);
+                                           ov::intel_cpu::pass::EliminateBrgemmCopyB, cpu_config->repacked_input_config);
     SNIPPETS_REGISTER_PASS_ABSOLUTE_X86_64(Place::PipelineEnd, ov::intel_cpu::pass::RemoveConverts);
     SNIPPETS_REGISTER_PASS_ABSOLUTE_COMMON(Place::PipelineEnd, ov::intel_cpu::pass::MulAddToFMA);
 
