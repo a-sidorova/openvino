@@ -76,7 +76,7 @@ SubgraphExecutor::SubgraphExecutor(const std::shared_ptr<CPURuntimeConfig>& snip
                            start_offset_out,
                            allocator,
                            kernel_cache),
-      m_repacked_inputs(snippet_config->repacked_inputs),
+      m_repacked_inputs(snippet_config->repacked_input_config),
       m_repacking_impl_type(snippet_config->repacking_impl_type) {
     auto external_buffer_size =
         std::accumulate(m_repacked_inputs.begin(),
@@ -142,6 +142,41 @@ void SubgraphExecutor::segfault_detector() {
     }
 }
 #endif
+
+std::vector<MemoryPtr> SubgraphExecutor::prepareWeights(const std::vector<MemoryPtr>& inMemPtrs,
+                                      const RepackedInputConfig& repacked_const_input_config,
+                                      const GraphContext::CPtr& context) {
+    std::vector<MemoryPtr> repackedMemPtrs = inMemPtrs;
+    for (const auto& [idx, repacked_input] : repacked_const_input_config) {
+        OPENVINO_ASSERT(idx < inMemPtrs.size(), "Incorrect index of repacked input");
+        const auto& srcMemPtr = inMemPtrs[idx];
+
+        auto create = [&]() {
+            const auto& originalWeiDesc = srcMemPtr->getDescPtr();
+            const auto& dstMemPtr = std::make_shared<Memory>(context->getEngine(), repacked_input.desc());
+
+            const auto& kernel = repacked_input.kernel<BrgemmCopyBKernel>();
+            BrgemmCopyBKernel::call_args args;
+            args.src = srcMemPtr->getData();
+            args.tr_src = dstMemPtr->getData();
+            (*kernel)(&args);
+
+            return dstMemPtr;
+        };
+
+        auto weightCache = context->getWeightsCache();
+        if (weightCache != nullptr) {
+            const auto& wgtDims = srcMemPtr->getStaticDims();
+            std::string format = "brgemm_snippets_" + std::to_string(wgtDims[0]) + "_" + std::to_string(wgtDims[1]);
+            const std::string string_hash = format + "_" + std::to_string(srcMemPtr->getSize()) + "_" +
+                                            std::to_string(reinterpret_cast<uint64_t>(srcMemPtr->getData()));
+            repackedMemPtrs[idx] = *weightCache->findOrCreate(string_hash, create);
+        } else {
+            repackedMemPtrs[idx] = create();
+        }
+    }
+    return repackedMemPtrs;
+}
 
 std::vector<MemoryPtr> SubgraphExecutor::separately_repack_inputs(const dnnl::stream& strm,
                                                                   const std::vector<MemoryPtr>& srcMemPtrs) {

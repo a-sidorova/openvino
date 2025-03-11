@@ -5,6 +5,7 @@
 #pragma once
 
 #include "nodes/executors/subgraph.hpp"
+#include "graph_context.h"
 
 namespace ov::intel_cpu {
 
@@ -21,6 +22,10 @@ public:
     void execute(const dnnl::stream& strm,
                  const std::vector<MemoryPtr>& inMemPtrs,
                  const std::vector<MemoryPtr>& outMemPtrs) override;
+
+    static std::vector<MemoryPtr> prepareWeights(const std::vector<MemoryPtr>& inMemPtrs,
+                               const RepackedInputConfig& repacked_const_input_config,
+                               const GraphContext::CPtr& context);
 
 protected:
     std::vector<MemoryPtr> separately_repack_inputs(const dnnl::stream& strm, const std::vector<MemoryPtr>& srcMemPtrs);

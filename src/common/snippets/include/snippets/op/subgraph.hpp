@@ -159,6 +159,8 @@ public:
                       const std::shared_ptr<IShapeInferSnippetsFactory>& factory = nullptr,
                       const void* compile_params = nullptr);
 
+    bool analyze(const std::shared_ptr<ov::snippets::lowered::pass::ConstPass>& analyzer) const;
+
 private:
     std::shared_ptr<lowered::LinearIR>
     convert_body_to_linear_ir(size_t min_parallel_work_amount = 8, size_t min_kernel_work_amount = 256,
