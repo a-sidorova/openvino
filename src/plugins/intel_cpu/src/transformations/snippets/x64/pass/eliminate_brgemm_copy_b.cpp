@@ -19,7 +19,7 @@ bool pass::EliminateBrgemmCopyB::run_on_model(const std::shared_ptr<ov::Model>& 
     MATCHER_SCOPE(EliminateBrgemmCopyB);
     auto m_param = ov::pass::pattern::wrap_type<ov::op::v0::Parameter>();
     auto m_rank_norm = ov::pass::pattern::optional<ov::snippets::op::RankNormalization>(m_param);
-    auto m_copy_b = ov::pass::pattern::wrap_type<BrgemmCopyB>({m_param});
+    auto m_copy_b = ov::pass::pattern::wrap_type<BrgemmCopyB>({m_rank_norm});
     auto matcher = std::make_shared<ov::pass::pattern::Matcher>(m_copy_b);
 
     bool status = false;
@@ -45,7 +45,7 @@ bool pass::EliminateBrgemmCopyB::run_on_model(const std::shared_ptr<ov::Model>& 
         const auto param_idx = static_cast<size_t>(model->get_parameter_index(param));
         OPENVINO_ASSERT(param_idx < model->get_parameters().size(), "Parameter index is invalid in EliminateBrgemmCopyB transformation");
         // Mark this input as repacked
-        (*m_repacked_inputs_config)[param_idx] = RepackedInput();
+        m_repacked_inputs_config[param_idx] = RepackedInput();
 
         // If there is non-planar layout, we should insert reshape to support shape inference
         if (!ov::snippets::utils::is_planar_layout(layout)) {

@@ -28,7 +28,7 @@ public:
     };
     RepackingImplType repacking_impl_type = RepackingImplType::NONE;
 
-    RepackedInputConfigPtr repacked_input_config = std::make_shared<RepackedInputConfig>();
+    RepackedInputConfig repacked_input_config = {};
     std::vector<jit_snippets_call_args::loop_args_t> loop_args = {};
 };
 
