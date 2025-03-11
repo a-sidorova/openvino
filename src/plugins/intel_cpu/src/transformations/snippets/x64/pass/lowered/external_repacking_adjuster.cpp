@@ -19,14 +19,18 @@ const size_t BrgemmExternalRepackingAdjuster::brgemm_kernel_rank = 2;
 BrgemmExternalRepackingAdjuster::BrgemmExternalRepackingAdjuster(const ov::snippets::lowered::LinearIRCPtr& linear_ir,
                                                                  const CPURuntimeConfigurator* configurator)
     : snippets::lowered::pass::RuntimeOptimizer(configurator) {
+    const auto& cpu_config = ov::as_type_ptr<CPURuntimeConfig>(m_configurator->get_config());
+    const auto& repacked_inputs_config = cpu_config->repacked_input_config;
     const auto& params = linear_ir->get_parameters();
-    for (size_t i = 0; i < params.size(); ++i) {
-        const auto& param = params[i];
+    for (const auto& [idx, _] : *repacked_inputs_config) {
+        OPENVINO_ASSERT(idx < params.size(), "Incorrect index of repacked input");
+
+        const auto& param = params[idx];
         const auto& shape_infer_consumers = ov::snippets::utils::get_first_child_shape_infer_expr_seq(param);
         const auto& out = shape_infer_consumers.empty() ? param->get_output_port(0)
                                                         : shape_infer_consumers.back()->get_output_port(0);
         const auto consumers = out.get_connected_ports();
-
+        bool inited = false;
         for (const auto& consumer : consumers) {
             auto brgemm = ov::as_type_ptr<ov::intel_cpu::BrgemmCPU>(consumer.get_expr()->get_node());
             if (brgemm && brgemm_utils::with_repacking(brgemm->get_type()) && consumer.get_index() == 1) {
@@ -35,12 +39,17 @@ BrgemmExternalRepackingAdjuster::BrgemmExternalRepackingAdjuster(const ov::snipp
                 const auto isa = brgemm_utils::get_primitive_isa(src_prc, brgemm_utils::with_amx(brgemm->get_type()));
                 const auto inner_n_block = brgemm_utils::repacking::compute_inner_n_block(wei_prc);
                 const auto is_transposed_b =
-                    BrgemmCopyB::is_transposed(m_configurator->get_io_descs()[i]->get_layout());
+                    BrgemmCopyB::is_transposed(m_configurator->get_io_descs()[idx]->get_layout());
                 auto config = BrgemmCopyBKernelConfig(src_prc, wei_prc, isa, false, is_transposed_b, inner_n_block);
-                m_executors[i] = std::make_shared<BrgemmCopyBKernelExecutor>(configurator->get_cache(), config);
+                m_executors[idx] = std::make_shared<BrgemmCopyBKernelExecutor>(configurator->get_cache(), config);
+
+                inited = true;
             }
         }
+        OPENVINO_ASSERT(inited, "Repacked input must be inited!");
     }
+
+    OPENVINO_ASSERT(repacked_inputs_config->size() == m_executors.size(), "Incorrect count of repacked inputs");
 }
 
 VectorDims BrgemmExternalRepackingAdjuster::get_blk_order(size_t shape_rank) {
@@ -118,7 +127,7 @@ bool BrgemmExternalRepackingAdjuster::run(const snippets::lowered::LinearIR& lin
         const auto& i = p.first;
         const auto& shape = cpu_config->io_shapes[i];
         const auto& layout = cpu_config->io_layouts[i];
-        auto& repacked_in = cpu_config->repacked_inputs[i];
+        auto& repacked_in = cpu_config->repacked_input_config->at(i);
 
         const auto& prc = linear_ir.get_parameters()[i]->get_node()->get_output_element_type(0);
         auto planar_shape = ov::snippets::utils::get_planar_vdims(shape, layout);

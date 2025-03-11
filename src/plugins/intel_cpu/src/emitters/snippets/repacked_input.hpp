@@ -39,4 +39,7 @@ private:
     VectorDims m_out_offsets{};
 };
 
+using RepackedInputConfig = std::unordered_map<size_t, ov::intel_cpu::RepackedInput>;
+using RepackedInputConfigPtr = std::shared_ptr<RepackedInputConfig>;
+
 }  // namespace ov::intel_cpu
