@@ -172,6 +172,8 @@ size_t get_dim_idx(const lowered::ExpressionPort& port, size_t dim_idx);
 // given shape [a,b,c,d], the stride is [b*c*d, c*d, d, 1]
 int64_t get_stride(size_t dim_idx, const VectorDims& shape);
 
+VectorDims get_planar_layout(size_t rank);
+
 /* ----- Shape `getters` ----- */
 /**
  * @brief Returns a dense shape after applying the order.

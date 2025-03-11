@@ -46,6 +46,7 @@ private:
     void initStartOffsets();
     void initPluginBlockedShapes() const;
     void optimizeIR();
+    void prepareWeights();
 
     snippets::op::Subgraph::BlockedShapeVector getSnippetsBlockedShapes() const;
     std::pair<std::vector<ov::element::Type>, std::vector<ov::element::Type>> getIOPrecisions() const;

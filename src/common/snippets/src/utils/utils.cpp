@@ -172,6 +172,12 @@ ov::PartialShape get_preordered_pshape(const ov::PartialShape& shape, const std:
     return get_pshape(shape, order, false);
 }
 
+VectorDims get_planar_layout(size_t rank) {
+    VectorDims layout(rank);
+    std::iota(layout.begin(), layout.end(), 0);
+    return layout;
+}
+
 ov::PartialShape get_planar_pshape(const Input<Node>& in) {
     const auto& port = snippets::lowered::PortDescriptorUtils::get_port_descriptor_ptr(in);
     return get_planar_pshape(ov::Shape{port->get_shape()}, port->get_layout());

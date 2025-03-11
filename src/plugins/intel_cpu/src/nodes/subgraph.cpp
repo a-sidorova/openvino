@@ -39,6 +39,7 @@
 #    include "transformations/snippets/x64/pass/lowered/adjust_brgemm_copy_b_loop_ports.hpp"
 #    include "transformations/snippets/x64/pass/lowered/brgemm_cpu_blocking.hpp"
 #    include "transformations/snippets/x64/pass/lowered/fuse_load_store_and_convert.hpp"
+#    include "transformations/snippets/x64/pass/lowered/init_repacked_constant_inputs.hpp"
 #    include "transformations/snippets/x64/pass/lowered/insert_brgemm_copy_buffers.hpp"
 #    include "transformations/snippets/x64/pass/remove_converts.hpp"
 #    include "transformations/snippets/x64/shape_inference.hpp"
@@ -370,6 +371,7 @@ void Subgraph::createPrimitive() {
         initAttributes();
         initStartOffsets();
         optimizeIR();
+        prepareWeights();
     }
 
     Node::createPrimitive();
@@ -531,7 +533,8 @@ Subgraph::DataFlowPasses Subgraph::getDataFlowPasses() {
     }
     SNIPPETS_REGISTER_PASS_RELATIVE_X86_64(Place::After,
                                            ov::intel_cpu::pass::BrgemmToBrgemmCPU,
-                                           ov::intel_cpu::pass::EliminateBrgemmCopyB, cpu_config->repacked_input_config);
+                                           ov::intel_cpu::pass::EliminateBrgemmCopyB,
+                                           cpu_config->repacked_input_config);
     SNIPPETS_REGISTER_PASS_ABSOLUTE_X86_64(Place::PipelineEnd, ov::intel_cpu::pass::RemoveConverts);
     SNIPPETS_REGISTER_PASS_ABSOLUTE_COMMON(Place::PipelineEnd, ov::intel_cpu::pass::MulAddToFMA);
 
@@ -685,6 +688,34 @@ void Subgraph::optimizeIR() {
                                            std::make_shared<snippets::CPUShapeInferSnippetsFactory>(),
                                            control_flow_config,
                                            control_flow_passes);
+}
+
+void Subgraph::prepareWeights() {
+    const auto& subgraph = subgraph_attrs->snippet;
+    const auto& cpu_configurator = ov::as_type_ptr<CPURuntimeConfigurator>(subgraph_attrs->snippet->get_runtime_configurator());
+    const auto& cpu_config = ov::as_type_ptr<CPURuntimeConfig>(cpu_configurator->get_config());
+
+    if (!subgraph->has_domain_sensitive_ops() || cpu_config->repacked_input_config.empty())
+        return;
+
+#if defined(OPENVINO_ARCH_X86_64)
+    // Add constant path support
+    std::set<size_t> constant_inputs_idxs;
+    for (size_t i = 0; i < getParentEdges().size(); ++i) {
+        if (getParentEdgeAt(i)->getParent()->isConstant()) {
+            constant_inputs_idxs.insert(i);
+        }
+    }
+
+    RepackedInputConfig repacked_constant_inputs;
+
+    const auto pass = std::make_shared<InitRepackedConstantInputs>(constant_inputs_idxs, cpu_configurator->get_cache(), cpu_config->repacked_input_config, repacked_constant_inputs);
+    subgraph->analyze(pass);
+
+    srcMemPtrs = SubgraphExecutor::prepareWeights(srcMemPtrs, repacked_constant_inputs, context);
+#else
+    OPENVINO_THROW("Weight repacking is unimplemented on this platform");
+#endif
 }
 
 void Subgraph::prepareParams() {

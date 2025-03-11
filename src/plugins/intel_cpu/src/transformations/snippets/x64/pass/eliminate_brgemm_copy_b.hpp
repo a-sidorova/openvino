@@ -21,13 +21,13 @@ namespace ov::intel_cpu::pass {
 class EliminateBrgemmCopyB : public ov::pass::ModelPass {
 public:
     OPENVINO_MATCHER_PASS_RTTI("EliminateBrgemmCopyB");
-    EliminateBrgemmCopyB(ov::intel_cpu::RepackedInputConfigPtr repacked_inputs_config)
-        : m_repacked_inputs_config(std::move(repacked_inputs_config)) {}
+    EliminateBrgemmCopyB(ov::intel_cpu::RepackedInputConfig& repacked_inputs_config)
+        : m_repacked_inputs_config(repacked_inputs_config) {}
 
     bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 
 private:
-    ov::intel_cpu::RepackedInputConfigPtr m_repacked_inputs_config {nullptr};
+    ov::intel_cpu::RepackedInputConfig& m_repacked_inputs_config;
 };
 
 }  // namespace ov::intel_cpu::pass
