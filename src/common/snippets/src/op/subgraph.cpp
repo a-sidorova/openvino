@@ -432,6 +432,8 @@ void Subgraph::data_flow_transformations(const BlockedShapeVector& blocked_input
 
     manager.register_positioned_passes(backend_passes);
     manager.run_passes(body_ptr());
+
+    ov::serialize(body_ptr(), "body.xml");
 }
 
 void Subgraph::control_flow_transformations(size_t min_parallel_work_amount, size_t min_kernel_work_amount,

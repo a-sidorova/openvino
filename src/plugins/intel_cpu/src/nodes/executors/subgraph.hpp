@@ -129,9 +129,9 @@ protected:
                 //std::cout << "\t init_call_src_args: " << (src_ptrs_idx - 1) << " " << (void*)(ptr) << std::endl;
             }
         }
-        if (std::getenv("DEBUG_PRINT")) {
-            std::cout << "\t call_args.external_ptrs: " << call_args.external_ptrs << std::endl;
-        }
+        // if (std::getenv("DEBUG_PRINT")) {
+        //     std::cout << "\t call_args.external_ptrs: " << call_args.external_ptrs << std::endl;
+        // }
         for (size_t i = 0; i < dstMemPtrs.size(); i++) {
             call_args.dst_ptrs[i] = dstMemPtrs[i]->getDataAs<uint8_t>() + start_offset_out[i];
         }

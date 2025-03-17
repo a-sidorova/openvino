@@ -518,6 +518,9 @@ Subgraph::DataFlowPasses Subgraph::getDataFlowPasses() {
         SNIPPETS_REGISTER_PASS_RELATIVE_X86_64(Place::After,
                                                ov::intel_cpu::pass::BrgemmToBrgemmCPU,
                                                ov::intel_cpu::pass::FuseBrgemmCPUPostops);
+        SNIPPETS_REGISTER_PASS_RELATIVE_X86_64(Place::After,
+                                               ov::snippets::pass::PropagatePrecision,
+                                               ov::intel_cpu::pass::FuseBrgemmCPUConvert);
         if (std::getenv("SERIALIZE")) {
             SNIPPETS_REGISTER_PASS_RELATIVE_X86_64(Place::Before,
                                                    ov::intel_cpu::pass::FuseBrgemmCPUPostops,

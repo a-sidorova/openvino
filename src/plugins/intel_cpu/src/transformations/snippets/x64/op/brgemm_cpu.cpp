@@ -115,7 +115,7 @@ void BrgemmCPU::validate_inputs() const {
 std::shared_ptr<Node> BrgemmCPU::clone_with_new_inputs(const OutputVector& new_args) const {
     INTERNAL_OP_SCOPE(BrgemmCPU_clone_with_new_inputs);
     check_new_args_count(this, new_args);
-    return std::make_shared<BrgemmCPU>(
+    auto op = std::make_shared<BrgemmCPU>(
         new_args,
         m_type,
         get_input_port_descriptors(),
@@ -124,6 +124,9 @@ std::shared_ptr<Node> BrgemmCPU::clone_with_new_inputs(const OutputVector& new_a
         snippets::lowered::PortDescriptorUtils::get_port_descriptor_ptr(input(1))->get_layout(),
         snippets::lowered::PortDescriptorUtils::get_port_descriptor_ptr(output(0))->get_layout(),
         m_post_ops);
+    op->dst_type = dst_type;
+    op->validate_and_infer_types();
+    return op;
 }
 
 size_t BrgemmCPU::get_offset_scratch() const {
@@ -139,7 +142,9 @@ bool BrgemmCPU::visit_attributes(AttributeVisitor& visitor) {
 }
 
 ov::element::Type BrgemmCPU::get_output_type() const {
-    return m_post_ops.empty() ? Brgemm::get_output_type() : input_values().back().get_element_type();
+    if (dst_type == ov::element::dynamic)
+        return m_post_ops.empty() ? Brgemm::get_output_type() : input_values().back().get_element_type();
+    return dst_type;
 }
 
 ov::OutputVector BrgemmCPU::get_postop_inputs() const {

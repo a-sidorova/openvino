@@ -19,4 +19,10 @@ public:
     FuseBrgemmCPUPostops();
 };
 
+class FuseBrgemmCPUConvert : public ov::pass::MatcherPass {
+public:
+    OPENVINO_MATCHER_PASS_RTTI("FuseBrgemmCPUConvert");
+    FuseBrgemmCPUConvert();
+};
+
 }  // namespace ov::intel_cpu::pass

@@ -7,6 +7,7 @@
 #include "openvino/pass/pattern/matcher.hpp"
 #include "openvino/pass/pattern/op/optional.hpp"
 #include "openvino/pass/pattern/op/wrap_type.hpp"
+#include "openvino/pass/pattern/op/or.hpp"
 #include "snippets/itt.hpp"
 #include "snippets/op/convert_saturation.hpp"
 #include "snippets/op/rank_normalization.hpp"
@@ -35,7 +36,9 @@ pass::FuseBrgemmCPUPostops::FuseBrgemmCPUPostops() {
 
     auto m_postop_value = wrap_type<ov::op::v0::Constant, ov::op::v0::Parameter>(postop_input_predicate);
     auto m_rank_norm = optional<ov::snippets::op::RankNormalization>(m_postop_value);
-    auto m_postop = wrap_type<ov::op::v1::Multiply, ov::op::v1::Add>({m_optional_convert, m_rank_norm});
+    auto m_postop = wrap_type<ov::op::v1::Multiply, ov::op::v1::Add, ov::op::v1::Maximum, ov::op::v1::Minimum>({m_optional_convert, m_rank_norm});
+    //auto m_scalar_postop = wrap_type<ov::snippets::op::ConvertSaturation>({m_brgemm});
+    //auto m_postop = std::make_shared<ov::pass::pattern::op::Or>(ov::OutputVector{m_binary_postop, m_scalar_postop});
 
     auto callback = [=](Matcher& m) {
         OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "ov::intel_cpu::pass::FuseBrgemmCPUPostops")
@@ -56,9 +59,11 @@ pass::FuseBrgemmCPUPostops::FuseBrgemmCPUPostops() {
             return false;
         }
 
-        const auto postop_input_shape = post_op->get_input_shape(1);
-        if (ov::shape_size(postop_input_shape) != post_op->get_output_shape(0).back()) {
-            return false;
+        if (post_op->get_input_size() > 1) {
+            const auto postop_input_shape = post_op->get_input_shape(1);
+            if (ov::shape_size(postop_input_shape) != post_op->get_output_shape(0).back() && ov::shape_size(postop_input_shape) != 1) {
+                return false;
+            }
         }
 
         // Log the addition of the post operation
@@ -101,10 +106,39 @@ pass::FuseBrgemmCPUPostops::FuseBrgemmCPUPostops() {
         PortDescriptorUtils::set_port_descriptor(new_brgemm->output(0), out_desc->get_subtensor(), out_desc->get_layout());
 
         ov::replace_node(post_op, new_brgemm);
+
         return true;
     };
 
     auto m = std::make_shared<Matcher>(m_postop, matcher_name);
+    register_matcher(m, callback);
+}
+
+pass::FuseBrgemmCPUConvert::FuseBrgemmCPUConvert() {
+    MATCHER_SCOPE(FuseBrgemmCPUConvert);
+    using namespace ov::pass::pattern;
+    auto brgemm_predicate = [](const Output<Node>& output) {
+        return has_static_shape()(output) && consumers_count(1)(output);
+    };
+    auto m_brgemm = wrap_type<BrgemmCPU>(brgemm_predicate);
+    auto m_convert = wrap_type<ov::snippets::op::ConvertSaturation>({m_brgemm});
+
+    auto callback = [=](Matcher& m) {
+        OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "ov::intel_cpu::pass::FuseBrgemmCPUConvert")
+        const auto& pattern_map = m.get_pattern_value_map();
+        const auto convert = pattern_map.at(m_convert).get_node_shared_ptr();
+        const auto brgemm = ov::as_type_ptr<BrgemmCPU>(pattern_map.at(m_brgemm).get_node_shared_ptr());
+
+        std::cout << "[ INFO ] Fused Convert: " << convert->get_friendly_name()
+                  << " to BrgemmCPU: " << brgemm->get_friendly_name() << std::endl;
+
+        brgemm->dst_type = convert->get_output_element_type(0);
+        convert->output(0).replace(convert->input_value(0));
+
+        return true;
+    };
+
+    auto m = std::make_shared<Matcher>(m_convert, matcher_name);
     register_matcher(m, callback);
 }
 
