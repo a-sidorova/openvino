@@ -1139,9 +1139,9 @@ void Transformations::MainSnippets() {
 #if defined(OPENVINO_ARCH_ARM64)
         CPU_REGISTER_PASS_ARM(snippetsManager, SnippetsMarkSkipped);
 #else
-        CPU_REGISTER_PASS_X64(snippetsManager, SnippetsMarkSkipped, config.inferencePrecision == ov::element::bf16);
+        //CPU_REGISTER_PASS_X64(snippetsManager, SnippetsMarkSkipped, config.inferencePrecision == ov::element::bf16);
 #endif
-        CPU_DISABLE_PASS_COMMON(snippetsManager, snippets::pass::TokenizeFCSnippets);
+        //CPU_DISABLE_PASS_COMMON(snippetsManager, snippets::pass::TokenizeFCSnippets);
     }
     CPU_REGISTER_PASS_COMMON(snippetsManager, snippets::pass::SnippetsTokenization, tokenization_config);
 
@@ -1268,9 +1268,7 @@ void Transformations::MainSnippets() {
         // todo: general tokenization flow is not currently supported for these operations.
         // they can be tokenized only as a part of complex patterns
         auto is_unsupported_by_common_tokenization = [](const std::shared_ptr<const ov::Node>& n) {
-            return (ov::is_type_any_of<const ov::op::v1::Softmax,
-                                       const ov::op::v8::Softmax,
-                                       const ov::op::v0::MatMul,
+            return (ov::is_type_any_of<const ov::op::v0::MatMul,
                                        const ov::op::v1::Transpose,
                                        const ov::op::v1::Broadcast,
                                        const ov::op::v3::Broadcast,

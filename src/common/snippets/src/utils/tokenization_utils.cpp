@@ -343,9 +343,20 @@ bool tokenize_node(const std::shared_ptr<ov::Node>& node, const SnippetsTokeniza
     // and one of them must be reserved for runtime parameters, so only 11 can be used during kernel execution.
     // This limitation will be resolved once generator supports gprs spills [75622].
     // TODO [75567]: move this plugin-specific constraint to the plugin callback
-    const auto unique_buffer_count = op::Subgraph::get_estimated_buffer_count(ops_for_buffer_count);
+    const auto unique_buffer_count = 2; // op::Subgraph::get_estimated_buffer_count(ops_for_buffer_count);
     const size_t max_data_ptr_count = config.get_data_ptr_gpr_count();
-    if (body_parameters.size() + body_results.size() + hidden_data_count + unique_buffer_count > max_data_ptr_count) {
+    auto param_count = body_parameters.size();
+    if (!input_subgraphs.empty()) {
+        const auto& input_sub = ov::as_type_ptr<ov::snippets::op::Subgraph>(*input_subgraphs.begin());
+        for (const auto& op : input_sub->body_ptr()->get_ops()) {
+            if (ov::is_type_any_of<ov::op::v1::Add, ov::op::v1::Multiply>(op))
+                param_count--;
+        }
+    }
+    if (ov::is_type_any_of<ov::op::v1::Add, ov::op::v1::Multiply>(node))
+        param_count--;
+
+    if (param_count + body_results.size() + hidden_data_count + unique_buffer_count > max_data_ptr_count) {
         const std::string message_reset = "new subgraph is created. Impossible to schedule subgraph with " +
         std::to_string(body_parameters.size()) + " inputs, " + std::to_string(body_results.size()) + " outputs and " +
         std::to_string(hidden_data_count) + " non-scalar constants and " + std::to_string(unique_buffer_count) + "buffers.";
