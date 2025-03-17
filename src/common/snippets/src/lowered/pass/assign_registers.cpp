@@ -22,16 +22,18 @@ namespace pass {
 AssignRegisters::RegMap AssignRegisters::assign_regs_manually(const LinearIR& linear_ir, std::set<Reg>& gpr_pool, std::set<Reg>& vec_pool) {
     RegMap manually_assigned;
     // TODO: need to exclude params from this check that are used by brgemm kernel
-    OPENVINO_ASSERT(gpr_pool.size() >= (linear_ir.get_parameters().size() + linear_ir.get_results().size()),
-                    "Not enough gp registers in the pool to perform manual assignment");
+    //OPENVINO_ASSERT(gpr_pool.size() >= (linear_ir.get_parameters().size() + linear_ir.get_results().size()),
+    //                "Not enough gp registers in the pool to perform manual assignment");
     for (const auto& param : linear_ir.get_parameters()) {
         if (param->get_node()->get_rt_info().count("POSTOP_INPUT")) {
             continue;
         }
+        OPENVINO_ASSERT(!gpr_pool.empty(), "Not enough gp registers in the pool to perform manual assignment");
         manually_assigned[param->get_output_port_descriptor(0)->get_reg()] = *gpr_pool.begin();
         gpr_pool.erase(gpr_pool.begin());
     }
     for (const auto& result : linear_ir.get_results()) {
+        OPENVINO_ASSERT(!gpr_pool.empty(), "Not enough gp registers in the pool to perform manual assignment");
         manually_assigned[result->get_input_port_descriptor(0)->get_reg()] = *gpr_pool.begin();
         gpr_pool.erase(gpr_pool.begin());
     }

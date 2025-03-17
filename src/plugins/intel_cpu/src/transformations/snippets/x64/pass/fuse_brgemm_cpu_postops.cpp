@@ -9,6 +9,7 @@
 #include "openvino/pass/pattern/op/wrap_type.hpp"
 #include "snippets/itt.hpp"
 #include "snippets/op/convert_saturation.hpp"
+#include "snippets/op/rank_normalization.hpp"
 #include "snippets/utils/utils.hpp"
 #include "transformations/snippets/x64/op/brgemm_cpu.hpp"
 #include "transformations/snippets/x64/op/brgemm_utils.hpp"
@@ -33,7 +34,8 @@ pass::FuseBrgemmCPUPostops::FuseBrgemmCPUPostops() {
     };
 
     auto m_postop_value = wrap_type<ov::op::v0::Constant, ov::op::v0::Parameter>(postop_input_predicate);
-    auto m_postop = wrap_type<ov::op::v1::Multiply, ov::op::v1::Add>({m_optional_convert, m_postop_value});
+    auto m_rank_norm = optional<ov::snippets::op::RankNormalization>(m_postop_value);
+    auto m_postop = wrap_type<ov::op::v1::Multiply, ov::op::v1::Add>({m_optional_convert, m_rank_norm});
 
     auto callback = [=](Matcher& m) {
         OV_ITT_SCOPED_TASK(ov::pass::itt::domains::SnippetsTransform, "ov::intel_cpu::pass::FuseBrgemmCPUPostops")
@@ -66,10 +68,12 @@ pass::FuseBrgemmCPUPostops::FuseBrgemmCPUPostops() {
         auto brgemm_inputs = brgemm->input_values();
         auto input_descs = brgemm->get_input_port_descriptors();
         for (size_t i = 1; i < post_op->get_input_size(); ++i) {
-            brgemm_inputs.push_back(post_op->input_value(i));
+            const auto& in = post_op->input_value(i);
+            const auto& shape_infer_leaf = ov::snippets::utils::get_leaf_node_of_first_parent_shape_infer_seq(in.get_node_shared_ptr());
+            const auto& postop_input_op = shape_infer_leaf ? shape_infer_leaf->get_input_node_shared_ptr(0) : in.get_node_shared_ptr();
+            brgemm_inputs.push_back(in);
             input_descs.push_back(ov::snippets::modifier::MemoryAccess::PortDescriptor{0, 0});
-            const auto input_node = post_op->get_input_node_shared_ptr(i);
-            input_node->get_rt_info()["POSTOP_INPUT"] = true;
+            postop_input_op->get_rt_info()["POSTOP_INPUT"] = true;
         }
 
         auto postops = brgemm->get_postops();

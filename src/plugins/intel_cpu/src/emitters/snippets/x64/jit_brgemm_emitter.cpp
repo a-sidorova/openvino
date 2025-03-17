@@ -77,34 +77,35 @@ jit_brgemm_emitter::jit_brgemm_emitter(jit_generator* h,
 
     for (size_t i = 0; i < fused_ops.size(); ++i) {
         const auto& postop_config = fused_ops[i];
-        const auto& postop_input = postop_inputs[i];
+        const auto& shape_infer_leaf = ov::snippets::utils::get_leaf_node_of_first_parent_shape_infer_seq(postop_inputs[i].get_node_shared_ptr());
+        const auto& postop_input_op = shape_infer_leaf ? shape_infer_leaf->get_input_node_shared_ptr(0) : postop_inputs[i].get_node_shared_ptr();
         // During postops composition, need to resolve the following questions:
         // 1. Is it a static scalar value (append_eltwise) or a tensor (append_binary)?
         // 2. What is the shape of the tensor (per-tensor or per-channel)?
         // Note: it seems like in case of per-channel shape, only append_binary can be used
         if (postop_config == ov::op::v1::Multiply::get_type_info_static()) {
-            if (const auto constant = ov::as_type_ptr<ov::op::v0::Constant>(postop_input.get_node_shared_ptr())) {
+            if (const auto constant = ov::as_type_ptr<ov::op::v0::Constant>(postop_input_op)) {
                 const auto values = constant->cast_vector<float>();
                 OPENVINO_ASSERT(values.size() == 1 && append_linear(values[0], 0) == dnnl_success);
                 std::cout << "[ INFO ] Eltwise scale postop was successfully added: " << values[0] << std::endl;
-            } else if (const auto param = ov::as_type_ptr<ov::op::v0::Parameter>(postop_input.get_node_shared_ptr())) {
+            } else if (const auto param = ov::as_type_ptr<ov::op::v0::Parameter>(postop_input_op)) {
                 OPENVINO_ASSERT(append_binary(param, dnnl::impl::alg_kind_t::dnnl_binary_mul) == dnnl_success);
                 std::cout << "[ INFO ] Binary mul postop was successfully added. m_binary_postops_offset = "
                           << m_binary_postops_offset << std::endl;
             } else {
-                OPENVINO_THROW("Unsupported postop input type: ", postop_input.get_node_shared_ptr());
+                OPENVINO_THROW("Unsupported postop input type: ", postop_input_op);
             }
         } else if (postop_config == ov::op::v1::Add::get_type_info_static()) {
-            if (const auto constant = ov::as_type_ptr<ov::op::v0::Constant>(postop_input.get_node_shared_ptr())) {
+            if (const auto constant = ov::as_type_ptr<ov::op::v0::Constant>(postop_input_op)) {
                 const auto values = constant->cast_vector<float>();
                 OPENVINO_ASSERT(values.size() == 1 && append_linear(1.f, values[0]) == dnnl_success);
                 std::cout << "[ INFO ] Eltwise shift postop was successfully added: " << values[0] << std::endl;
-            } else if (const auto param = ov::as_type_ptr<ov::op::v0::Parameter>(postop_input.get_node_shared_ptr())) {
+            } else if (const auto param = ov::as_type_ptr<ov::op::v0::Parameter>(postop_input_op)) {
                 OPENVINO_ASSERT(append_binary(param, dnnl::impl::alg_kind_t::dnnl_binary_add) == dnnl_success);
                 std::cout << "[ INFO ] Binary add postop was successfully added. m_binary_postops_offset = "
                           << m_binary_postops_offset << std::endl;
             } else {
-                OPENVINO_THROW("Unsupported postop input type: ", postop_input.get_node_shared_ptr());
+                OPENVINO_THROW("Unsupported postop input type: ", postop_input_op);
             }
         } else {
             OPENVINO_THROW("Unsupported postop type: ", postop_config);
