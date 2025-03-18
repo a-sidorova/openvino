@@ -91,11 +91,8 @@ jit_brgemm_emitter::jit_brgemm_emitter(jit_generator* h,
             if (const auto constant = ov::as_type_ptr<ov::op::v0::Constant>(postop_input_op)) {
                 const auto values = constant->cast_vector<float>();
                 OPENVINO_ASSERT(values.size() == 1 && append_linear(values[0], 0) == dnnl_success);
-                //std::cout << "[ INFO ] Eltwise scale postop was successfully added: " << values[0] << std::endl;
             } else if (const auto param = ov::as_type_ptr<ov::op::v0::Parameter>(postop_input_op)) {
                 OPENVINO_ASSERT(append_binary(param, dnnl::impl::alg_kind_t::dnnl_binary_mul) == dnnl_success);
-                //std::cout << "[ INFO ] Binary mul postop was successfully added. m_binary_postops_offset = "
-                //          << m_binary_postops_offset << std::endl;
             } else {
                 OPENVINO_THROW("Unsupported postop input type: ", postop_input_op);
             }
@@ -103,11 +100,8 @@ jit_brgemm_emitter::jit_brgemm_emitter(jit_generator* h,
             if (const auto constant = ov::as_type_ptr<ov::op::v0::Constant>(postop_input_op)) {
                 const auto values = constant->cast_vector<float>();
                 OPENVINO_ASSERT(values.size() == 1 && append_linear(1.f, values[0]) == dnnl_success);
-                //std::cout << "[ INFO ] Eltwise shift postop was successfully added: " << values[0] << std::endl;
             } else if (const auto param = ov::as_type_ptr<ov::op::v0::Parameter>(postop_input_op)) {
                 OPENVINO_ASSERT(append_binary(param, dnnl::impl::alg_kind_t::dnnl_binary_add) == dnnl_success);
-                //std::cout << "[ INFO ] Binary add postop was successfully added. m_binary_postops_offset = "
-                //          << m_binary_postops_offset << std::endl;
             } else {
                 OPENVINO_THROW("Unsupported postop input type: ", postop_input_op);
             }

@@ -114,7 +114,6 @@ void CPURuntimeConfigurator::init_external_ptrs(const ov::snippets::lowered::Lin
         const auto& param_expr = parameters[i];
         const auto& param_info = param_expr->get_node()->get_rt_info();
         if (param_info.count("POSTOP_INPUT")) {
-            std::cout << "[ INFO ] CPURuntimeConfigurator::init_external_ptrs - POSTOP_INPUT: " << i << std::endl;
             cpu_config->brgemm_external_ptrs_idces.insert(i);
             for (const auto& connector : param_expr->get_output_port_connectors()) {
                 for (const auto& consumer : connector->get_consumers()) {

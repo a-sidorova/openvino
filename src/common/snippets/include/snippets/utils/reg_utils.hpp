@@ -13,9 +13,7 @@ inline static std::vector<size_t> transform_snippets_regs_to_idxs(const std::vec
     std::vector<size_t> idxs;
     idxs.reserve(regs.size());
     for (const auto& reg : regs) {
-        if (reg.idx == snippets::Reg::UNDEFINED_IDX) {
-            std::cout << "[ WARNING ] Reg idx is undefined" << std::endl;
-        } else {
+        if (reg.idx != snippets::Reg::UNDEFINED_IDX) {
             // TODO: check it always, but handle UNDEFINED_IDX on higher level
             OPENVINO_ASSERT(expected_type == snippets::RegType::undefined || reg.type == expected_type, "Reg type mismatch during to_idxs conversion");
         }

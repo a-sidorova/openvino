@@ -66,10 +66,6 @@ pass::FuseBrgemmCPUPostops::FuseBrgemmCPUPostops() {
             }
         }
 
-        // Log the addition of the post operation
-        std::cout << "[ INFO ] Adding post operation: " << post_op->get_friendly_name()
-                  << " to BrgemmCPU: " << brgemm->get_friendly_name() << std::endl;
-
         auto brgemm_inputs = brgemm->input_values();
         auto input_descs = brgemm->get_input_port_descriptors();
         for (size_t i = 1; i < post_op->get_input_size(); ++i) {
@@ -128,9 +124,6 @@ pass::FuseBrgemmCPUConvert::FuseBrgemmCPUConvert() {
         const auto& pattern_map = m.get_pattern_value_map();
         const auto convert = pattern_map.at(m_convert).get_node_shared_ptr();
         const auto brgemm = ov::as_type_ptr<BrgemmCPU>(pattern_map.at(m_brgemm).get_node_shared_ptr());
-
-        std::cout << "[ INFO ] Fused Convert: " << convert->get_friendly_name()
-                  << " to BrgemmCPU: " << brgemm->get_friendly_name() << std::endl;
 
         brgemm->dst_type = convert->get_output_element_type(0);
         convert->output(0).replace(convert->input_value(0));
