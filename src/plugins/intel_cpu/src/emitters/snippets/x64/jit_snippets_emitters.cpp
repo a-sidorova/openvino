@@ -98,11 +98,18 @@ int32_t jit_scalar_emitter::read_value(const ov::snippets::lowered::ExpressionPt
 
 jit_scalar_emitter::jit_scalar_emitter(jit_generator* h, cpu_isa_t isa, const ExpressionPtr& expr)
     : jit_emitter(h, isa) {
-    push_arg_entry_of("scalar", read_value(expr), true);
-    prepare_table();
+    is_executed = expr->get_node()->get_rt_info().count("POSTOP_INPUT") == 0;
+
+    if (is_executed) {
+        push_arg_entry_of("scalar", read_value(expr), true);
+        prepare_table();
+    }
+
 }
 
 void jit_scalar_emitter::emit_impl(const std::vector<size_t>& in, const std::vector<size_t>& out) const {
+    if (!is_executed)
+        return;
     using isa = cpu_isa_t;
     switch (host_isa_) {
     case isa::sse41:

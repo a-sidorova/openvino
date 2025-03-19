@@ -102,6 +102,8 @@ bool BrgemmCPUBlocking::mark_blocking_loops(LinearIR& linear_ir,
         const auto main_inputs_count = brgemm->get_main_inputs_count();
         for (size_t i = main_inputs_count; i < main_inputs_count + postops_inputs.size(); ++i) {
             const auto& postop_input_port = brgemm_expr->get_input_port(i);
+            if (ov::is_type<ov::snippets::op::Scalar>(postop_input_port.get_port_connector_ptr()->get_source().get_expr()->get_node()))
+                continue;
             postop_input_port.get_descriptor_ptr()->set_subtensor({get_full_dim_value(), get_full_dim_value()});
             new_ports.push_back(LoopPort::create<LoopPort::Type::NotProcessed>(postop_input_port));
         }
