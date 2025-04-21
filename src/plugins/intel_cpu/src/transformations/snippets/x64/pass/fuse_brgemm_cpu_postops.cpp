@@ -104,10 +104,17 @@ pass::FuseConvert::FuseConvert() {
         // Forcing an output precision with a smaller bit width for output buffer causes out-of-bounds memory writes
         // during intermediate results storage, so the convert fusion is skipped in this case.
         if (brgemm_utils::with_amx(brgemm->get_type())) {
-            const auto& cur_out_precision = brgemm->get_output_element_type(0);
-            const auto& new_out_precision = convert->get_output_element_type(0);
-            if (cur_out_precision.bitwidth() > new_out_precision.bitwidth()) {
-                return false;
+            const auto in_pshape1 = ov::snippets::utils::get_planar_pshape(brgemm->input(1));
+            const auto K = ov::snippets::utils::dimension_to_size_t(*(++in_pshape1.rbegin()));
+            const auto innek_k_blk = brgemm_utils::repacking::compute_inner_k_block(brgemm->get_input_element_type(1));
+            const auto K_tail = K % innek_k_blk;
+            const auto K_body = K - K_tail;
+            if ((K_body > 0) == (K_tail > 0)) {
+                const auto& cur_out_precision = brgemm->get_output_element_type(0);
+                const auto& new_out_precision = convert->get_output_element_type(0);
+                if (cur_out_precision.bitwidth() > new_out_precision.bitwidth()) {
+                    return false;
+                }
             }
         }
 
