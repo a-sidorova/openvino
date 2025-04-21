@@ -125,7 +125,7 @@ TokenizeMLPSeqSnippets::TokenizeMLPSeqSnippets(const SnippetsTokenization::Confi
         // Add possible FQ before matmul0
         if (const auto fq = ov::as_type_ptr<ov::op::v0::FakeQuantize>(matmul0->get_input_node_shared_ptr(0))) {
             if (has_one_consumer(fq)) {
-                hidden_virtual_ports_count += ov::snippets::utils::get_non_scalar_constant_count_for_fq(fq);
+                //hidden_virtual_ports_count += ov::snippets::utils::get_non_scalar_constant_count_for_fq(fq);
                 ordered_ops.push_back(fq);
             }
         }
@@ -144,9 +144,9 @@ TokenizeMLPSeqSnippets::TokenizeMLPSeqSnippets(const SnippetsTokenization::Confi
                 // +1 for weights
                 possible_param_count++;
             } else if (is_supported_intermediate_op(interm_op)) {
-                possible_param_count += get_potential_body_params(interm_op);
+                //possible_param_count += get_potential_body_params(interm_op);
                 if (const auto fq = ov::as_type_ptr<ov::op::v0::FakeQuantize>(matmul0->get_input_node_shared_ptr(0))) {
-                    possible_hidden_virtual_ports_count += ov::snippets::utils::get_non_scalar_constant_count_for_fq(fq);
+                    //possible_hidden_virtual_ports_count += ov::snippets::utils::get_non_scalar_constant_count_for_fq(fq);
                 }
             } else {
                 // Unsupported op
