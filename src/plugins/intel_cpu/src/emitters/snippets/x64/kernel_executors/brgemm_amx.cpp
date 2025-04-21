@@ -306,8 +306,10 @@ void BrgemmAMXKernelExecutor::execute(const BrgemmAMXKernelExecutor* executor, c
                               false,
                               apply_post_ops);
 
-        src_ptr = src_ptr + K_body * dnnl_data_type_size(config.get_dt_in0());
-        wei_ptr = wei_ptr + (K_body * config.get_LDB()) * dnnl_data_type_size(config.get_dt_in1());
+        if (K_tail > 0) {
+            src_ptr = src_ptr + K_body * dnnl_data_type_size(config.get_dt_in0());
+            wei_ptr = wei_ptr + (K_body * config.get_LDB()) * dnnl_data_type_size(config.get_dt_in1());
+        }
     }
 
     if (execute_tail) {
