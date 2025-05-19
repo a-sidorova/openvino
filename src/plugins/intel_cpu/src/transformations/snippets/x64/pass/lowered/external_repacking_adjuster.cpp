@@ -42,11 +42,14 @@ BrgemmExternalRepackingAdjuster::RepackExecutorPtr BrgemmExternalRepackingAdjust
 
     for (const auto& consumer : consumers) {
         auto brgemm = ov::as_type_ptr<ov::intel_cpu::BrgemmCPU>(consumer.get_expr()->get_node());
-        if (brgemm && brgemm_utils::with_repacking(brgemm->get_type()) && consumer.get_index() == 1) {
+        if (!brgemm)
+            continue;
+        const auto& brgemm_config = brgemm->get_config();
+        if (brgemm_config.with_wei_repacking() && consumer.get_index() == 1) {
             const auto src_prc = brgemm->get_input_element_type(0);
             const auto wei_prc = brgemm->get_input_element_type(1);
-            const auto isa = brgemm_utils::get_primitive_isa(src_prc, brgemm_utils::with_amx(brgemm->get_type()));
-            const auto inner_n_block = brgemm_utils::repacking::compute_inner_n_block(wei_prc);
+            const auto isa = brgemm_config.isa();
+            const auto inner_n_block = brgemm_config.wei_n_blk();
 
             // [160048] After BrgemmCopyB elimination, there might be `Reorder` that describes repacking layout.
             ov::snippets::VectorDims layout;

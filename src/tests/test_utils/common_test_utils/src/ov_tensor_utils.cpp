@@ -434,23 +434,19 @@ public:
         if (!incorrect_values_abs.empty() && equal(1.f, topk_threshold) ||
             incorrect_values_abs.size() > static_cast<int>(std::floor(topk_threshold * tensor_size))) {
             std::string msg = "[ COMPARATION ] COMPARATION IS FAILED!";
-#ifndef NDEBUG
+//#ifndef NDEBUG
             msg += " incorrect elem counter: ";
             msg += std::to_string(incorrect_values_abs.size());
             msg += " among ";
             msg += std::to_string(tensor_size);
             msg += " shapes.";
-#endif
-            for (auto val : incorrect_values_abs) {
+//#endif
+            auto val = incorrect_values_abs.front();
                 std::cout << "\nExpected: " << val.expected_value << " Actual: " << val.actual_value
                           << " Coordinate: " << val.coordinate
                           << " Diff: " << std::fabs(val.expected_value - val.actual_value)
                           << " calculated_abs_threshold: " << val.threshold << " abs_threshold: " << abs_threshold
                           << " rel_threshold: " << rel_threshold << "\n";
-#ifdef NDEBUG
-                break;
-#endif
-            }
             throw std::runtime_error(msg);
         } else if (!less_or_equal(mvn_results, mvn_threshold)) {
             std::string msg = "[ COMPARATION ] COMPARATION IS FAILED due to MVN THRESHOLD: ";
@@ -574,11 +570,11 @@ void compare(const ov::Tensor& expected,
         }
 
         bool status = error.update(actual_value, expected_value, i);
-#ifdef NDEBUG
-        if (!status && tensor_comparation::equal(topk_threshold, 1.f)) {
-            break;
-        }
-#endif
+// //#ifdef NDEBUG
+//         if (!status && tensor_comparation::equal(topk_threshold, 1.f)) {
+//             break;
+//         }
+// //#endif
     }
     error.check_results();
 }
