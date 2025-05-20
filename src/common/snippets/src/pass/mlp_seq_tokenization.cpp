@@ -149,17 +149,16 @@ TokenizeMLPSeqSnippets::TokenizeMLPSeqSnippets(const SnippetsTokenization::Confi
 
         while (has_one_consumer(prev_op)) {
             auto possible_param_count = potential_body_params_count;
-            auto possible_potential_body_params_count = potential_body_params_count;
 
             if (is_matmul_supported(interm_op) && !transformation_callback(interm_op)) {
                 // +1 for weights
                 possible_param_count++;
             } else if (is_supported_intermediate_op(interm_op)) {
-                possible_param_count += get_potential_body_params(interm_op);
-                if (const auto fq = ov::as_type_ptr<ov::op::v0::FakeQuantize>(matmul0->input_value(0).get_node_shared_ptr())) {
-                    possible_potential_body_params_count +=
-                        ov::snippets::utils::get_non_scalar_constant_count_for_fq(fq);
-                }
+                possible_param_count += 0; //get_potential_body_params(interm_op);
+                // if (const auto fq = ov::as_type_ptr<ov::op::v0::FakeQuantize>(matmul0->input_value(0).get_node_shared_ptr())) {
+                //     possible_param_count +=
+                //         ov::snippets::utils::get_non_scalar_constant_count_for_fq(fq);
+                // }
             } else {
                 // Unsupported op
                 break;
@@ -167,7 +166,7 @@ TokenizeMLPSeqSnippets::TokenizeMLPSeqSnippets(const SnippetsTokenization::Confi
 
             // TODO [75567]: move this plugin-specific constraint to the plugin callback
             // +1 - for result
-            if (possible_param_count + possible_potential_body_params_count + uniqie_buffer_reg_group_count + 1 >
+            if (possible_param_count + uniqie_buffer_reg_group_count + 1 >
                 available_regs)
                 break;
 
@@ -176,7 +175,7 @@ TokenizeMLPSeqSnippets::TokenizeMLPSeqSnippets(const SnippetsTokenization::Confi
             interm_op = prev_op->get_output_target_inputs(0).begin()->get_node()->shared_from_this();
 
             // Move counts
-            potential_body_params_count = possible_param_count + possible_potential_body_params_count;
+            potential_body_params_count = possible_param_count;
         }
 
         // Currently, sequence of MLP should contain 2 MatMuls at least
