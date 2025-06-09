@@ -11,13 +11,13 @@
 #include "cache/multi_cache.h"
 #include "cpu_types.h"
 #include "emitters/snippets/cpu_runtime_configurator.hpp"
+#include "emitters/snippets/repacked_input.hpp"
 #include "emitters/snippets/x64/kernel_executors/brgemm_copy_b.hpp"
 #include "openvino/core/rtti.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "snippets/lowered/expression.hpp"
 #include "snippets/lowered/linear_ir.hpp"
 #include "snippets/lowered/pass/runtime_optimizer.hpp"
-
 namespace ov::intel_cpu::pass {
 
 class InitRepackedConstantInputs;
@@ -55,6 +55,16 @@ private:
 
     static RepackExecutorPtr create_executor(const ov::snippets::lowered::ExpressionPtr& param,
                                              const ov::intel_cpu::MultiCacheWeakPtr& cache);
+    static RepackedInput create_separate_repacked_input(const RepackExecutorPtr& executor,
+                                                        const VectorDims& shape,
+                                                        const VectorDims& layout,
+                                                        const ov::element::Type& prc,
+                                                        size_t tensor_rank);
+    static RepackedInput create_in_parallel_repacked_input(const RepackExecutorPtr& executor,
+                                                           const VectorDims& shape,
+                                                           const VectorDims& layout,
+                                                           const ov::element::Type& prc,
+                                                           size_t tensor_rank);
 
     static const size_t brgemm_kernel_rank;
     std::unordered_map<size_t, RepackExecutorPtr> m_executors;

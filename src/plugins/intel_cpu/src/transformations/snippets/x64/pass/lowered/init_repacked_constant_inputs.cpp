@@ -7,10 +7,7 @@
 #include <algorithm>
 #include <memory>
 
-#include "cpu_shape.h"
-#include "emitters/snippets/x64/kernel_executors/brgemm_copy_b.hpp"
 #include "external_repacking_adjuster.hpp"
-#include "memory_desc/cpu_blocked_memory_desc.h"
 #include "openvino/core/except.hpp"
 #include "openvino/core/type.hpp"
 #include "openvino/itt.hpp"
@@ -20,7 +17,6 @@
 #include "snippets/lowered/port_descriptor.hpp"
 #include "snippets/op/memory_access.hpp"
 #include "snippets/op/reorder.hpp"
-#include "snippets/shape_types.hpp"
 #include "snippets/utils/utils.hpp"
 
 namespace ov::intel_cpu::pass {
@@ -82,22 +78,8 @@ bool InitRepackedConstantInputs::run(const snippets::lowered::LinearIR& linear_i
 
         BrgemmExternalRepackingAdjuster::update_kernel(executor, shape, layout, N, K, prc.size());
 
-        const auto& config = static_cast<const BrgemmCopyBKernelConfig&>(executor->get_config());
-        const auto& blk_shape = BrgemmExternalRepackingAdjuster::get_blk_shape(planar_shape,
-                                                                               config.get_wei_N_blk(),
-                                                                               config.get_wei_K_blk());
-        const auto& order = BrgemmExternalRepackingAdjuster::get_blk_order(planar_shape.size());
-        const auto& desc = std::make_shared<CpuBlockedMemoryDesc>(prc, Shape(planar_shape), blk_shape, order);
-
-        ov::snippets::VectorDims src_offsets;
-        ov::snippets::VectorDims dst_offsets;
-        ov::snippets::utils::init_strides(shape, shape.size(), prc.size(), 0, src_offsets);
-        ov::snippets::utils::init_strides(blk_shape, blk_shape.size(), prc.size(), 0, dst_offsets);
-        // Last three dimensions of blocked shapes are processed in the kernel. To align with src, we removed last
-        // stride
-        dst_offsets.pop_back();
-
-        m_repacked_const_inputs_config.at(idx) = RepackedInput(executor->get_kernel(), desc, src_offsets, dst_offsets);
+        m_repacked_const_inputs_config.at(idx) =
+            BrgemmExternalRepackingAdjuster::create_separate_repacked_input(executor, shape, layout, prc, shape.size());
     }
 
     return modified;
