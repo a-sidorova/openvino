@@ -321,6 +321,24 @@ int64_t get_dim_out_stride(const VectorDims& shape, const VectorDims& layout, si
  * @param offsets target offsets to be inited
  */
 void init_strides(const VectorDims& shape, size_t rank, size_t data_size, size_t start_idx, VectorDims& offsets);
+/**
+ * @brief Reorder values of the vector by target order
+ * @param order target order
+ * @param start_idx start index of vector
+ * @param is_forward True if need to reorder data by `new_vec[i]` = `vec[order[i]]`
+ *                   False if need to find preordered data like `new_vec[order[i]]` = `vec[i]`
+ * @param vec target vector
+ */
+template <typename T>
+void transpose_vector(const VectorDims& order, size_t start_idx, bool is_forward, std::vector<T>& vec) {
+    auto original_vec = vec;
+    for (size_t i = 0; i < order.size(); i++) {
+        OPENVINO_ASSERT(order[i] < original_vec.size(), "order index is greater than the shape size");
+        const auto src_idx = is_forward ? order[i] : i;
+        const auto dst_idx = is_forward ? i : order[i];
+        vec[dst_idx + start_idx] = original_vec[src_idx + start_idx];
+    }
+}
 
 /**
  * @brief Traverses path starting from "expr", and calls "func" for each expression.

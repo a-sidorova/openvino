@@ -315,14 +315,8 @@ void RuntimeConfigurator::update_data_offsets() const {
         auto& offsets = m_config->io_data_offsets[i];
         const auto& layout = layouts[i];
         if (!layout.empty()) {
-            std::vector<size_t> reordered_offsets(offsets.size());
             const auto is_input = i < m_in_num;
-            for (size_t i = 0; i < layout.size(); i++) {
-                const auto& src_idx = is_input ? layout[i] : i;
-                const auto& dst_idx = is_input ? i : layout[i];
-                reordered_offsets[idx_stride + dst_idx] = offsets[idx_stride + src_idx];
-            }
-            offsets = std::move(reordered_offsets);
+            utils::transpose_vector(layout, idx_stride, is_input, offsets);
         }
     }
 }

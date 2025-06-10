@@ -59,12 +59,12 @@ private:
                                                         const VectorDims& shape,
                                                         const VectorDims& layout,
                                                         const ov::element::Type& prc,
-                                                        size_t tensor_rank);
+                                                        const ov::snippets::VectorDims& src_offsets);
     static RepackedInput create_in_parallel_repacked_input(const RepackExecutorPtr& executor,
                                                            const VectorDims& shape,
                                                            const VectorDims& layout,
                                                            const ov::element::Type& prc,
-                                                           size_t tensor_rank);
+                                                           const ov::snippets::VectorDims& src_offsets);
 
     static const size_t brgemm_kernel_rank;
     std::unordered_map<size_t, RepackExecutorPtr> m_executors;

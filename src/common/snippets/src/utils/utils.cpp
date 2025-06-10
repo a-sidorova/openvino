@@ -14,16 +14,6 @@ namespace snippets {
 namespace utils {
 
 namespace {
-template<typename Shape>
-void ordered_shape(const Shape& shape, const std::vector<size_t>& layout, bool is_forward, Shape& reordered_shape) {
-    for (size_t i = 0; i < layout.size(); i++) {
-        OPENVINO_ASSERT(layout[i] < shape.size(), "layout index is greater than the shape size");
-        const auto src_idx = is_forward ? layout[i] : i;
-        const auto dst_idx = is_forward ? i : layout[i];
-        reordered_shape[dst_idx] = shape[src_idx];
-    }
-}
-
 // Note:
 //   - If `is_forward` is True, `result shape` is ordered `shape` by `layout`
 //   - If `is_forward` is False, `result shape` is original shape to which the `layout` was applied
@@ -39,7 +29,13 @@ ov::PartialShape get_pshape(const ov::PartialShape& shape, const std::vector<siz
     // Note that it can be smaller though, for example tensor shape can be prepended with 1 for scheduling purposes
     if (std::any_of(layout.begin(), layout.end(), [=](size_t x) {return x >= rank;}))
         OPENVINO_THROW("Invalid layout detected: all layout indexes must be smaller than the tensor rank");
-    ordered_shape(shape, layout, is_forward, reordered_shape);
+
+    for (size_t i = 0; i < layout.size(); i++) {
+        OPENVINO_ASSERT(layout[i] < shape.size(), "layout index is greater than the shape size");
+        const auto src_idx = is_forward ? layout[i] : i;
+        const auto dst_idx = is_forward ? i : layout[i];
+        reordered_shape[dst_idx] = shape[src_idx];
+    }
     return reordered_shape;
 }
 }  // namespace
@@ -188,13 +184,13 @@ ov::PartialShape get_preordered_pshape(const Output<Node>& out) {
 }
 
 VectorDims get_planar_vdims(const VectorDims& shape, const std::vector<size_t>& order) {
-    VectorDims reordered_shape(order.size());
-    ordered_shape(shape, order, true, reordered_shape);
+    VectorDims reordered_shape(shape);
+    transpose_vector(order, 0, true, reordered_shape);
     return reordered_shape;
 }
 VectorDims get_preordered_vdims(const VectorDims& shape, const std::vector<size_t>& order) {
-    VectorDims reordered_shape(order.size());
-    ordered_shape(shape, order, false, reordered_shape);
+    VectorDims reordered_shape(shape);
+    transpose_vector(order, 0, false, reordered_shape);
     return reordered_shape;
 }
 

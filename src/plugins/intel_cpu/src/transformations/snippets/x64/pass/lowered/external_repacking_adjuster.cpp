@@ -32,10 +32,6 @@
 #include "transformations/snippets/x64/op/brgemm_cpu.hpp"
 #include "transformations/snippets/x64/op/brgemm_utils.hpp"
 
-#include <iostream>
-#include "openvino/core/shape.hpp"
-
-
 namespace ov::intel_cpu::pass {
 
 const size_t BrgemmExternalRepackingAdjuster::brgemm_kernel_rank = 2;
@@ -142,26 +138,29 @@ void BrgemmExternalRepackingAdjuster::update_kernel(const RepackExecutorPtr& exe
     executor->update_by_config(*config);
 }
 
-RepackedInput BrgemmExternalRepackingAdjuster::create_separate_repacked_input(const RepackExecutorPtr& executor,
-                                                                              const VectorDims& shape,
-                                                                              const VectorDims& layout,
-                                                                              const ov::element::Type& prc,
-                                                                              size_t tensor_rank) {
-    OPENVINO_ASSERT(tensor_rank >= shape.size(), "Incorrect tensor rank!");
+RepackedInput BrgemmExternalRepackingAdjuster::create_separate_repacked_input(
+    const RepackExecutorPtr& executor,
+    const VectorDims& shape,
+    const VectorDims& layout,
+    const ov::element::Type& prc,
+    const ov::snippets::VectorDims& src_offsets) {
     const auto& planar_shape = ov::snippets::utils::get_planar_vdims(shape, layout);
     OPENVINO_ASSERT(planar_shape.size() > 1, "Incorrect shape of repacked input of Brgemm");
 
+    const auto& K = *++planar_shape.rbegin();
+    const auto& N = *planar_shape.rbegin();
+    update_kernel(executor, shape, layout, N, K, prc.size());
+
     const auto& config = static_cast<const BrgemmCopyBKernelConfig&>(executor->get_config());
-    const auto& blk_shape = BrgemmExternalRepackingAdjuster::get_blk_shape(planar_shape,
-                                                                           config.get_wei_N_blk(),
-                                                                           config.get_wei_K_blk());
+    const auto& blk_shape =
+        BrgemmExternalRepackingAdjuster::get_blk_shape(planar_shape, config.get_wei_N_blk(), config.get_wei_K_blk());
     const auto& order = BrgemmExternalRepackingAdjuster::get_blk_order(planar_shape.size());
     const auto& desc = std::make_shared<CpuBlockedMemoryDesc>(prc, Shape(planar_shape), blk_shape, order);
 
-    ov::snippets::VectorDims src_offsets;
+    // + 1 for inner_K_blk
+    const auto tensor_rank = src_offsets.size() + 1;
     ov::snippets::VectorDims dst_offsets;
-    ov::snippets::utils::init_strides(shape, tensor_rank, prc.size(), 0, src_offsets);
-    ov::snippets::utils::init_strides(blk_shape, tensor_rank, prc.size(), 0, dst_offsets);
+    ov::snippets::utils::init_strides(blk_shape, tensor_rank, prc.size(), tensor_rank - blk_shape.size(), dst_offsets);
     // Last three dimensions of blocked shapes are processed in the kernel. To align with src, we removed last
     // stride
     dst_offsets.pop_back();
@@ -169,29 +168,28 @@ RepackedInput BrgemmExternalRepackingAdjuster::create_separate_repacked_input(co
     return RepackedInput{executor->get_kernel(), desc, src_offsets, dst_offsets};
 }
 
-RepackedInput BrgemmExternalRepackingAdjuster::create_in_parallel_repacked_input(const RepackExecutorPtr& executor,
-                                                                                 const VectorDims& shape,
-                                                                                 const VectorDims& layout,
-                                                                                 const ov::element::Type& prc,
-                                                                                 size_t tensor_rank) {
+RepackedInput BrgemmExternalRepackingAdjuster::create_in_parallel_repacked_input(
+    const RepackExecutorPtr& executor,
+    const VectorDims& shape,
+    const VectorDims& layout,
+    const ov::element::Type& prc,
+    const ov::snippets::VectorDims& src_offsets) {
     const auto& config = static_cast<const BrgemmCopyBKernelConfig&>(executor->get_config());
-    OPENVINO_ASSERT(tensor_rank >= shape.size(), "Incorrect tensor rank!");
     auto planar_shape = ov::snippets::utils::get_planar_vdims(shape, layout);
-    auto blk_shape = BrgemmExternalRepackingAdjuster::get_blk_shape(planar_shape,
-                                                                    config.get_wei_N_blk(),
-                                                                    config.get_wei_K_blk());
+    auto blk_shape =
+        BrgemmExternalRepackingAdjuster::get_blk_shape(planar_shape, config.get_wei_N_blk(), config.get_wei_K_blk());
     // In parallel impl, each thread needs buffer with only shape from in-kernel dims to store repacking data
     std::fill(planar_shape.rbegin() + brgemm_kernel_rank, planar_shape.rend(), 1);
     std::fill(blk_shape.rbegin() + brgemm_kernel_rank + 1, blk_shape.rend(), 1);
 
+    const auto& K = *++planar_shape.rbegin();
+    const auto& N = *planar_shape.rbegin();
+    update_kernel(executor, shape, layout, N, K, prc.size());
+
     const auto& order = BrgemmExternalRepackingAdjuster::get_blk_order(planar_shape.size());
     const auto& desc = std::make_shared<CpuBlockedMemoryDesc>(prc, Shape(planar_shape), blk_shape, order);
 
-    ov::snippets::VectorDims src_offsets;
-    ov::snippets::utils::init_strides(shape, tensor_rank, prc.size(), 0, src_offsets);
-    // In parallel case Kernel should not add offsets to repacked inputs because
-    // they will be applied during repacking in execution stage
-    ov::snippets::VectorDims dst_offsets(tensor_rank, 0);
+    ov::snippets::VectorDims dst_offsets(src_offsets.size(), 0);
 
     return RepackedInput{executor->get_kernel(), desc, src_offsets, dst_offsets};
 }
@@ -212,8 +210,6 @@ bool BrgemmExternalRepackingAdjuster::run(const snippets::lowered::LinearIR& lin
         const auto& K = *++planar_shape.rbegin();
         const auto& N = *planar_shape.rbegin();
 
-        update_kernel(executor, shape, layout, N, K, dt_size);
-
         const auto& config = static_cast<const BrgemmCopyBKernelConfig&>(executor->get_config());
         const auto blk_shape = get_blk_shape(planar_shape, config.get_wei_N_blk(), config.get_wei_K_blk());
 
@@ -232,7 +228,6 @@ bool BrgemmExternalRepackingAdjuster::run(const snippets::lowered::LinearIR& lin
 
     const auto is_impl_parallel = cpu_config->repacking_impl_type == CPURuntimeConfig::RepackingImplType::IN_PARALLEL;
 
-    const auto tensor_rank = cpu_config->tensor_rank;
     for (const auto& p : m_executors) {
         const auto& i = p.first;
         const auto& executor = p.second;
@@ -242,15 +237,22 @@ bool BrgemmExternalRepackingAdjuster::run(const snippets::lowered::LinearIR& lin
         const auto& layout = cpu_config->io_layouts[i];
         auto& repacked_in = cpu_config->repacked_input_config[i];
 
+        // Save original input offsets for input before repacking.
+        // If the shape has not been changed, it means that we already created `RepackedInput` for this input
+        // on previous pass call and now `cpu_config->io_data_offsets[i]` contains offsets not for original input -
+        // they were updated for blocked shapes/zeroed for previous initialization and we cannot use them as original
+        // offsets.
+        const auto in_offsets =
+            shape == cpu_config->latest_shapes[i] ? repacked_in.in_offsets() : cpu_config->io_data_offsets[i];
+
         if (is_impl_parallel) {
-            repacked_in = create_in_parallel_repacked_input(executor, shape, layout, prc, tensor_rank);
+            repacked_in = create_in_parallel_repacked_input(executor, shape, layout, prc, in_offsets);
         } else {
-            repacked_in = create_separate_repacked_input(executor, shape, layout, prc, tensor_rank);
+            repacked_in = create_separate_repacked_input(executor, shape, layout, prc, in_offsets);
         }
 
+        // Move dst offsets of repacked input to input data_offsets of the kernel
         cpu_config->io_data_offsets[i] = repacked_in.out_offsets();
-        OPENVINO_ASSERT(tensor_rank == cpu_config->io_data_offsets[i].size(), "Incorrect rank of repacked input data offsets!");
-        std::cout << ov::Shape(repacked_in.in_offsets()) << " " << ov::Shape(repacked_in.out_offsets()) << "\n";
     }
 
     return true;

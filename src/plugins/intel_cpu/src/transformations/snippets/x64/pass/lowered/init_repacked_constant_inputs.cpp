@@ -17,6 +17,7 @@
 #include "snippets/lowered/port_descriptor.hpp"
 #include "snippets/op/memory_access.hpp"
 #include "snippets/op/reorder.hpp"
+#include "snippets/shape_types.hpp"
 #include "snippets/utils/utils.hpp"
 
 namespace ov::intel_cpu::pass {
@@ -69,17 +70,19 @@ bool InitRepackedConstantInputs::run(const snippets::lowered::LinearIR& linear_i
         OPENVINO_ASSERT(port_desc, "The target Port Descriptor has not been initialized!");
         const auto& layout = port_desc->get_layout();
         const auto& shape = port_desc->get_shape();
+        const auto& prc = param->get_node()->get_output_element_type(0);
 
         const auto& planar_shape = ov::snippets::utils::get_planar_vdims(shape, layout);
         OPENVINO_ASSERT(planar_shape.size() > 1, "Incorrect shape of repacked input of Brgemm");
-        const auto& K = *++planar_shape.rbegin();
-        const auto& N = *planar_shape.rbegin();
-        const auto& prc = param->get_node()->get_output_element_type(0);
 
-        BrgemmExternalRepackingAdjuster::update_kernel(executor, shape, layout, N, K, prc.size());
+        ov::snippets::VectorDims src_offsets;
+        ov::snippets::utils::init_strides(shape, shape.size(), prc.size(), 0, src_offsets);
+        if (!layout.empty()) {
+            ov::snippets::utils::transpose_vector(layout, 0, true, src_offsets);
+        }
 
         m_repacked_const_inputs_config.at(idx) =
-            BrgemmExternalRepackingAdjuster::create_separate_repacked_input(executor, shape, layout, prc, shape.size());
+            BrgemmExternalRepackingAdjuster::create_separate_repacked_input(executor, shape, layout, prc, src_offsets);
     }
 
     return modified;
