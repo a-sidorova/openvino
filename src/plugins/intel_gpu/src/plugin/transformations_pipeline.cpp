@@ -38,6 +38,7 @@
 #include "openvino/core/deprecated.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/core/validation_util.hpp"
+#include "openvino/op/add.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/convolution.hpp"
 #include "openvino/op/gather.hpp"
@@ -189,6 +190,18 @@
 #include "openvino/op/roll.hpp"
 #include "openvino/op/shuffle_channels.hpp"
 #include "openvino/op/transpose.hpp"
+
+
+// Snippets
+#include "snippets/pass/collapse_subgraph.hpp"
+#include "snippets/pass/explicit_transpose_matmul_inputs.hpp"
+#include "snippets/pass/extract_reshapes_from_mha.hpp"
+#include "snippets/pass/gn_tokenization.hpp"
+#include "snippets/pass/fc_tokenization.hpp"
+#include "snippets/pass/gated_mlp_tokenization.hpp"
+#include "snippets/pass/mha_tokenization.hpp"
+#include "snippets/pass/mlp_seq_tokenization.hpp"
+#include "snippets/pass/tokenization.hpp"
 
 namespace {
 template<typename T>
@@ -1280,6 +1293,47 @@ void TransformationsPipeline::apply(std::shared_ptr<ov::Model> func) {
             manager.register_pass<ov::intel_gpu::PrintModelStatistics>();
         }
         manager.run_passes(func);
+    }
+
+    // TODO: Move to the right place
+    {
+        //ov::serialize(func, "pre_snippets.xml");
+        ov::pass::Manager manager("GPU:Snippets");
+        manager.set_per_pass_validation(false);
+
+        size_t concurrency = 1;  // no need
+        size_t data_ptr_gpr_count = 5;  // ???
+        bool split_m_dimension = false;
+        bool enable_transpose_on_output = false;
+        bool dyn_mha_token = false;
+        std::set<size_t> mha_transpose_ranks = {};
+        ov::snippets::pass::SnippetsTokenization::Config tokenization_config(concurrency,
+                                                                             data_ptr_gpr_count,
+                                                                             split_m_dimension,
+                                                                             enable_transpose_on_output,
+                                                                             dyn_mha_token,
+                                                                             mha_transpose_ranks);
+
+        manager.register_pass<ov::snippets::pass::SnippetsTokenization>(tokenization_config);
+
+        // Support only Eltwise Subgraphs (only Add for now)
+        manager.get_pass_config()->disable<ov::snippets::pass::ExtractReshapesFromMHA>();
+        manager.get_pass_config()->disable<ov::snippets::pass::TokenizeMHASnippets>();
+        manager.get_pass_config()->disable<ov::snippets::pass::TokenizeGatedMLPSnippets>();
+        manager.get_pass_config()->disable<ov::snippets::pass::TokenizeMLPSeqSnippets>();
+        manager.get_pass_config()->disable<ov::snippets::pass::TokenizeGNSnippets>();
+
+        manager.get_pass_config()->set_callback<ov::snippets::pass::TokenizeSnippets>(
+            [](const std::shared_ptr<const ov::Node>& n) -> bool {
+                auto is_supported_op = [](const std::shared_ptr<const ov::Node>& n) -> bool {
+                    return ov::is_type_any_of<ov::op::v1::Add>(n);
+                };
+
+                return n->is_dynamic() || !is_supported_op(n);
+            });
+
+        manager.run_passes(func);
+        //ov::serialize(func, "post_snippets.xml");
     }
 }
 }  // namespace ov::intel_gpu
