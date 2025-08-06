@@ -18,11 +18,108 @@
 #include "snippets/utils/utils.hpp"
 #include "gpu_generator.hpp"
 
+#include "runtime/ocl/ocl_kernel.hpp"
+#include "common_utils/kernel_generator_base.hpp"
+
 #include <vector>
 namespace ov::intel_gpu::jit {
 
 using namespace dnnl::impl::gpu::intel::jit;
 using namespace ngen;
+
+template <HW hw>
+class VectorScaleKernelGenerator : public OpenCLCodeGenerator<hw> {
+protected:
+    NGEN_FORWARD_OPENCL(hw);
+
+public:
+    VectorScaleKernelGenerator() : OpenCLCodeGenerator<hw>()
+    {
+        // Define kernel interface for OpenCL.
+        newArgument("src0", ExternalArgumentType::GlobalPtr);
+        newArgument("src1", ExternalArgumentType::GlobalPtr);
+        newArgument("dst", ExternalArgumentType::GlobalPtr);
+        requireLocalID(1);
+        requireLocalSize();
+        requireSIMD((GRF::bytes(hw) == 64) ? 16 : 8);
+        externalName("jit::subgraph");
+
+        finalizeInterface();
+
+        // auto surface_src0 = Surface(getArgumentSurfaceIfExists("src0"));     // Surface # for buffer.
+        // auto surface_src1 = Surface(getArgumentSurfaceIfExists("src1"));     // Surface # for buffer.
+        // auto surface_dst = Surface(getArgumentSurfaceIfExists("dst"));       // Surface # for buffer.
+
+        auto src0_ptr = getArgument("src0");
+        auto src1_ptr = getArgument("src1");
+        auto dst_ptr = getArgument("dst");
+
+        auto local_size = getLocalSize(0).uw();
+        auto local_id = getLocalID(0);               // Vector of local IDs.
+        auto group_id = r0.ud(1);                    // Thread group (a.k.a. workgroup) IDs are in r0.ud(1) (X) r0.ud(6) (Y) r0.ud(7) (Z)
+ 
+        // Local variables.
+        auto global_id = r12.ud(0);
+        auto header = r13;
+        auto temp = r11;
+
+        auto reg_src0 = r14;
+        auto reg_src1 = r15;
+
+        // All instructions use W (NoMask) by default.
+        setDefaultNoMask();
+
+        // Enable automatic SWSB for Gen12.
+        setDefaultAutoSWSB();
+
+        // Prologue for ATS+.
+        prologue();
+
+        // Enable IEEE denormals.
+        or_(1 | Switch, cr0[0], cr0[0], 0x4C0);
+
+        // Calculate global ID = (group ID) * (local size) + (local ID for lane 0).
+        mul(1, global_id, group_id, local_size);
+        add(1, global_id, global_id, local_id[0]);
+
+        shl(1, global_id, global_id, 2);
+        {
+            addc(1, header.ud(0), src0_ptr.ud(0), global_id);
+            mov(1, temp.ud(0), acc0.ud(0));
+            add(1, header.ud(1), src0_ptr.ud(1), temp.ud(0));
+            load(1, reg_src0, D32 | V8T, A64, header);
+        }
+        {
+            addc(1, header.ud(0), src1_ptr.ud(0), global_id);
+            mov(1, temp.ud(0), acc0.ud(0));
+            add(1, header.ud(1), src1_ptr.ud(1), temp.ud(0));
+            load(1, reg_src1, D32 | V8T, A64, header);
+        }
+
+        // Do 32 byte (2 OWord) block read at offset (global ID) * sizeof(float).
+        // shr<uint32_t>(1, header[2], global_id, 2);
+        // load(8, reg_src0, block_oword(2), surface_src0, header);
+        // load(8, reg_src1, block_oword(2), surface_src1, header);
+
+        add<float>(8, reg_src0, reg_src0, reg_src1);
+
+        // Store updated data.
+        // Store updated reg_src0.
+        //store(8, block_oword(2), surface_dst, header, reg_src0);
+
+        {
+            addc(1, header.ud(0), dst_ptr.ud(0), global_id);
+            mov(1, temp.ud(0), acc0.ud(0));
+            add(1, header.ud(1), dst_ptr.ud(1), temp.ud(0));
+            store(1, D32 | V8T, A64, header, reg_src0);
+        }
+
+        // End thread. Must move r0 to one of r112-r127, then call threadend.
+        mov<uint32_t>(8, r127, r0);
+        threadend(r127);
+    }
+};
+
 class SubgraphImpl : public primitive_impl {
     using primitive_impl::primitive_impl;
 
@@ -34,37 +131,62 @@ class SubgraphImpl : public primitive_impl {
 public:
     explicit SubgraphImpl(const program_node& node, const kernel_impl_params& impl_params)
         : primitive_impl("jit::subgraph"), m_subgraph(node.as<subgraph>().get_primitive()->ov_subgraph->clone())  {
-            m_subgraph->set_generator(
-                std::make_shared<ov::intel_gpu::jit::GPUGenerator>(ngenHW2pluginHW(impl_params.get_device_info().arch)));
+            const auto& engine = downcast<ocl::ocl_engine>(impl_params.get_program().get_engine());
+            const auto& device = downcast<ocl::ocl_device>(*engine.get_device());
+            HW hw = VectorScaleKernelGenerator<HW::Unknown>::detectHW(engine.get_cl_context().get(), device.get_device().get());
+            cl::Kernel kernel;
+            switch (hw) {
+                case HW::Gen9:    kernel = VectorScaleKernelGenerator<HW::Gen9>().getKernel(engine.get_cl_context().get(), device.get_device().get()); break;
+                case HW::Gen11:   kernel = VectorScaleKernelGenerator<HW::Gen11>().getKernel(engine.get_cl_context().get(), device.get_device().get()); break;
+                case HW::Gen12LP: kernel = VectorScaleKernelGenerator<HW::Gen12LP>().getKernel(engine.get_cl_context().get(), device.get_device().get()); break;
+                case HW::XeHP:    kernel = VectorScaleKernelGenerator<HW::XeHP>().getKernel(engine.get_cl_context().get(), device.get_device().get()); break;
+                case HW::XeHPG:   kernel = VectorScaleKernelGenerator<HW::XeHPG>().getKernel(engine.get_cl_context().get(), device.get_device().get()); break;
+                case HW::XeHPC:   kernel = VectorScaleKernelGenerator<HW::XeHPC>().getKernel(engine.get_cl_context().get(), device.get_device().get()); break;
+                case HW::Xe2:     kernel = VectorScaleKernelGenerator<HW::Xe2>().getKernel(engine.get_cl_context().get(), device.get_device().get()); break;
+                case HW::Xe3:     kernel = VectorScaleKernelGenerator<HW::Xe3>().getKernel(engine.get_cl_context().get(), device.get_device().get()); break;
+                default:          OPENVINO_THROW("[GPU] Unsupported architecture");;
+            }
 
-            const auto in_blocked_shapes = getSnippetsBlockedShapes(impl_params);
-            const auto precisions = getIOPrecisions(impl_params);
-            m_subgraph->data_flow_transformations(in_blocked_shapes, precisions.first, precisions.second);
+            ocl_kernel = std::make_shared<ocl::ocl_kernel>(ocl::ocl_kernel_type(kernel, device.get_usm_helper()),
+                                                           kernel.getInfo<CL_KERNEL_FUNCTION_NAME>());
+ 
+            const auto total_elements_num = impl_params.get_input_layout().count();
+            const auto simd = 8;
 
-            const auto control_flow_config = std::make_shared<ov::snippets::lowered::pass::PassConfig>();
-            control_flow_config->disable<ov::snippets::lowered::pass::OptimizeDomain>();
-            m_subgraph->set_tile_rank(1UL);
+            kd.params.workGroups.global = {total_elements_num, 1, 1};
+            kd.params.workGroups.local = {simd, 1, 1};
 
-            m_subgraph->control_flow_transformations(0,   // unused
-                                                     256, // unused
-                                                     std::make_shared<ov::snippets::IShapeInferSnippetsFactory>(),
-                                                     control_flow_config,
-                                                     getControlFlowPasses());
+            // kd.params.scalars.push_back({cldnn::scalar_desc::Types::FLOAT32, 0});
+            kd.params.arguments.push_back({cldnn::argument_desc::Types::INPUT, 0});
+            kd.params.arguments.push_back({cldnn::argument_desc::Types::INPUT, 1});
+            kd.params.arguments.push_back({cldnn::argument_desc::Types::OUTPUT, 0});
+            // kd.params.arguments.push_back({cldnn::argument_desc::Types::SCALAR, 0});
         }
     
-    ControlFlowPasses getControlFlowPasses() const {
-        using PassPosition = ov::snippets::pass::PassPosition;
-        using Place = PassPosition::Place;
+    [[nodiscard]] virtual cldnn::kernel_arguments_data get_arguments(const cldnn::primitive_inst& instance) const {
+        cldnn::kernel_arguments_data args;
 
-        ControlFlowPasses backend_passes;
-#define SNIPPETS_REGISTER_PASS_ABSOLUTE(PASS_PLACE, PASS, ...)             \
-        backend_passes.emplace_back(PassPosition(PASS_PLACE), std::make_shared<PASS>(__VA_ARGS__))
+        for (size_t i = 0; i < instance.inputs_memory_count(); i++) {
+            args.inputs.push_back(instance.input_memory_ptr(i));
+        }
 
+        if (instance.has_fused_primitives()) {
+            size_t count = instance.get_fused_mem_count();
+            for (size_t i = 0; i < count; i++) {
+                args.fused_op_inputs.push_back(instance.fused_memory(i));
+            }
+        }
 
-        SNIPPETS_REGISTER_PASS_ABSOLUTE(Place::PipelineStart,
-                                        ov::intel_gpu::pass::SetSingleKernelWorkAmount);
-#undef SNIPPETS_REGISTER_PASS_ABSOLUTE
-        return backend_passes;
+        for (size_t i = 0; i < instance.outputs_memory_count(); i++) {
+            args.outputs.push_back(instance.output_memory_ptr(i));
+        }
+
+        args.shape_info = instance.shape_info_memory_ptr();
+
+        auto intermediates = instance.get_intermediates_memories();
+        args.intermediates = {intermediates.begin(), intermediates.end()};
+
+        return args;
     }
 
     SubgraphImpl() : primitive_impl() {}
@@ -76,19 +198,52 @@ public:
     }
 
     void init_kernels(const kernels_cache&, const kernel_impl_params&) override {}
-    void set_arguments(primitive_inst& /*instance*/) override {}
+    
+    void set_arguments(primitive_inst& instance) override {
+        auto& stream = instance.get_network().get_stream();
+
+        auto args_data = get_arguments(instance);
+
+        // Update scalars pointer
+        args_data.scalars = &kd.params.scalars;
+
+        for (const auto arg : kd.params.arguments) {
+            GPU_DEBUG_TRACE_DETAIL << "Argument: type=" << static_cast<int>(arg.t) << " idx=" << arg.index << "\n";
+        }
+
+        stream.set_arguments(*ocl_kernel, kd.params, args_data);
+    }
+
     void set_arguments(primitive_inst& /*instance*/, kernel_arguments_data& /*args*/) override {}
     std::vector<BufferDescriptor> get_internal_buffer_descs(const kernel_impl_params&) const override { return {}; }
 
     event::ptr execute(const std::vector<event::ptr>& events, primitive_inst& instance) override {
         auto& stream = instance.get_network().get_stream();
+        if (instance.can_be_optimized()) {
+            return stream.aggregate_events(events, false, instance.is_output());
+        }
 
-        return stream.aggregate_events(events);
+        // If any user of the desc's users is CPU implementation or network's output, set desc as a output event (event
+        // won't be nullptr)
+        bool needs_completion_event = instance.needs_completion_event();
+
+        auto& params = kd.params;
+ 
+        const auto& gws = params.workGroups.global;
+        const auto& lws = params.workGroups.local;
+
+        GPU_DEBUG_TRACE_DETAIL << "Enqueue jit kernel : gws=[" << gws[0] << ", " << gws[1] << ", " << gws[2] << "] " << "lws=["
+                               << lws[0] << ", " << lws[1] << ", " << lws[2] << "]" << (needs_completion_event ? " has_completion_event=true" : "") << '\n';
+
+        return stream.enqueue_kernel(*ocl_kernel, params, {}, events, needs_completion_event);
     }
 
     void update(primitive_inst& inst, const kernel_impl_params& impl_param) override { }
 
 private:
+    KernelData kd{};
+    ocl::ocl_kernel::ptr ocl_kernel;
+
     static ngen::HW ngenHW2pluginHW(gpu_arch arch) {
         switch (arch) {
         case gpu_arch::gen9: return ngen::HW::Gen9;

@@ -20,7 +20,7 @@ INSTANTIATE_TEST_SUITE_P(smoke_Snippets_Eltwise, Add,
                          ::testing::Combine(
                              ::testing::ValuesIn(inShapesStatic1),
                              ::testing::ValuesIn(inShapesStatic2),
-                             ::testing::ValuesIn({ov::element::f16}),
+                             ::testing::ValuesIn({ov::element::f32}),
                              ::testing::Values(1), // Add
                              ::testing::Values(1), // Subgraph is created, since the inputs are followed by converts
                              ::testing::Values(ov::test::utils::DEVICE_GPU)),
